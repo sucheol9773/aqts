@@ -1,0 +1,244 @@
+"""
+AQTS 테스트 공통 Fixture (conftest.py)
+
+NFR-07 명세:
+- 모든 외부 API는 Mock으로 대체
+- 테스트용 샘플 데이터는 Fixture로 중앙 관리
+- DB는 테스트용 인메모리 또는 별도 테스트 DB 사용
+"""
+
+import asyncio
+from datetime import datetime, timedelta
+from typing import AsyncGenerator
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+import pytest_asyncio
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+
+from config.constants import (
+    AssetType,
+    Country,
+    Market,
+    RiskProfile,
+    InvestmentStyle,
+)
+
+
+# ══════════════════════════════════════
+# Event Loop
+# ══════════════════════════════════════
+@pytest.fixture(scope="session")
+def event_loop():
+    """세션 범위의 이벤트 루프"""
+    loop = asyncio.new_event_loop()
+    yield loop
+    loop.close()
+
+
+# ══════════════════════════════════════
+# Mock KIS Client
+# ══════════════════════════════════════
+@pytest.fixture
+def mock_kis_client():
+    """한국투자증권 API Mock"""
+    client = AsyncMock()
+
+    # 국내 현재가 응답
+    client.get_kr_stock_price.return_value = {
+        "output": {
+            "stck_prpr": "71400",
+            "stck_oprc": "71000",
+            "stck_hgpr": "72000",
+            "stck_lwpr": "70500",
+            "acml_vol": "12345678",
+        },
+        "rt_cd": "0",
+    }
+
+    # 국내 일봉 응답
+    client.get_kr_stock_daily.return_value = {
+        "output2": [
+            {
+                "stck_bsop_date": "20260401",
+                "stck_oprc": "71000",
+                "stck_hgpr": "72000",
+                "stck_lwpr": "70500",
+                "stck_clpr": "71400",
+                "acml_vol": "12345678",
+            },
+            {
+                "stck_bsop_date": "20260402",
+                "stck_oprc": "71400",
+                "stck_hgpr": "72500",
+                "stck_lwpr": "71200",
+                "stck_clpr": "72100",
+                "acml_vol": "10987654",
+            },
+        ],
+        "rt_cd": "0",
+    }
+
+    # 해외 현재가 응답
+    client.get_us_stock_price.return_value = {
+        "output": {
+            "last": "175.50",
+            "open": "174.00",
+            "high": "176.20",
+            "low": "173.80",
+            "tvol": "45678901",
+        },
+        "rt_cd": "0",
+    }
+
+    # 잔고 조회 응답
+    client.get_kr_balance.return_value = {
+        "output1": [
+            {
+                "pdno": "005930",
+                "prdt_name": "삼성전자",
+                "hldg_qty": "100",
+                "pchs_avg_pric": "70000.00",
+                "prpr": "71400",
+                "evlu_pfls_amt": "140000",
+            },
+        ],
+        "output2": [
+            {
+                "dnca_tot_amt": "50000000",
+                "tot_evlu_amt": "57140000",
+                "pchs_amt_smtl_amt": "50000000",
+            },
+        ],
+        "rt_cd": "0",
+    }
+
+    client.is_mock = True
+    return client
+
+
+# ══════════════════════════════════════
+# Mock Claude API
+# ══════════════════════════════════════
+@pytest.fixture
+def mock_claude_client():
+    """Anthropic Claude API Mock"""
+    client = AsyncMock()
+
+    client.messages.create.return_value = MagicMock(
+        content=[
+            MagicMock(
+                text='{"ticker": "005930", "score": 0.65, "confidence": 0.8, '
+                '"summary": "삼성전자 반도체 수출 호조 전망", '
+                '"factors": ["반도체 수출 증가", "AI 메모리 수요 확대"]}'
+            )
+        ]
+    )
+    return client
+
+
+# ══════════════════════════════════════
+# Mock Telegram Bot
+# ══════════════════════════════════════
+@pytest.fixture
+def mock_telegram_bot():
+    """텔레그램 Bot API Mock"""
+    bot = AsyncMock()
+    bot.send_message.return_value = MagicMock(message_id=12345)
+    return bot
+
+
+# ══════════════════════════════════════
+# 샘플 시세 데이터
+# ══════════════════════════════════════
+@pytest.fixture
+def sample_ohlcv_data():
+    """테스트용 OHLCV 샘플 데이터"""
+    import pandas as pd
+    import numpy as np
+
+    np.random.seed(42)
+    dates = pd.bdate_range(start="2025-01-02", periods=60)
+    base_price = 70000
+
+    prices = [base_price]
+    for _ in range(59):
+        change = np.random.normal(0, 0.015)
+        prices.append(prices[-1] * (1 + change))
+
+    df = pd.DataFrame({
+        "time": dates,
+        "ticker": "005930",
+        "market": Market.KRX.value,
+        "open": [p * (1 + np.random.uniform(-0.005, 0.005)) for p in prices],
+        "high": [p * (1 + np.random.uniform(0.005, 0.02)) for p in prices],
+        "low": [p * (1 - np.random.uniform(0.005, 0.02)) for p in prices],
+        "close": prices,
+        "volume": [int(np.random.uniform(5e6, 2e7)) for _ in prices],
+        "interval": "1d",
+    })
+    return df
+
+
+# ══════════════════════════════════════
+# 샘플 사용자 프로필
+# ══════════════════════════════════════
+@pytest.fixture
+def sample_user_profile():
+    """테스트용 사용자 투자 프로필"""
+    return {
+        "investment_types": [AssetType.STOCK.value, AssetType.ETF.value, AssetType.BOND.value],
+        "risk_profile": RiskProfile.BALANCED.value,
+        "seed_amount": 50_000_000,
+        "investment_goal": "WEALTH_GROWTH",
+        "investment_style": InvestmentStyle.DISCRETIONARY.value,
+        "loss_tolerance": -0.10,
+        "sector_filter": ["IT", "Healthcare", "Finance"],
+        "designated_tickers": ["005930", "000660"],
+        "rebalancing_frequency": "MONTHLY",
+    }
+
+
+# ══════════════════════════════════════
+# 샘플 포트폴리오
+# ══════════════════════════════════════
+@pytest.fixture
+def sample_portfolio():
+    """테스트용 포트폴리오"""
+    return [
+        {"ticker": "005930", "market": "KRX", "quantity": 100, "avg_price": 70000, "current_price": 71400, "target_weight": 0.182},
+        {"ticker": "360750", "market": "KRX", "quantity": 480, "avg_price": 15800, "current_price": 18230, "target_weight": 0.155},
+        {"ticker": "069500", "market": "KRX", "quantity": 190, "avg_price": 35700, "current_price": 37850, "target_weight": 0.128},
+        {"ticker": "000660", "market": "KRX", "quantity": 30, "avg_price": 161700, "current_price": 198500, "target_weight": 0.103},
+        {"ticker": "136340", "market": "KRX", "quantity": 46, "avg_price": 102400, "current_price": 105120, "target_weight": 0.085},
+    ]
+
+
+# ══════════════════════════════════════
+# 샘플 뉴스 데이터
+# ══════════════════════════════════════
+@pytest.fixture
+def sample_news_data():
+    """테스트용 뉴스 데이터"""
+    return [
+        {
+            "title": "삼성전자, AI 반도체 수출 사상 최대",
+            "content": "삼성전자가 AI용 HBM 메모리 반도체 수출이 전년 대비 45% 증가하며 분기 사상 최대 실적을 기록했다.",
+            "source": "naver_news",
+            "published_at": datetime(2026, 4, 2, 9, 30),
+            "tickers": ["005930"],
+            "category": "finance",
+        },
+        {
+            "title": "Fed, 금리 동결 시사",
+            "content": "미국 연방준비제도이사회가 다음 FOMC 회의에서 금리를 동결할 가능성을 시사했다.",
+            "source": "reuters",
+            "published_at": datetime(2026, 4, 2, 7, 0),
+            "tickers": [],
+            "category": "macro",
+        },
+    ]
