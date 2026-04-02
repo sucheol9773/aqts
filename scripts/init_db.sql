@@ -262,3 +262,76 @@ INSERT INTO strategy_weights (strategy_type, weight, risk_profile) VALUES
     ('ML_SIGNAL', 0.15, 'BALANCED'),
     ('SENTIMENT', 0.10, 'BALANCED')
 ON CONFLICT DO NOTHING;
+
+-- ══════════════════════════════════════
+-- [Phase 3] AI 감성 분석 결과
+-- ══════════════════════════════════════
+CREATE TABLE IF NOT EXISTS sentiment_scores (
+    id              SERIAL,
+    time            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ticker          VARCHAR(20) NOT NULL,
+    score           NUMERIC(5, 4) NOT NULL,
+    confidence      NUMERIC(5, 4) NOT NULL DEFAULT 0.0,
+    summary         TEXT,
+    positive_factors JSONB DEFAULT '[]'::jsonb,
+    negative_factors JSONB DEFAULT '[]'::jsonb,
+    news_count      INTEGER NOT NULL DEFAULT 0,
+    model_used      VARCHAR(50) NOT NULL,
+    PRIMARY KEY (id, time)
+);
+
+SELECT create_hypertable('sentiment_scores', 'time', if_not_exists => TRUE);
+CREATE INDEX IF NOT EXISTS idx_sentiment_ticker ON sentiment_scores (ticker, time DESC);
+
+-- ══════════════════════════════════════
+-- [Phase 3] AI 투자 의견
+-- ══════════════════════════════════════
+CREATE TABLE IF NOT EXISTS investment_opinions (
+    id              SERIAL,
+    time            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ticker          VARCHAR(20),
+    opinion_type    VARCHAR(20) NOT NULL DEFAULT 'STOCK',
+    action          VARCHAR(20) NOT NULL,
+    conviction      NUMERIC(5, 4) NOT NULL DEFAULT 0.0,
+    target_weight   NUMERIC(5, 4),
+    reasoning       TEXT NOT NULL,
+    market_context  TEXT,
+    risk_factors    JSONB DEFAULT '[]'::jsonb,
+    model_used      VARCHAR(50) NOT NULL,
+    PRIMARY KEY (id, time)
+);
+
+SELECT create_hypertable('investment_opinions', 'time', if_not_exists => TRUE);
+CREATE INDEX IF NOT EXISTS idx_opinion_ticker ON investment_opinions (ticker, time DESC);
+
+-- ══════════════════════════════════════
+-- [Phase 3] 앙상블 시그널 이력
+-- ══════════════════════════════════════
+CREATE TABLE IF NOT EXISTS ensemble_signals (
+    id              SERIAL,
+    time            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ticker          VARCHAR(20) NOT NULL,
+    final_signal    NUMERIC(5, 4) NOT NULL,
+    final_confidence NUMERIC(5, 4) NOT NULL DEFAULT 0.0,
+    component_signals JSONB NOT NULL,
+    weights_used    JSONB NOT NULL,
+    risk_profile    VARCHAR(20) NOT NULL,
+    PRIMARY KEY (id, time)
+);
+
+SELECT create_hypertable('ensemble_signals', 'time', if_not_exists => TRUE);
+CREATE INDEX IF NOT EXISTS idx_ensemble_ticker ON ensemble_signals (ticker, time DESC);
+
+-- ══════════════════════════════════════
+-- [Phase 3] 앙상블 가중치 업데이트 이력
+-- ══════════════════════════════════════
+CREATE TABLE IF NOT EXISTS weight_update_history (
+    id              SERIAL PRIMARY KEY,
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    risk_profile    VARCHAR(20) NOT NULL,
+    old_weights     JSONB NOT NULL,
+    new_weights     JSONB NOT NULL,
+    method          VARCHAR(30) NOT NULL,
+    performance_metrics JSONB,
+    reason          TEXT
+);

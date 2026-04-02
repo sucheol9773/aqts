@@ -112,6 +112,31 @@ class SentimentMode(str, Enum):
     OPINION = "OPINION"    # Mode B: 투자 의견 생성
 
 
+class NewsSource(str, Enum):
+    """뉴스 데이터 소스"""
+    NAVER_FINANCE = "NAVER_FINANCE"    # 네이버 금융 뉴스 RSS
+    HANKYUNG = "HANKYUNG"              # 한국경제 RSS
+    MAEKYUNG = "MAEKYUNG"              # 매일경제 RSS
+    DART = "DART"                      # DART 전자공시
+    REDDIT = "REDDIT"                  # Reddit (추후 확장)
+
+
+class OpinionAction(str, Enum):
+    """AI 투자 의견 행동"""
+    STRONG_BUY = "STRONG_BUY"
+    BUY = "BUY"
+    HOLD = "HOLD"
+    SELL = "SELL"
+    STRONG_SELL = "STRONG_SELL"
+
+
+class OpinionType(str, Enum):
+    """AI 투자 의견 유형"""
+    STOCK = "STOCK"          # 개별 종목 분석
+    SECTOR = "SECTOR"        # 섹터 분석
+    MACRO = "MACRO"          # 거시경제 분석
+
+
 # ══════════════════════════════════════
 # 리밸런싱 관련 상수
 # ══════════════════════════════════════
@@ -200,4 +225,80 @@ DATA_INTEGRITY = {
     "outlier_sigma_threshold": 3.0,     # 이상치 탐지 시그마 기준
     "kr_daily_limit_pct": 0.30,         # 한국 상하한가 (±30%)
     "us_circuit_breaker_l1": 0.07,      # 미국 서킷브레이커 1단계 (7%)
+}
+
+
+# ══════════════════════════════════════
+# [Phase 3] 뉴스 RSS 피드 설정
+# ══════════════════════════════════════
+NEWS_RSS_FEEDS = {
+    NewsSource.NAVER_FINANCE: [
+        "https://news.google.com/rss/search?q=주식+when:1d&hl=ko&gl=KR&ceid=KR:ko",
+        "https://news.google.com/rss/search?q=증시+when:1d&hl=ko&gl=KR&ceid=KR:ko",
+    ],
+    NewsSource.HANKYUNG: [
+        "https://www.hankyung.com/feed/stock",
+        "https://www.hankyung.com/feed/economy",
+        "https://www.hankyung.com/feed/finance",
+    ],
+    NewsSource.MAEKYUNG: [
+        "https://www.mk.co.kr/rss/30100041/",   # 증권
+        "https://www.mk.co.kr/rss/30000001/",   # 경제
+    ],
+}
+
+# DART 전자공시 API 설정
+DART_API_BASE_URL = "https://opendart.fss.or.kr/api"
+DART_DISCLOSURE_TYPES = [
+    "A",   # 정기보고서
+    "B",   # 주요사항보고
+    "C",   # 발행공시
+    "D",   # 지분공시
+    "F",   # 기타공시
+]
+
+# ══════════════════════════════════════
+# [Phase 3] AI 분석 캐시 TTL (초)
+# ══════════════════════════════════════
+AI_CACHE_TTL = {
+    SentimentMode.SCORE: 3600,     # 감성 분석: 1시간
+    SentimentMode.OPINION: 14400,  # 투자 의견: 4시간
+}
+
+# ══════════════════════════════════════
+# [Phase 3] 앙상블 기본 가중치 (프로필별)
+# ══════════════════════════════════════
+ENSEMBLE_DEFAULT_WEIGHTS = {
+    RiskProfile.CONSERVATIVE: {
+        StrategyType.FACTOR: 0.25,
+        StrategyType.MEAN_REVERSION: 0.10,
+        StrategyType.TREND_FOLLOWING: 0.15,
+        StrategyType.RISK_PARITY: 0.30,
+        StrategyType.ML_SIGNAL: 0.00,
+        "SENTIMENT": 0.20,
+    },
+    RiskProfile.BALANCED: {
+        StrategyType.FACTOR: 0.25,
+        StrategyType.MEAN_REVERSION: 0.10,
+        StrategyType.TREND_FOLLOWING: 0.20,
+        StrategyType.RISK_PARITY: 0.20,
+        StrategyType.ML_SIGNAL: 0.00,
+        "SENTIMENT": 0.25,
+    },
+    RiskProfile.AGGRESSIVE: {
+        StrategyType.FACTOR: 0.15,
+        StrategyType.MEAN_REVERSION: 0.15,
+        StrategyType.TREND_FOLLOWING: 0.30,
+        StrategyType.RISK_PARITY: 0.10,
+        StrategyType.ML_SIGNAL: 0.00,
+        "SENTIMENT": 0.30,
+    },
+    RiskProfile.DIVIDEND: {
+        StrategyType.FACTOR: 0.35,
+        StrategyType.MEAN_REVERSION: 0.05,
+        StrategyType.TREND_FOLLOWING: 0.10,
+        StrategyType.RISK_PARITY: 0.25,
+        StrategyType.ML_SIGNAL: 0.00,
+        "SENTIMENT": 0.25,
+    },
 }
