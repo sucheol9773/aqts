@@ -203,35 +203,32 @@ class TestCostAnalyzer:
         # cost = 1, benefit = 500_000, ratio = 0.000002
         assert is_effective is True
 
-    def test_is_cost_effective_false(self):
-        """cost-effective 판정 (False 케이스)."""
-        analyzer = CostAnalyzer(max_cost_ratio=0.20)
+    def test_is_cost_effective_true_when_ratio_below_threshold(self):
+        """cost ratio < threshold → cost-effective (True)."""
+        # cost = 100_000 * 0.01 = 1_000
+        # benefit = 1_000_000 * 0.05 = 50_000
+        # ratio = 1_000 / 50_000 = 0.02
+        analyzer = CostAnalyzer(max_cost_ratio=0.20)  # threshold = 20%
+        assert analyzer.is_cost_effective(
+            api_calls=100_000, cost_per_call=0.01,
+            excess_return_pct=0.05, portfolio_value=1_000_000,
+        ) is True  # 2% < 20%
 
-        is_effective = analyzer.is_cost_effective(
-            api_calls=100_000,  # 매우 많은 호출
-            cost_per_call=0.01,
-            excess_return_pct=0.05,  # 낮은 수익
-            portfolio_value=1_000_000,
-        )
-        # cost = 1_000, benefit = 50_000, ratio = 0.02 ≈ 2% (OK)
-        # 더 극단적으로
-        analyzer2 = CostAnalyzer(max_cost_ratio=0.05)
-        is_effective2 = analyzer2.is_cost_effective(
-            api_calls=100_000,
-            cost_per_call=0.01,
-            excess_return_pct=0.05,
-            portfolio_value=1_000_000,
-        )
-        # ratio = 0.02, threshold = 0.05 → True
-        # threshold = 0.01 해서 False 케이스 만들기
-        analyzer3 = CostAnalyzer(max_cost_ratio=0.01)
-        is_effective3 = analyzer3.is_cost_effective(
-            api_calls=100_000,
-            cost_per_call=0.01,
-            excess_return_pct=0.05,
-            portfolio_value=1_000_000,
-        )
-        assert is_effective3 is False
+    def test_is_cost_effective_true_at_moderate_threshold(self):
+        """cost ratio < moderate threshold → still cost-effective."""
+        analyzer = CostAnalyzer(max_cost_ratio=0.05)  # threshold = 5%
+        assert analyzer.is_cost_effective(
+            api_calls=100_000, cost_per_call=0.01,
+            excess_return_pct=0.05, portfolio_value=1_000_000,
+        ) is True  # 2% < 5%
+
+    def test_is_cost_effective_false_when_ratio_exceeds_threshold(self):
+        """cost ratio > threshold → not cost-effective (False)."""
+        analyzer = CostAnalyzer(max_cost_ratio=0.01)  # threshold = 1%
+        assert analyzer.is_cost_effective(
+            api_calls=100_000, cost_per_call=0.01,
+            excess_return_pct=0.05, portfolio_value=1_000_000,
+        ) is False  # 2% > 1%
 
     def test_is_cost_effective_zero_benefit(self):
         """benefit이 0인 경우."""

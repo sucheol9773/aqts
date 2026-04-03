@@ -674,8 +674,9 @@ class TestExchangeRateManagerErrorHandling:
     @pytest.mark.asyncio
     async def test_fetch_from_fred_invalid_response(self, exchange_rate_manager):
         """Test FRED fetching with invalid response format."""
-        mock_response = AsyncMock()
-        mock_response.json = AsyncMock(return_value={})
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()  # httpx: sync method
+        mock_response.json.return_value = {}
 
         with patch(
             "core.portfolio_manager.exchange_rate.httpx.AsyncClient"

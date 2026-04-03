@@ -120,8 +120,9 @@ class TestSharpeWeights:
         active = {k: v for k, v in result.new_weights.items() if v > 0}
         weights = list(active.values())
         assert len(weights) == 2
-        # 동일 가중이므로 차이가 작아야 함
-        assert abs(weights[0] - weights[1]) < 0.15
+        # 음수 Sharpe는 0으로 클램핑되므로 둘 다 0 → 동일 가중 0.5
+        assert abs(weights[0] - 0.5) < 0.02
+        assert abs(weights[1] - 0.5) < 0.02
 
     def test_negative_sharpe_clamped(self):
         """음수 Sharpe는 0으로 처리"""

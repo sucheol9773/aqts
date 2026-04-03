@@ -178,23 +178,25 @@ class TestMetricsCalculator:
         assert turnover > 0, f"Expected positive turnover, got {turnover:.4f}"
 
     def test_calculate_all(self):
-        """Test calculate_all method."""
+        """Test calculate_all returns all 9 metrics with correct values."""
         metrics = MetricsCalculator.calculate_all(self.mixed_returns)
 
         # Should have all 9 metrics
-        assert "cagr" in metrics
-        assert "max_drawdown" in metrics
-        assert "sharpe_ratio" in metrics
-        assert "sortino_ratio" in metrics
-        assert "calmar_ratio" in metrics
-        assert "hit_ratio" in metrics
-        assert "profit_factor" in metrics
-        assert "information_ratio" in metrics
-        assert "turnover" in metrics
+        assert len(metrics) == 9
 
-        # All should be floats or None
-        for v in metrics.values():
-            assert v is None or isinstance(v, (int, float))
+        # Verify actual computed values match individual method results
+        # mixed_returns = [0.02, -0.01, 0.01, -0.005] * 63
+        assert metrics["cagr"] == pytest.approx(1.523, rel=0.01)
+        assert metrics["max_drawdown"] == pytest.approx(-0.01, abs=0.001)
+        assert metrics["sharpe_ratio"] == pytest.approx(4.98, rel=0.01)
+        assert metrics["sortino_ratio"] == pytest.approx(14.33, rel=0.01)
+        assert metrics["calmar_ratio"] == pytest.approx(152.3, rel=0.01)
+        assert metrics["hit_ratio"] == 0.5  # 2 positive, 2 non-positive per cycle
+        assert metrics["profit_factor"] == pytest.approx(2.0, rel=0.01)  # gains/|losses| = 0.03/0.015
+
+        # IR and turnover require benchmark/trade data → None when not provided
+        assert metrics["information_ratio"] is None
+        assert metrics["turnover"] is None
 
 
 # ═══════════════════════════════════════════════════════════════

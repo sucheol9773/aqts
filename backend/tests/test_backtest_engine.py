@@ -114,6 +114,51 @@ class TestBacktestEngine:
         assert result.total_return > 0.0
         assert result.final_capital > config.initial_capital
 
+    def test_buy_and_hold_negative_return(self):
+        """매수 후 보유: 하락장에서 음수 수익"""
+        dates = pd.bdate_range(start="2024-01-02", periods=252)
+        # 확실한 하락 추세: 매일 -0.1% 하락
+        prices_data = 50000 * np.cumprod(1 + np.full(252, -0.001))
+        prices = pd.DataFrame({"A": prices_data}, index=dates)
+        signals = pd.DataFrame({"A": np.zeros(252)}, index=dates)
+        signals.iloc[0] = 0.8  # 첫날 매수
+
+        config = BacktestConfig(
+            initial_capital=10_000_000,
+            country=Country.KR,
+            slippage_rate=0.0,
+            commission_rate=0.0,
+            tax_rate=0.0,
+        )
+        engine = BacktestEngine(config)
+        result = engine.run("BuyHoldDown", signals, prices)
+
+        assert result.total_return < 0.0
+        assert result.final_capital < config.initial_capital
+
+    def test_volatile_market_drawdown(self):
+        """변동성 큰 시장: MDD가 유의미하게 발생"""
+        np.random.seed(42)
+        dates = pd.bdate_range(start="2024-01-02", periods=252)
+        # 급등락 반복 (평균 약 0, 높은 변동성)
+        daily_returns = np.random.normal(0.0, 0.03, 252)
+        prices_data = 50000 * np.cumprod(1 + daily_returns)
+        prices = pd.DataFrame({"A": prices_data}, index=dates)
+        signals = pd.DataFrame({"A": np.zeros(252)}, index=dates)
+        signals.iloc[0] = 0.8
+
+        config = BacktestConfig(
+            initial_capital=10_000_000,
+            slippage_rate=0.0,
+            commission_rate=0.0,
+            tax_rate=0.0,
+        )
+        engine = BacktestEngine(config)
+        result = engine.run("Volatile", signals, prices)
+
+        # 변동성이 크면 MDD가 유의미하게 발생해야 함
+        assert result.mdd < -0.05, f"Expected significant drawdown, got {result.mdd}"
+
     def test_transaction_costs_reduce_return(self):
         """거래 비용이 수익을 감소시킴"""
         prices = _make_prices(252, ["A"])
