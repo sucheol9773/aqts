@@ -1,0 +1,70 @@
+# ══════════════════════════════════════════════════════════════
+# AQTS Operational Thresholds (Stage 2-A / v1.3 로드맵 참조)
+# ══════════════════════════════════════════════════════════════
+# 이 파일은 운영 환경의 임계값을 중앙 관리합니다.
+# 코드에 하드코딩 대신 이 파일에서 읽어 사용하세요.
+
+# ── 데이터 품질 ──
+data_quality:
+  max_consecutive_missing_days: 3          # 연속 결측 허용 한도 (영업일)
+  outlier_sigma_threshold: 3.0             # 이상치 시그마 기준
+  stale_quote_max_seconds: 30              # 호가 지연 최대 허용 (초)
+  kr_daily_limit_pct: 0.30                 # KRX 상하한가 (±30%)
+  us_circuit_breaker_l1: 0.07              # US 서킷브레이커 1단계 (7%)
+
+# ── 팩터/특성 ──
+feature:
+  factor_score_range: [-1.0, 1.0]          # 팩터 스코어 정규화 범위
+  sentiment_range: [-1.0, 1.0]             # 감성 점수 범위
+  rsi_range: [0.0, 100.0]                  # RSI 유효 범위
+
+# ── 시그널 ──
+signal:
+  min_confidence_for_action: 0.1           # BUY/SELL 시 최소 confidence
+
+# ── 포트폴리오 ──
+portfolio:
+  max_single_weight: 0.20                  # 종목당 최대 비중
+  max_sector_weight: 0.40                  # 섹터당 최대 비중
+  min_positions: 5                         # 최소 종목 수
+  weight_tolerance: 0.01                   # 비중 합 허용 오차
+  cash_ratio_hard_floor: 0.10              # 현금 비중 최소 (Stage 5.8)
+
+# ── 주문 ──
+order:
+  daily_order_count_limit: 50              # 일일 주문 건수 한도 (Stage 5.1)
+  max_adv_pct: 0.05                        # ADV 대비 최대 주문량 (5%)
+  partial_fill_adv_threshold: 0.10         # 부분 체결 시작 ADV (10%)
+  no_fill_adv_threshold: 0.30             # 미체결 발생 ADV (30%)
+
+# ── 리스크 관리 ──
+risk:
+  max_daily_loss_pct: 0.03                 # 일일 최대 손실률 (3%)
+  max_drawdown_pct: 0.15                   # 최대 허용 MDD (15%)
+  consecutive_loss_limit: 5                # 연속 손실 한도
+  api_failure_halt_count: 3                # 연속 API 실패 시 거래 중단
+
+# ── 실거래 확대 트리거 (Stage 7 참조) ──
+live_scaleup:
+  absolute_hard_fail: 0                    # 절대 실패 허용: 0건
+  broker_recon_mismatch: 0                 # 브로커 불일치 허용: 0건
+  live_mdd_max_pct: 0.15                   # 라이브 MDD ≤ Stage 6 범위
+  live_scaleup_ir_min: 0.10                # 라이브 IR 최소 (quant-only)
+  stale_quote_misorder: 0                  # 지연 호가 오주문 허용: 0건
+
+# ── AI 비용/드리프트 ──
+ai:
+  cost_benefit_max_ratio: 0.20             # API 비용 < 초과수익의 20%
+  sentiment_reproducibility_std_max: 0.10  # 감성 재현성 std < 0.1
+  drift_ks_test_p_min: 0.05               # 드리프트 KS-test p > 0.05
+  opinion_match_rate_min: 0.80             # 의견 일치율 > 80%
+
+# ── 성과 검증 기준 (Stage 6) ──
+performance:
+  ir_pass: 0.10                            # IR > 0.1 → PASS
+  ir_review: 0.05                          # IR 0.05-0.1 → REVIEW
+  excess_cagr_pass_pct: 0.01              # 초과 CAGR > 1%p → PASS
+  mdd_tolerance_multiplier: 1.2            # MDD > tolerance * 1.2 → FAIL
+  max_turnover_pass: 3.0                   # 연간 회전율 < 300% → PASS
+  max_turnover_review: 5.0                 # 연간 회전율 < 500% → REVIEW
+  significance_ci: 0.95                    # 부트스트랩 95% CI

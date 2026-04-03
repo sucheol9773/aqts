@@ -18,15 +18,17 @@ from fastapi.staticfiles import StaticFiles
 from config.logging import logger, setup_logging
 from config.settings import get_settings
 from db.database import MongoDBManager, RedisManager, engine
+from core.graceful_shutdown import GracefulShutdownManager
 
 # Phase 5: API 라우터 & 미들웨어
-from api.routes import auth, portfolio, orders, profile, market, alerts, system
+from api.routes import auth, portfolio, orders, profile, market, alerts, system, audit
 from api.middleware.request_logger import RequestLoggingMiddleware
 
 
 # ══════════════════════════════════════
-# 그레이스풀 셧다운 핸들러
+# 그레이스풀 셧다운 매니저 (NFR-06)
 # ══════════════════════════════════════
+shutdown_manager = GracefulShutdownManager()
 shutdown_event = asyncio.Event()
 
 
@@ -76,21 +78,23 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # ── Shutdown ──
+    # ── Shutdown (NFR-06: 그레이스풀 셧다운) ──
     logger.info("AQTS shutting down...")
 
-    # TODO: 진행 중인 주문 처리 완료 대기
+    # DB 정리 콜백 등록
+    shutdown_manager.register_cleanup(MongoDBManager.disconnect)
+    shutdown_manager.register_cleanup(RedisManager.disconnect)
 
-    await MongoDBManager.disconnect()
-    logger.info("MongoDB disconnected")
+    async def _dispose_pg():
+        await engine.dispose()
+        logger.info("PostgreSQL engine disposed")
 
-    await RedisManager.disconnect()
-    logger.info("Redis disconnected")
+    shutdown_manager.register_cleanup(_dispose_pg)
 
-    await engine.dispose()
-    logger.info("PostgreSQL engine disposed")
+    # 그레이스풀 셧다운 실행 (주문 대기 → 서비스 종료 → DB 정리)
+    result = await shutdown_manager.shutdown(timeout=60)
 
-    logger.info("AQTS shutdown complete.")
+    logger.info(f"AQTS shutdown complete. Result: {result}")
 
 
 # ══════════════════════════════════════
@@ -190,7 +194,7 @@ async def dashboard():
 
 
 # ══════════════════════════════════════
-# API 라우터 등록 (Phase 5)
+# API 라우터 등록 (Phase 5, Stage 4)
 # ══════════════════════════════════════
 app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
 app.include_router(portfolio.router, prefix="/api/portfolio", tags=["Portfolio"])
@@ -199,3 +203,4 @@ app.include_router(profile.router, prefix="/api/profile", tags=["Profile"])
 app.include_router(market.router, prefix="/api/market", tags=["Market"])
 app.include_router(alerts.router, prefix="/api/alerts", tags=["Alerts"])
 app.include_router(system.router, prefix="/api/system", tags=["System"])
+app.include_router(audit.router)

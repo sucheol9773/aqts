@@ -14,7 +14,9 @@ from config.settings import get_settings
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # HTTP Bearer scheme for extracting token from header
-security = HTTPBearer()
+# auto_error=False: credentials 미제공 시 FastAPI 기본 403 대신
+# 우리가 직접 401을 반환하여 HTTP 표준(RFC 7235)을 준수합니다.
+security = HTTPBearer(auto_error=False)
 
 
 class AuthService:
@@ -178,6 +180,12 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     Raises:
         HTTPException: If token is missing, invalid, or expired
     """
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     token = credentials.credentials
     payload = AuthService.verify_token(token)
     username: str = payload.get("sub")

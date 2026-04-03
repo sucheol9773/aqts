@@ -654,7 +654,7 @@ class TestAuthRoutes:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.get("/api/auth/me")
 
-            # HTTPBearer returns 401 for missing credentials, not 403
+            # 인증 헤더 미제공 시 401 Unauthorized (RFC 7235)
             assert response.status_code == 401
 
     async def test_refresh_token_with_valid_refresh_token(self):
@@ -814,7 +814,7 @@ class TestOrderRoutes:
                 json=order_data
             )
 
-            # HTTPBearer returns 401 for missing credentials, not 403
+            # 인증 헤더 미제공 시 401 Unauthorized (RFC 7235)
             assert response.status_code == 401
 
     async def test_get_orders_with_auth(self):
