@@ -84,13 +84,15 @@ class TestSentimentAnalyzer:
             },
         ]
 
-    @pytest.mark.asyncio
-    async def test_analyze_ticker_no_news(self):
-        """뉴스 없을 때 중립 점수 반환"""
-        with patch.object(SentimentAnalyzer, '_get_cached', return_value=None), \
-             patch.object(SentimentAnalyzer, '_set_cache', new_callable=AsyncMock), \
-             patch('core.ai_analyzer.sentiment.get_settings') as mock_settings:
+    @pytest.fixture
+    def _mock_env(self):
+        """SentimentAnalyzer 생성에 필요한 공통 Mock 컨텍스트.
 
+        AsyncAnthropic 클라이언트 생성 자체를 Mock하여
+        SOCKS 프록시 등 환경 의존성을 완전히 제거합니다.
+        """
+        with patch('core.ai_analyzer.sentiment.AsyncAnthropic') as mock_cls, \
+             patch('core.ai_analyzer.sentiment.get_settings') as mock_settings:
             mock_settings.return_value = MagicMock(
                 anthropic=MagicMock(
                     api_key="test-key",
@@ -98,6 +100,14 @@ class TestSentimentAnalyzer:
                     api_timeout=30,
                 )
             )
+            mock_cls.return_value = AsyncMock()
+            yield mock_cls, mock_settings
+
+    @pytest.mark.asyncio
+    async def test_analyze_ticker_no_news(self, _mock_env):
+        """뉴스 없을 때 중립 점수 반환"""
+        with patch.object(SentimentAnalyzer, '_get_cached', return_value=None), \
+             patch.object(SentimentAnalyzer, '_set_cache', new_callable=AsyncMock):
 
             analyzer = SentimentAnalyzer()
             result = await analyzer.analyze_ticker("005930", [])
@@ -107,24 +117,14 @@ class TestSentimentAnalyzer:
             assert result.ticker == "005930"
 
     @pytest.mark.asyncio
-    async def test_analyze_ticker_with_cache(self):
+    async def test_analyze_ticker_with_cache(self, _mock_env):
         """캐시 히트 시 캐시 결과 반환"""
         cached = SentimentResult(
             ticker="005930", score=0.55, confidence=0.7,
             summary="캐시 결과", model_used="cached",
         )
 
-        with patch.object(SentimentAnalyzer, '_get_cached', return_value=cached), \
-             patch('core.ai_analyzer.sentiment.get_settings') as mock_settings:
-
-            mock_settings.return_value = MagicMock(
-                anthropic=MagicMock(
-                    api_key="test-key",
-                    default_model="claude-haiku-4-5-20251001",
-                    api_timeout=30,
-                )
-            )
-
+        with patch.object(SentimentAnalyzer, '_get_cached', return_value=cached):
             analyzer = SentimentAnalyzer()
             result = await analyzer.analyze_ticker("005930", [{"title": "test"}])
 
@@ -132,20 +132,11 @@ class TestSentimentAnalyzer:
             assert result.summary == "캐시 결과"
 
     @pytest.mark.asyncio
-    async def test_analyze_ticker_api_call(self, mock_anthropic_response, sample_articles):
+    async def test_analyze_ticker_api_call(self, _mock_env, mock_anthropic_response, sample_articles):
         """Claude API 호출 및 결과 파싱 테스트"""
         with patch.object(SentimentAnalyzer, '_get_cached', return_value=None), \
              patch.object(SentimentAnalyzer, '_set_cache', new_callable=AsyncMock), \
-             patch.object(SentimentAnalyzer, '_store_to_db', new_callable=AsyncMock), \
-             patch('core.ai_analyzer.sentiment.get_settings') as mock_settings:
-
-            mock_settings.return_value = MagicMock(
-                anthropic=MagicMock(
-                    api_key="test-key",
-                    default_model="claude-haiku-4-5-20251001",
-                    api_timeout=30,
-                )
-            )
+             patch.object(SentimentAnalyzer, '_store_to_db', new_callable=AsyncMock):
 
             analyzer = SentimentAnalyzer()
             analyzer._client = AsyncMock()
@@ -158,40 +149,24 @@ class TestSentimentAnalyzer:
             assert "반도체 수출 증가" in result.positive_factors
             assert result.news_count == 2
 
-    def test_parse_response_valid(self, mock_anthropic_response):
+    def test_parse_response_valid(self, _mock_env, mock_anthropic_response):
         """정상 응답 파싱 검증"""
-        with patch('core.ai_analyzer.sentiment.get_settings') as mock_settings:
-            mock_settings.return_value = MagicMock(
-                anthropic=MagicMock(
-                    api_key="test-key",
-                    default_model="test-model",
-                    api_timeout=30,
-                )
-            )
-            analyzer = SentimentAnalyzer()
-            result = analyzer._parse_response("005930", mock_anthropic_response, 3)
+        analyzer = SentimentAnalyzer()
+        result = analyzer._parse_response("005930", mock_anthropic_response, 3)
 
-            assert -1.0 <= result.score <= 1.0
-            assert 0.0 <= result.confidence <= 1.0
-            assert result.news_count == 3
+        assert -1.0 <= result.score <= 1.0
+        assert 0.0 <= result.confidence <= 1.0
+        assert result.news_count == 3
 
-    def test_parse_response_malformed(self):
+    def test_parse_response_malformed(self, _mock_env):
         """잘못된 JSON 응답 처리"""
-        with patch('core.ai_analyzer.sentiment.get_settings') as mock_settings:
-            mock_settings.return_value = MagicMock(
-                anthropic=MagicMock(
-                    api_key="test-key",
-                    default_model="test-model",
-                    api_timeout=30,
-                )
-            )
-            analyzer = SentimentAnalyzer()
-            bad_response = MagicMock()
-            bad_response.content = [MagicMock(text="not valid json")]
+        analyzer = SentimentAnalyzer()
+        bad_response = MagicMock()
+        bad_response.content = [MagicMock(text="not valid json")]
 
-            result = analyzer._parse_response("005930", bad_response, 1)
-            assert result.score == 0.0
-            assert result.confidence == 0.1
+        result = analyzer._parse_response("005930", bad_response, 1)
+        assert result.score == 0.0
+        assert result.confidence == 0.1
 
     def test_format_news(self):
         """뉴스 포맷팅 테스트"""
