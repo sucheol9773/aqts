@@ -72,8 +72,14 @@ aqts/
 │   │   ├── backtest_engine/
 │   │   │   └── engine.py            # 백테스트 엔진 + 전략 비교
 │   │   ├── pipeline.py              # 투자 의사결정 통합 파이프라인
-│   │   ├── portfolio_manager/       # Phase 4
-│   │   ├── order_executor/          # Phase 4
+│   │   ├── portfolio_manager/
+│   │   │   ├── profile.py           # 투자자 프로필 관리 (위험성향·스타일)
+│   │   │   ├── construction.py      # 포트폴리오 구성 (MVO·Risk Parity)
+│   │   │   ├── rebalancing.py       # 리밸런싱 엔진 (정기·긴급·방어)
+│   │   │   ├── universe.py          # 투자 유니버스 관리
+│   │   │   └── exchange_rate.py     # 환율 관리 (KIS+FRED, Redis 캐싱)
+│   │   ├── order_executor/
+│   │   │   └── executor.py          # 주문 집행 (시장가·지정가·TWAP·VWAP)
 │   │   └── notification/            # Phase 5
 │   ├── api/
 │   │   ├── routes/                  # Phase 5
@@ -94,7 +100,13 @@ aqts/
 │       ├── test_market_data.py       # 시장 데이터 (7 tests)
 │       ├── test_news_collector.py    # 뉴스 수집 (10 tests)
 │       ├── test_sentiment.py         # 감성 분석 (9 tests)
-│       └── test_signal_generator.py  # 시그널 생성 (16 tests)
+│       ├── test_signal_generator.py  # 시그널 생성 (16 tests)
+│       ├── test_profile.py           # 투자자 프로필 (22 tests)
+│       ├── test_construction.py      # 포트폴리오 구성 (44 tests)
+│       ├── test_rebalancing.py       # 리밸런싱 엔진 (36 tests)
+│       ├── test_universe.py          # 유니버스 관리 (29 tests)
+│       ├── test_exchange_rate.py     # 환율 관리 (39 tests)
+│       └── test_executor.py          # 주문 집행 (33 tests)
 ├── frontend/                        # Phase 5
 └── scripts/
     └── init_db.sql                  # DB 초기화 스크립트
@@ -107,7 +119,7 @@ aqts/
 | Phase 1 | 인프라 구축, 한투 API 연동, 데이터 수집 파이프라인 | ✅ 완료 |
 | Phase 2 | 퀀트 전략 엔진 (5팩터 분석, 시그널 생성, 백테스트) | ✅ 완료 |
 | Phase 3 | AI 정성적 분석, 전략 앙상블, 데이터 소스 확장 | ✅ 완료 |
-| Phase 4 | 포트폴리오 관리, 리밸런싱, 자동매매 | ⏳ 예정 |
+| Phase 4 | 포트폴리오 관리, 리밸런싱, 자동매매 | ✅ 완료 |
 | Phase 5 | 웹 대시보드, API, 알림 시스템 | ⏳ 예정 |
 | Phase 6 | 통합 테스트, 모의투자 검증, 실투자 전환 | ⏳ 예정 |
 
@@ -125,11 +137,22 @@ aqts/
 | 프롬프트 관리 | MongoDB 버전 관리, 롤백, A/B 테스트 메트릭 | prompt_manager.py |
 | 투자 파이프라인 | 뉴스→감성→의견→앙상블 통합 자동화 | pipeline.py |
 
+### Phase 4 상세 구현 내역
+
+| 기능 | 설명 | 모듈 |
+|------|------|------|
+| 투자자 프로필 | 위험성향(5단계)·투자스타일·손실허용도 관리 | profile.py |
+| 포트폴리오 구성 | Mean-Variance Optimization + Risk Parity 이중 엔진 | construction.py |
+| 리밸런싱 엔진 | 정기(임계값 기반)·긴급(손실률)·방어(전량 매도) 리밸런싱 | rebalancing.py |
+| 투자 유니버스 | 섹터 필터·지정 종목·자동 유동성 필터 | universe.py |
+| 환율 관리 | KIS API + FRED Fallback, Redis 캐싱 (장중 5분/장외 24시간 TTL) | exchange_rate.py |
+| 주문 집행 | 시장가·지정가·TWAP(6분할)·VWAP 주문, 배치 실행 (SELL 우선) | executor.py |
+
 ## 테스트 실행
 
 ```bash
 cd backend
-pytest                    # 전체 테스트 (138+ tests)
+pytest                    # 전체 테스트 (341 tests)
 pytest -v                 # 상세 출력
 pytest --cov=core --cov=config  # 커버리지 포함
 ```

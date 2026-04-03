@@ -7,7 +7,41 @@ NFR-07 명세:
 - DB는 테스트용 인메모리 또는 별도 테스트 DB 사용
 """
 
+import os
 import asyncio
+
+
+# ══════════════════════════════════════
+# 테스트 환경변수 설정 (모듈 임포트 전 실행)
+# ══════════════════════════════════════
+def pytest_configure(config):
+    """테스트 환경에 필요한 환경변수를 설정합니다."""
+    test_env_vars = {
+        # KIS
+        "KIS_APP_KEY_LIVE": "test_key",
+        "KIS_APP_SECRET_LIVE": "test_secret",
+        "KIS_ACCOUNT_NO_LIVE": "12345678-01",
+        "KIS_APP_KEY_DEMO": "test_key_demo",
+        "KIS_APP_SECRET_DEMO": "test_secret_demo",
+        "KIS_ACCOUNT_NO_DEMO": "87654321-01",
+        "KIS_TRADING_MODE": "BACKTEST",
+        # DB
+        "DB_PASSWORD": "test_password",
+        # Mongo
+        "MONGO_PASSWORD": "test_password",
+        # Redis
+        "REDIS_PASSWORD": "test_password",
+        # Anthropic
+        "ANTHROPIC_API_KEY": "test-api-key",
+        # Telegram
+        "TELEGRAM_BOT_TOKEN": "test-bot-token",
+        "TELEGRAM_CHAT_ID": "test-chat-id",
+        # Dashboard
+        "DASHBOARD_SECRET_KEY": "test-secret-key",
+        "DASHBOARD_PASSWORD": "test-dashboard-password",
+    }
+    for key, value in test_env_vars.items():
+        os.environ.setdefault(key, value)
 from datetime import datetime, timedelta
 from typing import AsyncGenerator
 from unittest.mock import AsyncMock, MagicMock
