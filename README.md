@@ -83,6 +83,9 @@ aqts/
 │   │   ├── trading_guard.py         # 트레이딩 안전 장치 (7계층 보호)
 │   │   ├── health_checker.py        # 시스템 건전성 검사 (5항목)
 │   │   ├── mode_manager.py          # 모드 전환 관리 (BACKTEST→DEMO→LIVE)
+│   │   ├── demo_verifier.py         # DEMO 모드 실전 가동 검증 (11항목)
+│   │   ├── trading_scheduler.py     # 모의투자 자동화 스케줄러 (KRX 장 시간)
+│   │   ├── daily_reporter.py        # 일일 리포트 자동 생성·발송
 │   │   └── notification/
 │   │       ├── alert_manager.py     # 알림 생성·관리·이력 (템플릿 기반)
 │   │       └── telegram_notifier.py # 텔레그램 봇 알림 발송 (레벨 필터·재시도)
@@ -131,7 +134,10 @@ aqts/
 │       ├── test_api.py               # API·인증·스키마 (59 tests)
 │       ├── test_trading_guard.py     # 트레이딩 안전 장치 (72 tests)
 │       ├── test_mode_manager.py      # 모드 전환 관리 (44 tests)
-│       └── test_integration.py       # 통합·E2E 테스트 (30 tests)
+│       ├── test_integration.py       # 통합·E2E 테스트 (30 tests)
+│       ├── test_demo_verifier.py     # DEMO 가동 검증 (73 tests)
+│       ├── test_trading_scheduler.py # 자동화 스케줄러 (76 tests)
+│       └── test_daily_reporter.py    # 일일 리포트 (70 tests)
 ├── frontend/
 │   └── index.html                   # SPA 대시보드 (Chart.js)
 └── scripts/
@@ -148,6 +154,7 @@ aqts/
 | Phase 4 | 포트폴리오 관리, 리밸런싱, 자동매매 | ✅ 완료 |
 | Phase 5 | 웹 대시보드, API, 알림 시스템 | ✅ 완료 |
 | Phase 6 | 통합 테스트, 모의투자 검증, 실투자 전환 | ✅ 완료 |
+| Phase 7 | DEMO 모드 실전 가동, 자동화 스케줄러, 일일 리포트 | ✅ 완료 |
 
 ### Phase 3 상세 구현 내역
 
@@ -197,11 +204,21 @@ aqts/
 | TradingGuard 테스트 | 환경검증·자본금·서킷브레이커·Kill Switch·주문검증 (72 tests) | test_trading_guard.py |
 | ModeManager 테스트 | BACKTEST→DEMO→LIVE 전환, 교차검증, 이력관리 (44 tests) | test_mode_manager.py |
 
+### Phase 7 상세 구현 내역
+
+| 기능 | 설명 | 모듈 |
+|------|------|------|
+| DEMO 가동 검증 | KIS 토큰 발급·잔고 조회·DB·AI·Telegram 11항목 종합 체크리스트 | demo_verifier.py |
+| 자동화 스케줄러 | KRX 장 시간 기반 5단계 자동화 (장 전→개장→중간점검→마감→마감후) | trading_scheduler.py |
+| 일일 리포트 | 수익률·거래·포지션·서킷브레이커 리포트 자동 생성 및 Telegram 발송 | daily_reporter.py |
+| 거래일 판별 | 주말·한국공휴일(2025~2026) 제외, next_trading_day 자동 계산 | trading_scheduler.py |
+| KIS 잔고 수집 | KIS API 연동 잔고·포지션 자동 수집 및 PositionSnapshot 변환 | daily_reporter.py |
+
 ## 테스트 실행
 
 ```bash
 cd backend
-pytest                    # 전체 테스트 (615 tests)
+pytest                    # 전체 테스트 (834 tests)
 pytest -v                 # 상세 출력
 pytest --cov=core --cov=config  # 커버리지 포함
 ```
