@@ -117,6 +117,7 @@ class NewsSource(str, Enum):
     NAVER_FINANCE = "NAVER_FINANCE"    # 네이버 금융 뉴스 RSS
     HANKYUNG = "HANKYUNG"              # 한국경제 RSS
     MAEKYUNG = "MAEKYUNG"              # 매일경제 RSS
+    REUTERS = "REUTERS"                # Reuters 글로벌 경제/시장 RSS
     DART = "DART"                      # DART 전자공시
     REDDIT = "REDDIT"                  # Reddit (추후 확장)
 
@@ -244,6 +245,11 @@ NEWS_RSS_FEEDS = {
     NewsSource.MAEKYUNG: [
         "https://www.mk.co.kr/rss/30100041/",   # 증권
         "https://www.mk.co.kr/rss/30000001/",   # 경제
+    ],
+    NewsSource.REUTERS: [
+        "https://news.google.com/rss/search?q=site:reuters.com+markets+when:1d&hl=en&gl=US&ceid=US:en",
+        "https://news.google.com/rss/search?q=site:reuters.com+economy+when:1d&hl=en&gl=US&ceid=US:en",
+        "https://news.google.com/rss/search?q=site:reuters.com+Asia+markets+when:1d&hl=en&gl=US&ceid=US:en",
     ],
 }
 

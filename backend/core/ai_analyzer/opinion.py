@@ -114,6 +114,26 @@ _STOCK_OPINION_TEMPLATE = """## 종목 투자 의견 생성
 위 데이터를 종합 분석하여 투자 의견을 생성하세요."""
 
 
+_SECTOR_OPINION_TEMPLATE = """## 섹터 분석 및 투자 의견
+
+### 섹터 정보
+- 섹터명: {sector_name}
+- 대표 종목: {representative_tickers}
+
+### 섹터 내 종목별 감성 점수 (AI Mode A)
+{ticker_sentiments}
+
+### 섹터 관련 뉴스 (최대 10건)
+{sector_news}
+
+### 거시경제 컨텍스트
+{macro_context}
+
+위 데이터를 종합 분석하여 해당 섹터에 대한 투자 의견을 생성하세요.
+action은 섹터 내 비중 확대(BUY)/유지(HOLD)/축소(SELL)를 의미합니다.
+target_weight는 전체 포트폴리오 대비 해당 섹터 권장 비중(0.0~0.40)입니다."""
+
+
 _MACRO_OPINION_TEMPLATE = """## 거시경제 분석 및 시장 전망
 
 ### 최근 거시경제 뉴스
@@ -199,6 +219,70 @@ class OpinionGenerator:
 
         logger.info(
             f"Opinion generated: {ticker}, action={opinion.action.value}, "
+            f"conviction={opinion.conviction:.2f}"
+        )
+        return opinion
+
+    async def generate_sector_opinion(
+        self,
+        sector_name: str,
+        representative_tickers: list[str],
+        ticker_sentiments: dict[str, dict],
+        sector_news: list[dict],
+        macro_context: str = "",
+        force_refresh: bool = False,
+    ) -> InvestmentOpinion:
+        """
+        섹터 분석 투자 의견 생성
+
+        Args:
+            sector_name: 섹터명 (예: "반도체", "2차전지")
+            representative_tickers: 대표 종목 코드 리스트
+            ticker_sentiments: {ticker: {"score": float, "summary": str}}
+            sector_news: 섹터 관련 뉴스 리스트
+            macro_context: 거시경제 컨텍스트 요약 (없으면 빈 문자열)
+            force_refresh: 캐시 무시
+
+        Returns:
+            InvestmentOpinion (opinion_type=SECTOR)
+        """
+        cache_key = f"sector:{sector_name}"
+
+        if not force_refresh:
+            cached = await self._get_cached(cache_key)
+            if cached:
+                logger.debug(f"Sector opinion cache hit: {sector_name}")
+                return cached
+
+        # 종목별 감성 점수 포맷
+        sentiment_lines = []
+        for ticker, data in ticker_sentiments.items():
+            score = data.get("score", 0.0)
+            summary = data.get("summary", "N/A")
+            sentiment_lines.append(f"- {ticker}: 감성={score:+.2f}, {summary}")
+        sentiments_text = "\n".join(sentiment_lines) if sentiment_lines else "데이터 없음"
+
+        # 뉴스 포맷
+        news_text = self._format_news_brief(sector_news[:10])
+
+        prompt = _SECTOR_OPINION_TEMPLATE.format(
+            sector_name=sector_name,
+            representative_tickers=", ".join(representative_tickers),
+            ticker_sentiments=sentiments_text,
+            sector_news=news_text,
+            macro_context=macro_context or "컨텍스트 없음",
+        )
+
+        opinion = await self._call_api(prompt, None, OpinionType.SECTOR)
+        # 섹터 의견은 ticker 대신 sector_name을 metadata로 보관
+        opinion.market_context = f"[섹터: {sector_name}] {opinion.market_context}"
+        opinion.target_weight = min(opinion.target_weight or 0.0, 0.40)
+
+        await self._set_cache(cache_key, opinion)
+        await self._store_to_db(opinion)
+
+        logger.info(
+            f"Sector opinion generated: {sector_name}, action={opinion.action.value}, "
             f"conviction={opinion.conviction:.2f}"
         )
         return opinion

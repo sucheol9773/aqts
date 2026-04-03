@@ -153,6 +153,62 @@ class InvestmentDecisionPipeline:
         """
         return await self._news_service.collect_and_store()
 
+    async def run_sector_analysis(
+        self,
+        sector_name: str,
+        tickers: list[str],
+        force_refresh: bool = False,
+    ):
+        """
+        섹터 분석 실행
+
+        Args:
+            sector_name: 섹터명 (예: "반도체")
+            tickers: 해당 섹터 대표 종목 리스트
+            force_refresh: 캐시 무시
+
+        Returns:
+            InvestmentOpinion (SECTOR)
+        """
+        # 섹터 종목별 감성 분석 수집
+        ticker_sentiments: dict[str, dict] = {}
+        for ticker in tickers:
+            articles = await self._news_service.get_articles_for_ticker(
+                ticker, hours=48, limit=10,
+            )
+            sentiment = await self._sentiment.analyze_ticker(
+                ticker, articles, force_refresh=force_refresh,
+            )
+            ticker_sentiments[ticker] = {
+                "score": sentiment.score,
+                "summary": sentiment.summary,
+            }
+
+        # 섹터 관련 뉴스 (카테고리 "sector" 기반)
+        sector_news = await self._news_service.get_recent_articles(
+            hours=48, category="sector", limit=20,
+        )
+
+        # 거시경제 컨텍스트 (최근 매크로 분석 결과가 있으면 활용)
+        macro_context = ""
+        try:
+            macro_articles = await self._news_service.get_macro_articles(hours=48, limit=5)
+            if macro_articles:
+                macro_context = " | ".join(
+                    a.get("title", "") for a in macro_articles[:5]
+                )
+        except Exception:
+            pass
+
+        return await self._opinion.generate_sector_opinion(
+            sector_name=sector_name,
+            representative_tickers=tickers,
+            ticker_sentiments=ticker_sentiments,
+            sector_news=sector_news,
+            macro_context=macro_context,
+            force_refresh=force_refresh,
+        )
+
     async def run_macro_analysis(self, force_refresh: bool = False):
         """
         거시경제 분석 실행
