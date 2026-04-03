@@ -320,7 +320,9 @@ class TestDailyReporterBasic:
                 portfolio_value_start=50_000_000.0,
                 portfolio_value_end=50_500_000.0,
             )
-            assert report.report_date == date.today()
+            # DailyReporter uses KST (UTC+9) internally
+            kst = timezone(timedelta(hours=9))
+            assert report.report_date == datetime.now(kst).date()
             assert report.trading_mode == "DEMO"
             assert report.daily_pnl == 500_000.0
 

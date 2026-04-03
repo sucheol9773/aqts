@@ -449,59 +449,97 @@ class OrderExecutor:
             logger.error(f"지정가 주문 실패: {e}")
             raise
 
-    async def _execute_twap_order(self, request: OrderRequest) -> OrderResult:
+    # ══════════════════════════════════════════════════════════════════════════
+    # TWAP 분할 주문 (F-06-01-A)
+    # ══════════════════════════════════════════════════════════════════════════
+    async def _execute_twap_order(
+        self,
+        request: OrderRequest,
+        num_intervals: int = 6,
+        interval_seconds: int = 300,
+        max_retry_per_slice: int = 2,
+    ) -> OrderResult:
         """
-        TWAP (시간가중평균) 주문 실행
+        TWAP (시간가중평균) 분할 주문 실행
 
-        주문을 여러 구간으로 나누어 일정 시간 간격으로 체결합니다.
-        기본값: 6개 구간, 5분 간격, 총 30분.
+        총 주문 수량을 num_intervals 구간으로 균등 분할하여
+        interval_seconds 간격으로 시장가 주문을 체결합니다.
+
+        분할 알고리즘:
+            slice_qty = total_qty // num_intervals
+            마지막 구간에 나머지(remainder) 합산
+            부분 실패 시 미체결 수량을 다음 구간에 이월 (적응적 재시도)
 
         Args:
-            request: 주문 요청 데이터
+            request: 원본 주문 요청 (quantity = 총 수량)
+            num_intervals: 분할 구간 수 (기본 6)
+            interval_seconds: 구간 간 대기 시간 (기본 300초 = 5분)
+            max_retry_per_slice: 구간당 최대 재시도 횟수
 
         Returns:
-            OrderResult: 누적된 주문 실행 결과
+            OrderResult: 누적 체결 결과 (order_id = "TWAP_{ticker}_{ts}")
         """
-        logger.info(f"TWAP 주문 실행: {request.ticker} {request.side.value} {request.quantity}")
+        logger.info(
+            f"TWAP 주문 실행: {request.ticker} {request.side.value} "
+            f"{request.quantity}주 → {num_intervals}구간 × {interval_seconds}초"
+        )
 
         try:
-            num_intervals = 6
-            interval_seconds = 300  # 5분
-            qty_per_interval = request.quantity // num_intervals
-            remaining_qty = request.quantity % num_intervals
+            base_qty = request.quantity // num_intervals
+            remainder = request.quantity % num_intervals
 
             total_filled = 0
             total_cost = 0.0
-            results: list[OrderResult] = []
+            sub_results: list[OrderResult] = []
+            carryover = 0  # 이전 구간 미체결 이월 수량
 
             for i in range(num_intervals):
-                # 마지막 구간에서 남은 수량 처리
-                qty = qty_per_interval + (remaining_qty if i == num_intervals - 1 else 0)
+                # 구간 수량: 기본 + 마지막구간 나머지 + 이전 이월
+                slice_qty = base_qty + carryover
+                if i == num_intervals - 1:
+                    slice_qty += remainder
 
-                sub_request = OrderRequest(
-                    ticker=request.ticker,
-                    market=request.market,
-                    side=request.side,
-                    quantity=qty,
-                    order_type=OrderType.MARKET,
-                    reason=f"TWAP 구간 {i+1}/{num_intervals}",
-                )
+                if slice_qty <= 0:
+                    continue
 
-                try:
-                    result = await self._execute_market_order(sub_request)
-                    results.append(result)
-                    total_filled += result.filled_quantity
-                    total_cost += result.filled_quantity * result.avg_price
-                except Exception as e:
-                    logger.warning(f"TWAP 구간 {i+1} 실패: {e}")
+                filled_in_slice = 0
+
+                # 재시도 루프
+                for attempt in range(max_retry_per_slice + 1):
+                    remaining = slice_qty - filled_in_slice
+                    if remaining <= 0:
+                        break
+
+                    sub_request = OrderRequest(
+                        ticker=request.ticker,
+                        market=request.market,
+                        side=request.side,
+                        quantity=remaining,
+                        order_type=OrderType.MARKET,
+                        reason=f"TWAP {i+1}/{num_intervals}"
+                               + (f" retry-{attempt}" if attempt > 0 else ""),
+                    )
+
+                    try:
+                        result = await self._execute_market_order(sub_request)
+                        sub_results.append(result)
+                        filled_in_slice += result.filled_quantity
+                        total_cost += result.filled_quantity * result.avg_price
+                    except Exception as e:
+                        logger.warning(
+                            f"TWAP 구간 {i+1} attempt {attempt} 실패: {e}"
+                        )
+
+                total_filled += filled_in_slice
+                carryover = slice_qty - filled_in_slice  # 미체결 → 다음 구간 이월
 
                 # 마지막 구간이 아니면 대기
                 if i < num_intervals - 1:
                     await asyncio.sleep(interval_seconds)
 
-            # 최종 결과 생성
             avg_price = total_cost / total_filled if total_filled > 0 else 0.0
-            result = OrderResult(
+
+            final_result = OrderResult(
                 order_id=f"TWAP_{request.ticker}_{datetime.now().timestamp()}",
                 ticker=request.ticker,
                 market=request.market,
@@ -509,72 +547,137 @@ class OrderExecutor:
                 quantity=request.quantity,
                 filled_quantity=total_filled,
                 avg_price=avg_price,
-                status=OrderStatus.FILLED if total_filled == request.quantity else OrderStatus.PARTIAL,
+                status=(
+                    OrderStatus.FILLED if total_filled >= request.quantity
+                    else OrderStatus.PARTIAL if total_filled > 0
+                    else OrderStatus.FAILED
+                ),
                 executed_at=datetime.now(timezone.utc),
             )
 
-            logger.info(f"TWAP 주문 완료: {total_filled}/{request.quantity} 체결")
-            return result
+            logger.info(
+                f"TWAP 주문 완료: {total_filled}/{request.quantity} 체결, "
+                f"평균가 {avg_price:,.0f}, 이월 미체결 {carryover}"
+            )
+            return final_result
 
         except Exception as e:
             logger.error(f"TWAP 주문 실패: {e}")
             raise
 
-    async def _execute_vwap_order(self, request: OrderRequest) -> OrderResult:
+    # ══════════════════════════════════════════════════════════════════════════
+    # VWAP 분할 주문 (F-06-01-A)
+    # ══════════════════════════════════════════════════════════════════════════
+
+    # 일반적인 주식 시장 일중 거래량 프로필 (U자형 커브)
+    # 인덱스 0~5 = 구간 1~6, 값 = 해당 구간의 거래량 비중
+    # 개장/마감 시 거래량 집중, 중간 시간대 거래량 하락 패턴 반영
+    VWAP_VOLUME_PROFILE = [0.22, 0.12, 0.10, 0.10, 0.16, 0.30]
+
+    async def _execute_vwap_order(
+        self,
+        request: OrderRequest,
+        num_intervals: int = 6,
+        interval_seconds: int = 300,
+        volume_profile: Optional[list[float]] = None,
+    ) -> OrderResult:
         """
-        VWAP (거래량가중평균) 주문 실행
+        VWAP (거래량가중평균) 분할 주문 실행
 
-        거래량 프로필을 기반으로 주문을 분할 체결합니다.
-        시장의 일일 거래량 분포를 고려하여 최적의 실행가를 추구합니다.
+        일중 거래량 프로필(U자형 커브)을 기반으로 주문 수량을
+        비균등 분할하여 시장 충격을 최소화합니다.
 
-        현재 구현: TWAP과 동일하게 균등 분할
-        향후: 실시간 거래량 데이터를 기반으로 동적 분할
+        거래량 프로필 기본값 (6구간):
+            [0.22, 0.12, 0.10, 0.10, 0.16, 0.30]
+            → 개장 22%, 오전중반 12%, 점심 10%, 오후초 10%,
+              오후중반 16%, 마감직전 30%
+
+        분할 알고리즘:
+            slice_qty[i] = round(total_qty × profile[i])
+            나머지 = total_qty - sum(slice_qty) → 최대 비중 구간에 합산
+            부분 실패 시 적응적 이월 (TWAP과 동일)
 
         Args:
-            request: 주문 요청 데이터
+            request: 원본 주문 요청
+            num_intervals: 분할 구간 수 (기본 6)
+            interval_seconds: 구간 간 대기 시간 (기본 300초)
+            volume_profile: 구간별 거래량 비중 리스트 (합 = 1.0)
 
         Returns:
-            OrderResult: 누적된 주문 실행 결과
+            OrderResult: 누적 체결 결과 (order_id = "VWAP_{ticker}_{ts}")
         """
-        logger.info(f"VWAP 주문 실행: {request.ticker} {request.side.value} {request.quantity}")
+        logger.info(
+            f"VWAP 주문 실행: {request.ticker} {request.side.value} "
+            f"{request.quantity}주 → {num_intervals}구간 (거래량 프로필 기반)"
+        )
 
         try:
-            # TODO: 실시간 거래량 데이터를 기반으로 동적 분할
-            # 현재는 TWAP과 유사하게 구현
-            num_intervals = 6
-            interval_seconds = 300  # 5분
-            qty_per_interval = request.quantity // num_intervals
-            remaining_qty = request.quantity % num_intervals
+            # 거래량 프로필 설정
+            profile = volume_profile or self.VWAP_VOLUME_PROFILE
+
+            # 구간 수와 프로필 길이 맞춤
+            if len(profile) != num_intervals:
+                # 프로필 길이가 맞지 않으면 균등 분할로 폴백
+                profile = [1.0 / num_intervals] * num_intervals
+
+            # 정규화
+            profile_sum = sum(profile)
+            if profile_sum > 0:
+                profile = [p / profile_sum for p in profile]
+
+            # 구간별 수량 계산 (비균등 분할)
+            slice_quantities = [
+                max(1, round(request.quantity * p)) for p in profile
+            ]
+
+            # 총합 보정 (반올림 오차 → 최대 비중 구간에서 조정)
+            total_allocated = sum(slice_quantities)
+            diff = request.quantity - total_allocated
+            if diff != 0:
+                max_idx = profile.index(max(profile))
+                slice_quantities[max_idx] += diff
+
+            logger.info(
+                f"VWAP 구간별 수량: {slice_quantities} "
+                f"(프로필: {[f'{p:.0%}' for p in profile]})"
+            )
 
             total_filled = 0
             total_cost = 0.0
-            results: list[OrderResult] = []
+            sub_results: list[OrderResult] = []
+            carryover = 0
 
             for i in range(num_intervals):
-                qty = qty_per_interval + (remaining_qty if i == num_intervals - 1 else 0)
+                slice_qty = slice_quantities[i] + carryover
+
+                if slice_qty <= 0:
+                    continue
 
                 sub_request = OrderRequest(
                     ticker=request.ticker,
                     market=request.market,
                     side=request.side,
-                    quantity=qty,
+                    quantity=slice_qty,
                     order_type=OrderType.MARKET,
-                    reason=f"VWAP 구간 {i+1}/{num_intervals}",
+                    reason=f"VWAP {i+1}/{num_intervals} ({profile[i]:.0%})",
                 )
 
                 try:
                     result = await self._execute_market_order(sub_request)
-                    results.append(result)
+                    sub_results.append(result)
                     total_filled += result.filled_quantity
                     total_cost += result.filled_quantity * result.avg_price
+                    carryover = slice_qty - result.filled_quantity
                 except Exception as e:
                     logger.warning(f"VWAP 구간 {i+1} 실패: {e}")
+                    carryover = slice_qty  # 전량 이월
 
                 if i < num_intervals - 1:
                     await asyncio.sleep(interval_seconds)
 
             avg_price = total_cost / total_filled if total_filled > 0 else 0.0
-            result = OrderResult(
+
+            final_result = OrderResult(
                 order_id=f"VWAP_{request.ticker}_{datetime.now().timestamp()}",
                 ticker=request.ticker,
                 market=request.market,
@@ -582,12 +685,19 @@ class OrderExecutor:
                 quantity=request.quantity,
                 filled_quantity=total_filled,
                 avg_price=avg_price,
-                status=OrderStatus.FILLED if total_filled == request.quantity else OrderStatus.PARTIAL,
+                status=(
+                    OrderStatus.FILLED if total_filled >= request.quantity
+                    else OrderStatus.PARTIAL if total_filled > 0
+                    else OrderStatus.FAILED
+                ),
                 executed_at=datetime.now(timezone.utc),
             )
 
-            logger.info(f"VWAP 주문 완료: {total_filled}/{request.quantity} 체결")
-            return result
+            logger.info(
+                f"VWAP 주문 완료: {total_filled}/{request.quantity} 체결, "
+                f"평균가 {avg_price:,.0f}"
+            )
+            return final_result
 
         except Exception as e:
             logger.error(f"VWAP 주문 실패: {e}")

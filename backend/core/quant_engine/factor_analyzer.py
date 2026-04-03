@@ -231,7 +231,114 @@ class FactorAnalyzer:
         return result
 
     # ══════════════════════════════════════
-    # 복합 팩터 점수 계산
+    # Cross-Market 팩터 정규화 (F-02-01-A)
+    # ══════════════════════════════════════
+    def calculate_cross_market_scores(
+        self,
+        kr_df: pd.DataFrame,
+        us_df: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """
+        KR/US 시장 별도 팩터 산출 후 Cross-Market Z-Score 정규화
+
+        각 시장 내에서 개별 팩터를 산출하고,
+        합산 후 전체 유니버스 기준으로 재정규화합니다.
+
+        정규화 절차:
+        1. 시장별 개별 팩터 Z-Score 산출 (within-market)
+        2. 두 시장 결합
+        3. 전체 유니버스 기준 재정규화 (cross-market)
+        4. 가중 평균 복합 점수 산출
+
+        Args:
+            kr_df: 한국 시장 종목 데이터 (columns: [ticker, ...])
+            us_df: 미국 시장 종목 데이터 (columns: [ticker, ...])
+
+        Returns:
+            Cross-Market 정규화된 팩터 점수 DataFrame
+            columns: [ticker, country, value, momentum, quality,
+                      low_vol, size, composite]
+        """
+        factor_cols = ["value", "momentum", "quality", "low_vol", "size"]
+
+        # Step 1: 시장별 팩터 산출
+        kr_scores = self._calculate_market_factors(kr_df, "KR") if not kr_df.empty else pd.DataFrame()
+        us_scores = self._calculate_market_factors(us_df, "US") if not us_df.empty else pd.DataFrame()
+
+        # Step 2: 결합
+        combined = pd.concat([kr_scores, us_scores], ignore_index=True)
+        if combined.empty:
+            return pd.DataFrame(
+                columns=["ticker", "country"] + factor_cols + ["composite"]
+            )
+
+        # Step 3: Cross-Market Z-Score 재정규화
+        for col in factor_cols:
+            if col in combined.columns:
+                combined[col] = _zscore_series(combined[col].values)
+
+        # NaN → 0
+        combined = combined.fillna(0.0)
+
+        # Step 4: 가중 평균 복합 점수
+        w = self._weights
+        combined["composite"] = (
+            combined["value"] * w["value"]
+            + combined["momentum"] * w["momentum"]
+            + combined["quality"] * w["quality"]
+            + combined["low_vol"] * w["low_vol"]
+            + combined["size"] * w["size"]
+        )
+
+        # 0~100 스케일
+        combined["composite"] = _scale_to_percentile(combined["composite"].values)
+
+        logger.info(
+            f"Cross-market factor scores: "
+            f"KR={len(kr_scores)} + US={len(us_scores)} = {len(combined)} tickers. "
+            f"Top: {combined['composite'].max():.1f}, "
+            f"Bottom: {combined['composite'].min():.1f}"
+        )
+
+        return combined
+
+    def _calculate_market_factors(
+        self,
+        df: pd.DataFrame,
+        country: str,
+    ) -> pd.DataFrame:
+        """
+        단일 시장 내 팩터 Z-Score 산출 (within-market)
+
+        Args:
+            df: 시장 데이터
+            country: "KR" 또는 "US"
+
+        Returns:
+            시장 내 정규화된 팩터 점수 DataFrame
+        """
+        tickers = df["ticker"].values
+
+        value = self.calc_value_factor(df)
+        momentum = self.calc_momentum_factor(df)
+        quality = self.calc_quality_factor(df)
+        low_vol = self.calc_low_volatility_factor(df)
+        size = self.calc_size_factor(df)
+
+        result = pd.DataFrame({
+            "ticker": tickers,
+            "country": country,
+            "value": value.values if len(value) == len(tickers) else np.zeros(len(tickers)),
+            "momentum": momentum.values if len(momentum) == len(tickers) else np.zeros(len(tickers)),
+            "quality": quality.values if len(quality) == len(tickers) else np.zeros(len(tickers)),
+            "low_vol": low_vol.values if len(low_vol) == len(tickers) else np.zeros(len(tickers)),
+            "size": size.values if len(size) == len(tickers) else np.zeros(len(tickers)),
+        })
+
+        return result.fillna(0.0)
+
+    # ══════════════════════════════════════
+    # 복합 팩터 점수 계산 (단일 시장)
     # ══════════════════════════════════════
     def calculate_composite_scores(self, df: pd.DataFrame) -> pd.DataFrame:
         """

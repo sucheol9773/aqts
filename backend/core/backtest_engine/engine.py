@@ -79,6 +79,12 @@ class BacktestResult:
     total_trades: int         # 총 거래 횟수
     avg_trade_return: float   # 평균 거래 수익률
     max_consecutive_losses: int  # 최대 연속 손실
+    # 벤치마크 대비 지표 (F-07-01 완성)
+    alpha: float = 0.0              # Jensen's Alpha (연율)
+    beta: float = 0.0               # 시장 Beta
+    information_ratio: float = 0.0  # Information Ratio
+    tracking_error: float = 0.0     # Tracking Error (연율)
+    # 시계열 데이터
     equity_curve: pd.Series = field(default_factory=pd.Series)  # 자산 곡선
     drawdown_curve: pd.Series = field(default_factory=pd.Series)  # 드로다운 곡선
     trade_records: list = field(default_factory=list)
@@ -356,6 +362,11 @@ class BacktestEngine:
             lambda x: (1 + x).prod() - 1
         )
 
+        # ── 벤치마크 대비 지표 (F-07-01 완성) ──
+        alpha, beta, info_ratio, tracking_err = self._calculate_benchmark_metrics(
+            daily_returns,
+        )
+
         return BacktestResult(
             strategy_name=strategy_name,
             config=self._config,
@@ -374,11 +385,70 @@ class BacktestEngine:
             total_trades=total_trades,
             avg_trade_return=avg_trade_return,
             max_consecutive_losses=max_consec_losses,
+            alpha=alpha,
+            beta=beta,
+            information_ratio=info_ratio,
+            tracking_error=tracking_err,
             equity_curve=equity_curve,
             drawdown_curve=drawdown,
             trade_records=trade_records,
             monthly_returns=monthly_returns,
         )
+
+    def _calculate_benchmark_metrics(
+        self,
+        daily_returns: pd.Series,
+    ) -> tuple[float, float, float, float]:
+        """
+        벤치마크 대비 성과 지표 계산 (F-07-01)
+
+        벤치마크 수익률이 제공되지 않은 경우 모두 0.0을 반환합니다.
+
+        계산 지표:
+            - Alpha (Jensen's Alpha): R_p - [R_f + β(R_m - R_f)], 연율화
+            - Beta: Cov(R_p, R_m) / Var(R_m)
+            - Information Ratio: (R_p - R_m).mean() / (R_p - R_m).std() × √252
+            - Tracking Error: (R_p - R_m).std() × √252
+
+        Args:
+            daily_returns: 전략의 일별 수익률 시리즈
+
+        Returns:
+            (alpha, beta, information_ratio, tracking_error) 튜플
+        """
+        bm = self._config.benchmark_returns
+
+        if bm is None or len(bm) == 0 or len(daily_returns) == 0:
+            return 0.0, 0.0, 0.0, 0.0
+
+        # 인덱스 교집합으로 맞춤
+        common_idx = daily_returns.index.intersection(bm.index)
+        if len(common_idx) < 5:
+            return 0.0, 0.0, 0.0, 0.0
+
+        rp = daily_returns.loc[common_idx].values
+        rm = bm.loc[common_idx].values
+
+        # Beta = Cov(R_p, R_m) / Var(R_m)
+        cov_matrix = np.cov(rp, rm)
+        var_m = cov_matrix[1, 1]
+        beta = cov_matrix[0, 1] / var_m if var_m > 1e-12 else 0.0
+
+        # Alpha (Jensen's Alpha) — 연율화
+        rf_daily = self._config.risk_free_rate / 252
+        alpha_daily = np.mean(rp) - (rf_daily + beta * (np.mean(rm) - rf_daily))
+        alpha = alpha_daily * 252
+
+        # Tracking Error — 연율화
+        active_returns = rp - rm
+        tracking_error = float(np.std(active_returns, ddof=1) * np.sqrt(252))
+
+        # Information Ratio
+        info_ratio = 0.0
+        if tracking_error > 1e-10:
+            info_ratio = float(np.mean(active_returns) * 252 / tracking_error)
+
+        return alpha, beta, info_ratio, tracking_error
 
     def _empty_result(self, strategy_name: str) -> BacktestResult:
         """빈 결과 반환"""
@@ -425,6 +495,10 @@ class StrategyComparator:
                 "sharpe": r.sharpe_ratio,
                 "sortino": r.sortino_ratio,
                 "calmar": r.calmar_ratio,
+                "alpha": r.alpha,
+                "beta": r.beta,
+                "info_ratio": r.information_ratio,
+                "tracking_error": r.tracking_error,
                 "win_rate": r.win_rate,
                 "profit_factor": r.profit_factor,
                 "total_trades": r.total_trades,

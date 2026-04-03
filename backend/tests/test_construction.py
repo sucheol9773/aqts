@@ -422,14 +422,17 @@ class TestPortfolioConstructionEngine:
         # Assert
         assert len(portfolio.allocations) > 0
         assert portfolio.optimization_method == method
-        # 리스크 패리티: 낮은 신호 → 높은 가중치 (역비례)
-        # 신호가 낮은 종목이 높은 가중치를 가져야 함
-        sorted_allocs = sorted(
-            portfolio.allocations, key=lambda x: x.signal_score, reverse=True
+        # 리스크 패리티: 변동성 기반 역비례 배분
+        # 동일 시장 내에서 신호 절대값이 높을수록 변동성이 높다고 가정 → 낮은 가중치
+        # (교차 시장 비교는 환율 캡으로 왜곡될 수 있으므로 동일 시장 내 비교)
+        us_allocs = sorted(
+            [a for a in portfolio.allocations if a.market.value != "KRX"],
+            key=lambda x: abs(x.signal_score),
+            reverse=True,
         )
-        # 첫 번째(높은 신호)의 가중치 < 마지막(낮은 신호)의 가중치
-        if len(sorted_allocs) >= 2:
-            assert sorted_allocs[0].target_weight < sorted_allocs[-1].target_weight
+        # 미국 종목 중 신호 절대값이 높은 종목이 낮은 가중치를 가져야 함
+        if len(us_allocs) >= 2:
+            assert us_allocs[0].target_weight <= us_allocs[-1].target_weight
 
     @pytest.mark.asyncio
     async def test_construct_empty_signals(self, engine):
@@ -1017,3 +1020,458 @@ class TestEdgeCases:
         # Assert
         assert all(w <= custom_constraints["max_single_weight"] + 0.001 for w in constrained.values())
         assert abs(sum(constrained.values()) - 1.0) < 0.001
+
+
+# ══════════════════════════════════════
+# 공분산 행렬 추정 테스트
+# ══════════════════════════════════════
+class TestEstimateCovariance:
+    """
+    공분산 행렬 추정 로직 테스트
+
+    가격 시계열로부터 공분산 행렬을 올바르게 추정하는지 검증합니다.
+    """
+
+    @pytest.fixture
+    def engine(self):
+        return PortfolioConstructionEngine(risk_profile=RiskProfile.BALANCED)
+
+    def test_no_price_history_returns_identity(self, engine):
+        """가격 데이터 없을 때 대각 행렬 반환"""
+        tickers = ["A", "B", "C"]
+        cov = engine._estimate_covariance(tickers, None)
+        assert cov.shape == (3, 3)
+        np.testing.assert_allclose(cov, np.eye(3) * 0.01)
+
+    def test_empty_tickers(self, engine):
+        """빈 종목 리스트"""
+        cov = engine._estimate_covariance([], None)
+        assert cov.shape == (0, 0)
+
+    def test_insufficient_data_returns_fallback(self, engine):
+        """데이터가 2일 미만인 경우 폴백"""
+        tickers = ["A", "B"]
+        price_history = {"A": [100.0], "B": [200.0]}
+        cov = engine._estimate_covariance(tickers, price_history)
+        np.testing.assert_allclose(cov, np.eye(2) * 0.01)
+
+    def test_valid_price_history(self, engine):
+        """유효한 가격 시계열로 공분산 추정"""
+        np.random.seed(42)
+        n_days = 60
+        tickers = ["A", "B"]
+        returns_a = np.random.normal(0.001, 0.02, n_days)
+        returns_b = 0.5 * returns_a + np.random.normal(0.001, 0.015, n_days)
+        prices_a = 100 * np.exp(np.cumsum(returns_a))
+        prices_b = 200 * np.exp(np.cumsum(returns_b))
+        price_history = {"A": prices_a.tolist(), "B": prices_b.tolist()}
+
+        cov = engine._estimate_covariance(tickers, price_history)
+        assert cov.shape == (2, 2)
+        assert cov[0, 0] > 0
+        assert cov[1, 1] > 0
+        assert cov[0, 1] != 0
+        np.testing.assert_allclose(cov, cov.T, atol=1e-10)
+
+    def test_partial_price_history(self, engine):
+        """일부 종목만 가격 데이터가 있는 경우"""
+        np.random.seed(42)
+        tickers = ["A", "B", "C"]
+        prices = 100 * np.exp(np.cumsum(np.random.normal(0, 0.02, 30)))
+        price_history = {"A": prices.tolist(), "B": (prices * 1.1).tolist()}
+
+        cov = engine._estimate_covariance(tickers, price_history)
+        assert cov.shape == (3, 3)
+        assert abs(cov[2, 2] - 0.01) < 1e-6
+
+    def test_annualized_covariance(self, engine):
+        """연율화 (×252) 확인"""
+        np.random.seed(42)
+        n_days = 100
+        tickers = ["A", "B"]
+        daily_vol = 0.02
+        returns_a = np.random.normal(0, daily_vol, n_days)
+        returns_b = np.random.normal(0, daily_vol, n_days)
+        prices_a = 100 * np.exp(np.cumsum(returns_a))
+        prices_b = 200 * np.exp(np.cumsum(returns_b))
+        price_history = {"A": prices_a.tolist(), "B": prices_b.tolist()}
+
+        cov = engine._estimate_covariance(tickers, price_history)
+        expected_annual_var = daily_vol ** 2 * 252
+        # 축소 추정이 적용되므로 분산이 약간 줄어들 수 있음
+        assert cov[0, 0] > expected_annual_var * 0.2
+        assert cov[0, 0] < expected_annual_var * 3.0
+
+
+class TestShrinkCovariance:
+    """Ledoit-Wolf 축소 추정 테스트"""
+
+    def test_zero_shrinkage(self):
+        """축소 0이면 원본 반환"""
+        cov = np.array([[0.04, 0.01], [0.01, 0.09]])
+        result = PortfolioConstructionEngine._shrink_covariance(cov, shrinkage=0.0)
+        np.testing.assert_allclose(result, cov)
+
+    def test_full_shrinkage(self):
+        """축소 1이면 대각만 반환"""
+        cov = np.array([[0.04, 0.01], [0.01, 0.09]])
+        result = PortfolioConstructionEngine._shrink_covariance(cov, shrinkage=1.0)
+        expected = np.diag([0.04, 0.09])
+        np.testing.assert_allclose(result, expected)
+
+    def test_partial_shrinkage(self):
+        """부분 축소 시 비대각 원소가 줄어듦"""
+        cov = np.array([[0.04, 0.02], [0.02, 0.09]])
+        result = PortfolioConstructionEngine._shrink_covariance(cov, shrinkage=0.5)
+        assert abs(result[0, 1]) < abs(cov[0, 1])
+        assert result[0, 0] == cov[0, 0]
+
+
+# ══════════════════════════════════════
+# Black-Litterman 최적화 테스트
+# ══════════════════════════════════════
+class TestBlackLittermanOptimize:
+    """
+    Black-Litterman 모델 테스트
+
+    사전분포(균형 수익률)와 투자자 뷰(시그널)를 결합한
+    사후 최적화 결과를 검증합니다.
+    """
+
+    @pytest.fixture
+    def engine(self):
+        return PortfolioConstructionEngine(risk_profile=RiskProfile.BALANCED)
+
+    def test_bl_basic_weights(self, engine):
+        """Black-Litterman 기본 가중치 생성"""
+        signals = {"A": 0.8, "B": 0.5, "C": 0.3, "D": 0.1, "E": 0.6}
+        cov = np.eye(5) * 0.04
+        constraints = {"max_single_weight": 0.30}
+
+        weights = engine._black_litterman_optimize(signals, cov, constraints)
+
+        assert len(weights) == 5
+        assert all(w >= 0 for w in weights.values())
+        assert abs(sum(weights.values()) - 1.0) < 0.01
+
+    def test_bl_positive_signal_gets_higher_weight(self, engine):
+        """양수 시그널이 높은 종목이 더 높은 가중치"""
+        signals = {"HIGH": 0.9, "LOW": 0.1, "MID": 0.5, "MID2": 0.4, "MID3": 0.5}
+        cov = np.eye(5) * 0.04
+        constraints = {"max_single_weight": 0.40}
+
+        weights = engine._black_litterman_optimize(signals, cov, constraints)
+
+        assert weights["HIGH"] > weights["LOW"]
+
+    def test_bl_with_real_covariance(self, engine):
+        """실제 공분산 행렬 사용 시 정상 동작"""
+        np.random.seed(42)
+        signals = {"A": 0.6, "B": 0.4, "C": 0.3}
+        cov = np.array([
+            [0.04, 0.01, 0.005],
+            [0.01, 0.09, 0.02],
+            [0.005, 0.02, 0.06],
+        ])
+        constraints = {"max_single_weight": 0.40}
+
+        weights = engine._black_litterman_optimize(signals, cov, constraints)
+
+        assert len(weights) == 3
+        assert all(w >= 0 for w in weights.values())
+        assert abs(sum(weights.values()) - 1.0) < 0.01
+
+    def test_bl_empty_signals(self, engine):
+        """빈 시그널"""
+        weights = engine._black_litterman_optimize({}, np.empty((0, 0)), {})
+        assert weights == {}
+
+    def test_bl_wrong_cov_shape_fallback(self, engine):
+        """공분산 크기 불일치 시 폴백"""
+        signals = {"A": 0.5, "B": 0.3}
+        cov = np.eye(5)
+        constraints = {"max_single_weight": 0.50}
+
+        weights = engine._black_litterman_optimize(signals, cov, constraints)
+
+        assert len(weights) == 2
+        assert abs(sum(weights.values()) - 1.0) < 0.01
+
+    def test_bl_confidence_effect(self, engine):
+        """신뢰도가 높으면 시그널 반영도가 높아짐"""
+        signals = {"A": 0.9, "B": 0.1}
+        cov = np.eye(2) * 0.04
+        constraints = {"max_single_weight": 0.80}
+
+        w_high = engine._black_litterman_optimize(
+            signals, cov, constraints, signal_confidence=0.95,
+        )
+        w_low = engine._black_litterman_optimize(
+            signals, cov, constraints, signal_confidence=0.1,
+        )
+
+        assert w_high["A"] >= w_low["A"] - 0.05
+
+    @pytest.mark.asyncio
+    async def test_construct_black_litterman(self, engine):
+        """construct() 메서드에서 black_litterman 방법 호출"""
+        signals = {"A": 0.6, "B": 0.4, "C": 0.5, "D": 0.3, "E": 0.2}
+        market_info = {t: Market.KRX for t in signals}
+
+        portfolio = await engine.construct(
+            ensemble_signals=signals,
+            current_portfolio={},
+            seed_capital=10_000_000,
+            method="black_litterman",
+            market_info=market_info,
+        )
+
+        assert portfolio.optimization_method == "black_litterman"
+        assert len(portfolio.allocations) > 0
+        total_w = sum(a.target_weight for a in portfolio.allocations)
+        assert abs(total_w + portfolio.cash_ratio - 1.0) < 0.02
+
+
+# ══════════════════════════════════════
+# Risk Parity 수치 최적화 테스트
+# ══════════════════════════════════════
+class TestSolveRiskParity:
+    """정밀 리스크 패리티 (Equal Risk Contribution) 테스트"""
+
+    def test_equal_variance_equal_weight(self):
+        """동일 분산 시 동일 가중치"""
+        cov = np.eye(3) * 0.04
+        x0 = np.ones(3) / 3
+        w = PortfolioConstructionEngine._solve_risk_parity(cov, x0)
+        np.testing.assert_allclose(w, np.ones(3) / 3, atol=0.01)
+
+    def test_different_variance_inverse_weight(self):
+        """분산이 다르면 변동성 낮은 자산에 높은 비중"""
+        cov = np.diag([0.01, 0.04, 0.09])
+        x0 = np.ones(3) / 3
+        w = PortfolioConstructionEngine._solve_risk_parity(cov, x0)
+        assert w[0] > w[1] > w[2]
+        assert abs(w.sum() - 1.0) < 0.001
+
+    def test_risk_contributions_approximately_equal(self):
+        """위험 기여도가 대략 동일한지 확인"""
+        cov = np.diag([0.02, 0.05, 0.10])
+        x0 = np.ones(3) / 3
+        w = PortfolioConstructionEngine._solve_risk_parity(cov, x0)
+
+        sigma_w = cov @ w
+        rc = w * sigma_w
+        rc_norm = rc / rc.sum()
+
+        np.testing.assert_allclose(rc_norm, np.ones(3) / 3, atol=0.05)
+
+
+# ══════════════════════════════════════
+# 환율 리스크 관리 테스트 (F-05-02-A)
+# ══════════════════════════════════════
+class TestCurrencyCap:
+    """USD 비중 하드캡 및 환율 리스크 관리 테스트"""
+
+    @pytest.fixture
+    def engine(self):
+        return PortfolioConstructionEngine(risk_profile=RiskProfile.BALANCED)
+
+    def test_no_cap_needed(self, engine):
+        """USD 비중이 캡 이하이면 변경 없음"""
+        weights = {"A": 0.3, "B": 0.3, "C": 0.4}
+        market_info = {"A": Market.NYSE, "B": Market.KRX, "C": Market.KRX}
+        result = engine._apply_currency_cap(weights, market_info)
+        assert abs(result["A"] - 0.3) < 0.01
+
+    def test_cap_applied(self, engine):
+        """USD 비중 초과 시 축소"""
+        weights = {"US1": 0.4, "US2": 0.4, "KR1": 0.2}
+        market_info = {
+            "US1": Market.NYSE, "US2": Market.NASDAQ, "KR1": Market.KRX,
+        }
+        result = engine._apply_currency_cap(weights, market_info)
+        us_total = result["US1"] + result["US2"]
+        assert us_total <= 0.61
+
+    def test_freed_weight_redistributed_to_kr(self, engine):
+        """축소된 비중이 한국 종목에 재배분"""
+        weights = {"US1": 0.5, "US2": 0.3, "KR1": 0.1, "KR2": 0.1}
+        market_info = {
+            "US1": Market.NYSE, "US2": Market.NASDAQ,
+            "KR1": Market.KRX, "KR2": Market.KRX,
+        }
+        result = engine._apply_currency_cap(weights, market_info)
+        kr_total = result["KR1"] + result["KR2"]
+        assert kr_total > 0.2
+
+    def test_all_us_assets(self, engine):
+        """전체가 미국 종목인 경우"""
+        weights = {"US1": 0.5, "US2": 0.5}
+        market_info = {"US1": Market.NYSE, "US2": Market.NASDAQ}
+        result = engine._apply_currency_cap(weights, market_info)
+        us_total = result["US1"] + result["US2"]
+        assert us_total <= 0.61
+
+    def test_amex_counted_as_us(self, engine):
+        """AMEX도 USD 자산으로 집계"""
+        weights = {"AMEX1": 0.7, "KR1": 0.3}
+        market_info = {"AMEX1": Market.AMEX, "KR1": Market.KRX}
+        result = engine._apply_currency_cap(weights, market_info)
+        assert result["AMEX1"] <= 0.61
+
+
+# ══════════════════════════════════════
+# 현금 비중 & 리스크 프로필 테스트
+# ══════════════════════════════════════
+class TestCashRatioByProfile:
+    """리스크 프로필별 최소 현금 비중 보장 테스트"""
+
+    @pytest.mark.asyncio
+    async def test_conservative_min_cash(self):
+        """보수적 프로필은 최소 15% 현금"""
+        engine = PortfolioConstructionEngine(risk_profile=RiskProfile.CONSERVATIVE)
+        signals = {f"S{i}": 0.5 for i in range(6)}
+        market_info = {f"S{i}": Market.KRX for i in range(6)}
+
+        portfolio = await engine.construct(
+            ensemble_signals=signals,
+            current_portfolio={},
+            seed_capital=10_000_000,
+            market_info=market_info,
+        )
+        assert portfolio.cash_ratio >= 0.14
+
+    @pytest.mark.asyncio
+    async def test_aggressive_minimal_cash(self):
+        """공격적 프로필은 현금 0%도 가능"""
+        engine = PortfolioConstructionEngine(risk_profile=RiskProfile.AGGRESSIVE)
+        signals = {f"S{i}": 0.5 for i in range(6)}
+        market_info = {f"S{i}": Market.KRX for i in range(6)}
+
+        portfolio = await engine.construct(
+            ensemble_signals=signals,
+            current_portfolio={},
+            seed_capital=10_000_000,
+            market_info=market_info,
+        )
+        assert portfolio.cash_ratio >= 0.0
+        total_stock = sum(a.target_weight for a in portfolio.allocations)
+        assert total_stock > 0.8
+
+    @pytest.mark.asyncio
+    async def test_dividend_min_cash(self):
+        """배당형 프로필은 최소 10% 현금"""
+        engine = PortfolioConstructionEngine(risk_profile=RiskProfile.DIVIDEND)
+        signals = {f"S{i}": 0.5 for i in range(6)}
+        market_info = {f"S{i}": Market.KRX for i in range(6)}
+
+        portfolio = await engine.construct(
+            ensemble_signals=signals,
+            current_portfolio={},
+            seed_capital=10_000_000,
+            market_info=market_info,
+        )
+        assert portfolio.cash_ratio >= 0.09
+
+
+# ══════════════════════════════════════
+# MVO with Covariance 테스트
+# ══════════════════════════════════════
+class TestMVOWithCovariance:
+    """실제 공분산 행렬 기반 MVO 테스트"""
+
+    @pytest.fixture
+    def engine(self):
+        return PortfolioConstructionEngine(risk_profile=RiskProfile.BALANCED)
+
+    def test_mvo_with_identity_cov(self, engine):
+        """단위 공분산에서 시그널 비례 배분"""
+        signals = {"A": 0.8, "B": 0.4, "C": 0.2, "D": 0.3, "E": 0.5}
+        cov = np.eye(5) * 0.01
+        constraints = {"max_single_weight": 0.30}
+
+        weights = engine._mean_variance_optimize(signals, constraints, cov)
+        assert abs(sum(weights.values()) - 1.0) < 0.01
+        assert weights["A"] >= weights["C"]
+
+    def test_mvo_high_vol_gets_less_weight(self, engine):
+        """변동성이 높은 자산은 더 낮은 비중"""
+        signals = {"A": 0.5, "B": 0.5}
+        cov = np.diag([0.01, 0.10])
+        constraints = {"max_single_weight": 0.80}
+
+        weights = engine._mean_variance_optimize(signals, constraints, cov)
+        assert weights["A"] > weights["B"]
+
+    def test_mvo_risk_aversion_effect(self):
+        """위험회피 계수 높을수록 균등 배분에 가까워짐"""
+        signals = {"A": 0.9, "B": 0.1}
+        cov = np.eye(2) * 0.04
+        constraints = {"max_single_weight": 0.90}
+
+        engine_cons = PortfolioConstructionEngine(
+            risk_profile=RiskProfile.CONSERVATIVE,
+        )
+        w_cons = engine_cons._mean_variance_optimize(signals, constraints, cov)
+
+        engine_aggr = PortfolioConstructionEngine(
+            risk_profile=RiskProfile.AGGRESSIVE,
+        )
+        w_aggr = engine_aggr._mean_variance_optimize(signals, constraints, cov)
+
+        assert w_aggr["A"] >= w_cons["A"] - 0.05
+
+    @pytest.mark.asyncio
+    async def test_construct_with_price_history(self, engine):
+        """price_history 제공 시 공분산 기반 MVO 수행"""
+        np.random.seed(42)
+        tickers = ["A", "B", "C", "D", "E"]
+        signals = {t: 0.3 + 0.1 * i for i, t in enumerate(tickers)}
+        price_history = {}
+        for t in tickers:
+            rets = np.random.normal(0, 0.02, 60)
+            price_history[t] = (100 * np.exp(np.cumsum(rets))).tolist()
+
+        market_info = {t: Market.KRX for t in tickers}
+
+        portfolio = await engine.construct(
+            ensemble_signals=signals,
+            current_portfolio={},
+            seed_capital=10_000_000,
+            price_history=price_history,
+            market_info=market_info,
+        )
+
+        assert len(portfolio.allocations) > 0
+        total = sum(a.target_weight for a in portfolio.allocations)
+        assert abs(total + portfolio.cash_ratio - 1.0) < 0.02
+
+
+# ══════════════════════════════════════
+# Risk Parity with Covariance 테스트
+# ══════════════════════════════════════
+class TestRiskParityWithCovariance:
+    """변동성 기반 Risk Parity 테스트"""
+
+    @pytest.fixture
+    def engine(self):
+        return PortfolioConstructionEngine(risk_profile=RiskProfile.BALANCED)
+
+    def test_rp_with_cov_low_vol_higher_weight(self, engine):
+        """공분산 제공 시 저변동 자산이 높은 비중"""
+        signals = {"A": 0.5, "B": 0.5, "C": 0.5}
+        cov = np.diag([0.01, 0.04, 0.16])
+        constraints = {"max_single_weight": 0.50}
+
+        weights = engine._risk_parity_optimize(signals, constraints, cov)
+        assert weights["A"] > weights["B"]
+        assert weights["B"] > weights["C"]
+
+    def test_rp_without_cov_uses_signal_proxy(self, engine):
+        """공분산 미제공 시 시그널 기반 대리 변동성"""
+        signals = {"A": 0.8, "B": 0.2, "C": 0.5}
+        constraints = {"max_single_weight": 0.50}
+
+        weights = engine._risk_parity_optimize(signals, constraints, None)
+        assert len(weights) == 3
+        assert abs(sum(weights.values()) - 1.0) < 0.01

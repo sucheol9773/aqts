@@ -267,3 +267,150 @@ class TestStrategyComparator:
 
         weights = StrategyComparator.recommend_weights([])
         assert len(weights) == 0
+
+
+# ══════════════════════════════════════
+# 벤치마크 대비 지표 테스트 (F-07-01 완성)
+# ══════════════════════════════════════
+class TestBenchmarkMetrics:
+    """벤치마크 대비 성과 지표 (Alpha, Beta, IR, TE) 테스트"""
+
+    def test_no_benchmark_returns_zeros(self):
+        """벤치마크 없으면 모두 0"""
+        prices = _make_prices(100, ["A"])
+        signals = _make_signals(prices, "always_buy")
+        config = BacktestConfig(initial_capital=50_000_000, benchmark_returns=None)
+        result = BacktestEngine(config).run("NoBM", signals, prices)
+
+        assert result.alpha == 0.0
+        assert result.beta == 0.0
+        assert result.information_ratio == 0.0
+        assert result.tracking_error == 0.0
+
+    def test_benchmark_metrics_finite(self):
+        """벤치마크 제공 시 유한한 값 반환"""
+        np.random.seed(42)
+        n = 252
+        dates = pd.bdate_range(start="2024-01-02", periods=n)
+
+        # 벤치마크: 일별 수익률
+        bm_returns = pd.Series(
+            np.random.normal(0.0004, 0.012, n), index=dates,
+        )
+
+        prices = _make_prices(n, ["A"])
+        signals = _make_signals(prices, "always_buy")
+        config = BacktestConfig(
+            initial_capital=50_000_000,
+            benchmark_returns=bm_returns,
+        )
+        result = BacktestEngine(config).run("WithBM", signals, prices)
+
+        assert np.isfinite(result.alpha)
+        assert np.isfinite(result.beta)
+        assert np.isfinite(result.information_ratio)
+        assert np.isfinite(result.tracking_error)
+
+    def test_beta_positive_for_correlated_strategy(self):
+        """시장과 양의 상관관계 → Beta > 0"""
+        np.random.seed(42)
+        n = 252
+        dates = pd.bdate_range(start="2024-01-02", periods=n)
+
+        # 시장 수익률
+        market_returns = np.random.normal(0.0005, 0.015, n)
+        bm_returns = pd.Series(market_returns, index=dates)
+
+        # 전략: 시장을 추종하는 가격 데이터 생성
+        prices_data = 50000 * np.cumprod(1 + market_returns * 1.2 + np.random.normal(0, 0.005, n))
+        prices = pd.DataFrame({"A": prices_data}, index=dates)
+        signals = pd.DataFrame({"A": np.zeros(n)}, index=dates)
+        signals.iloc[0] = 0.8
+
+        config = BacktestConfig(
+            initial_capital=50_000_000,
+            benchmark_returns=bm_returns,
+            commission_rate=0.0, tax_rate=0.0, slippage_rate=0.0,
+        )
+        result = BacktestEngine(config).run("Correlated", signals, prices)
+
+        assert result.beta > 0
+
+    def test_tracking_error_zero_for_identical(self):
+        """전략과 벤치마크가 동일하면 Tracking Error ≈ 0"""
+        np.random.seed(42)
+        n = 100
+        dates = pd.bdate_range(start="2024-01-02", periods=n)
+
+        returns = np.random.normal(0.001, 0.01, n)
+        prices_data = 50000 * np.cumprod(1 + returns)
+        prices = pd.DataFrame({"A": prices_data}, index=dates)
+        signals = pd.DataFrame({"A": np.zeros(n)}, index=dates)
+        signals.iloc[0] = 0.8
+
+        # 전략의 실제 일별 수익률을 벤치마크로 설정
+        config_pre = BacktestConfig(
+            initial_capital=50_000_000,
+            commission_rate=0.0, tax_rate=0.0, slippage_rate=0.0,
+        )
+        result_pre = BacktestEngine(config_pre).run("Pre", signals, prices)
+
+        # 자산곡선에서 일별 수익률 추출
+        if len(result_pre.equity_curve) > 1:
+            strategy_daily = result_pre.equity_curve.pct_change().dropna()
+            config = BacktestConfig(
+                initial_capital=50_000_000,
+                benchmark_returns=strategy_daily,
+                commission_rate=0.0, tax_rate=0.0, slippage_rate=0.0,
+            )
+            result = BacktestEngine(config).run("Identical", signals, prices)
+            # 동일하면 TE가 매우 작아야 함
+            assert result.tracking_error < 0.01
+
+    def test_information_ratio_sign(self):
+        """초과 수익 양수 → IR 양수"""
+        np.random.seed(42)
+        n = 252
+        dates = pd.bdate_range(start="2024-01-02", periods=n)
+
+        # 벤치마크: 일 0.0001 수익 (저수익)
+        bm_returns = pd.Series(
+            np.full(n, 0.0001), index=dates,
+        )
+
+        # 전략: 확실한 우상향
+        prices_data = 50000 * np.cumprod(1 + np.full(n, 0.002))
+        prices = pd.DataFrame({"A": prices_data}, index=dates)
+        signals = pd.DataFrame({"A": np.zeros(n)}, index=dates)
+        signals.iloc[0] = 0.8
+
+        config = BacktestConfig(
+            initial_capital=50_000_000,
+            benchmark_returns=bm_returns,
+            commission_rate=0.0, tax_rate=0.0, slippage_rate=0.0,
+        )
+        result = BacktestEngine(config).run("Outperform", signals, prices)
+
+        # 전략이 벤치마크를 초과하므로 IR > 0
+        assert result.information_ratio > 0
+
+    def test_comparator_includes_benchmark_columns(self):
+        """StrategyComparator가 벤치마크 지표 컬럼을 포함"""
+        config = BacktestConfig()
+        r = BacktestResult(
+            strategy_name="Test", config=config,
+            start_date="2024-01-02", end_date="2024-12-31",
+            initial_capital=50e6, final_capital=55e6,
+            total_return=0.10, cagr=0.10, mdd=-0.05,
+            sharpe_ratio=1.2, sortino_ratio=1.5, calmar_ratio=2.0,
+            win_rate=0.55, profit_factor=1.5,
+            total_trades=50, avg_trade_return=0.002,
+            max_consecutive_losses=3,
+            alpha=0.05, beta=0.9, information_ratio=0.8,
+            tracking_error=0.06,
+        )
+        df = StrategyComparator.compare([r])
+        assert "alpha" in df.columns
+        assert "beta" in df.columns
+        assert "info_ratio" in df.columns
+        assert "tracking_error" in df.columns

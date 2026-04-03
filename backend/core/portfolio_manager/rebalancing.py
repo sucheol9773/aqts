@@ -40,6 +40,8 @@ from core.portfolio_manager.construction import (
     TargetPortfolio,
     TargetAllocation,
 )
+from core.notification.telegram_notifier import TelegramNotifier
+from core.order_executor.executor import OrderExecutor, OrderRequest
 
 
 # ══════════════════════════════════════
@@ -131,6 +133,8 @@ class RebalancingEngine:
         self,
         profile: InvestorProfile,
         construction_engine: PortfolioConstructionEngine,
+        telegram_notifier: Optional["TelegramNotifier"] = None,
+        order_executor: Optional["OrderExecutor"] = None,
     ):
         """
         리밸런싱 엔진 초기화
@@ -138,9 +142,13 @@ class RebalancingEngine:
         Args:
             profile: 사용자 투자 프로필
             construction_engine: 포트폴리오 구성 엔진
+            telegram_notifier: 텔레그램 알림 발송기
+            order_executor: 주문 실행기
         """
         self.profile = profile
         self.construction_engine = construction_engine
+        self._telegram = telegram_notifier
+        self._order_executor = order_executor
         self.settings = get_settings()
 
     async def check_scheduled_rebalancing(self) -> bool:
@@ -537,36 +545,98 @@ class RebalancingEngine:
         """
         투자 스타일별 리밸런싱 처리
 
-        - DISCRETIONARY: 자동 매매
-        - ADVISORY: 텔레그램 추천
+        - DISCRETIONARY: 자동 매매 실행 + 결과 알림
+        - ADVISORY: 텔레그램 추천 전송만
         """
         if self.profile.investment_style == InvestmentStyle.DISCRETIONARY:
             logger.info(f"Auto-executing rebalancing orders for {self.profile.user_id}")
-            # 실제 매매 실행 (구현 필요)
+            await self._execute_orders(result.orders)
+            # 체결 완료 알림
+            await self._send_rebalancing_completed_notification(result)
         else:
             await self._send_rebalancing_recommendation(result)
 
     async def _handle_emergency_rebalancing_by_style(self, result: RebalancingResult) -> None:
-        """비상 리밸런싱은 모든 스타일에 신속 알림"""
+        """비상 리밸런싱은 모든 스타일에 신속 알림 + 일임형은 자동 체결"""
         await self._send_emergency_notification(result)
         if self.profile.investment_style == InvestmentStyle.DISCRETIONARY:
             logger.info("Auto-executing emergency rebalancing")
+            await self._execute_orders(result.orders)
+
+    async def _execute_orders(self, orders: list[RebalancingOrder]) -> None:
+        """
+        OrderExecutor를 통해 리밸런싱 주문을 실행합니다.
+
+        매도 주문을 먼저 체결한 후 매수 주문을 실행합니다 (자금 확보 우선).
+
+        Args:
+            orders: 리밸런싱 주문 리스트
+        """
+        if not self._order_executor:
+            logger.warning("OrderExecutor not available, orders not executed")
+            return
+
+        # 매도 주문 우선 실행
+        sell_orders = [o for o in orders if o.action == OrderSide.SELL]
+        buy_orders = [o for o in orders if o.action == OrderSide.BUY]
+
+        for order_group, label in [(sell_orders, "SELL"), (buy_orders, "BUY")]:
+            for order in order_group:
+                try:
+                    request = OrderRequest(
+                        ticker=order.ticker,
+                        market=order.market,
+                        side=order.action,
+                        quantity=order.quantity,
+                        order_type=order.order_type,
+                        reason=order.reason,
+                    )
+                    await self._order_executor.execute_order(request)
+                    logger.info(f"Rebalancing order executed: {label} {order.ticker} x{order.quantity}")
+                except Exception as e:
+                    logger.error(f"Rebalancing order failed: {order.ticker}: {e}")
 
     async def _send_rebalancing_recommendation(self, result: RebalancingResult) -> None:
         """텔레그램으로 리밸런싱 추천 전송"""
         try:
             message = self._format_rebalancing_message(result)
-            logger.info(f"Sending rebalancing recommendation to user {self.profile.user_id}: {message}")
-            # 텔레그램 발송 로직 (구현 필요)
+            if self._telegram:
+                await self._telegram.send_message(message, parse_mode="HTML")
+                logger.info(f"Rebalancing recommendation sent to user {self.profile.user_id}")
+            else:
+                logger.info(f"Rebalancing recommendation (no Telegram): {message}")
         except Exception as e:
             logger.error(f"Failed to send recommendation: {e}")
+
+    async def _send_rebalancing_completed_notification(self, result: RebalancingResult) -> None:
+        """리밸런싱 완료 알림 전송"""
+        try:
+            message = (
+                f"✅ <b>정기 리밸런싱 완료</b>\n\n"
+                f"주문 {len(result.orders)}건 체결\n"
+                f"유형: {result.rebalancing_type.value}\n"
+                f"시간: {result.executed_at.strftime('%Y-%m-%d %H:%M UTC')}"
+            )
+            if self._telegram:
+                await self._telegram.send_message(message, parse_mode="HTML")
+        except Exception as e:
+            logger.error(f"Failed to send completion notification: {e}")
 
     async def _send_emergency_notification(self, result: RebalancingResult) -> None:
         """텔레그램으로 비상 알림 전송"""
         try:
-            message = f"비상 리밸런싱: {result.trigger_reason}\n주문: {len(result.orders)}건"
-            logger.warning(f"Sending emergency notification: {message}")
-            # 텔레그램 발송 로직 (구현 필요)
+            message = (
+                f"🚨 <b>비상 리밸런싱 실행</b>\n\n"
+                f"<b>사유:</b> {result.trigger_reason}\n"
+                f"<b>주문:</b> {len(result.orders)}건\n"
+                f"<b>조치:</b> 포트폴리오 방어 모드 전환\n\n"
+                f"<i>{result.executed_at.strftime('%Y-%m-%d %H:%M:%S UTC')}</i>"
+            )
+            if self._telegram:
+                await self._telegram.send_message(message, parse_mode="HTML")
+                logger.warning(f"Emergency notification sent: {len(result.orders)} orders")
+            else:
+                logger.warning(f"Emergency notification (no Telegram): {message}")
         except Exception as e:
             logger.error(f"Failed to send emergency notification: {e}")
 

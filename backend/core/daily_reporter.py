@@ -93,6 +93,10 @@ class DailyReport:
     max_drawdown_today: float = 0.0
     consecutive_losses: int = 0
 
+    # Top/Bottom 3 종목 (F-09-01)
+    top3_positions: list[PositionSnapshot] = field(default_factory=list)
+    bottom3_positions: list[PositionSnapshot] = field(default_factory=list)
+
     # 메타
     generated_at: datetime = field(default_factory=lambda: datetime.now(KST))
 
@@ -184,6 +188,10 @@ class DailyReporter:
         winning = [t for t in trades if t.pnl is not None and t.pnl > 0]
         losing = [t for t in trades if t.pnl is not None and t.pnl < 0]
 
+        # Top/Bottom 3 종목 (F-09-01)
+        top3 = sorted(positions, key=lambda p: p.pnl_percent, reverse=True)[:3]
+        bottom3 = sorted(positions, key=lambda p: p.pnl_percent)[:3]
+
         report = DailyReport(
             report_date=report_date,
             trading_mode=self._settings.kis.trading_mode.value,
@@ -208,6 +216,8 @@ class DailyReporter:
             circuit_breaker_reason=circuit_breaker_reason,
             max_drawdown_today=max_drawdown_today,
             consecutive_losses=consecutive_losses,
+            top3_positions=top3,
+            bottom3_positions=bottom3,
         )
 
         self._report_history.append(report.to_dict())
@@ -282,6 +292,25 @@ class DailyReporter:
                 )
             if len(report.trades) > 5:
                 lines.append(f"  ... 외 {len(report.trades) - 5}건")
+
+        # Top/Bottom 3 종목 (F-09-01)
+        if report.top3_positions:
+            lines.append("")
+            lines.append("🏆 Top 3 종목")
+            for pos in report.top3_positions:
+                lines.append(
+                    f"  🟢 {pos.name}: {pos.pnl_percent:+.1f}% "
+                    f"({pos.pnl:+,.0f}원)"
+                )
+
+        if report.bottom3_positions:
+            lines.append("")
+            lines.append("💀 Bottom 3 종목")
+            for pos in report.bottom3_positions:
+                lines.append(
+                    f"  🔴 {pos.name}: {pos.pnl_percent:+.1f}% "
+                    f"({pos.pnl:+,.0f}원)"
+                )
 
         # 포지션 현황
         if report.positions:
