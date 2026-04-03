@@ -4,6 +4,8 @@ Stage 2-B 테스트: Pipeline Gates + StateMachine + GateRegistry + FallbackHand
 로드맵 목표: 10+ 통합 시나리오
 """
 
+import unittest
+
 import pytest
 from datetime import datetime
 from types import SimpleNamespace
@@ -60,7 +62,7 @@ class TestGateResult:
 # ══════════════════════════════════════════════════════════════
 
 @pytest.mark.asyncio
-class TestDataGate:
+class TestDataGate(unittest.IsolatedAsyncioTestCase):
     async def test_pass_with_data(self):
         gate = DataGate()
         result = await gate.evaluate([{"ticker": "005930"}])
@@ -88,7 +90,7 @@ class TestDataGate:
 
 
 @pytest.mark.asyncio
-class TestFactorGate:
+class TestFactorGate(unittest.IsolatedAsyncioTestCase):
     async def test_pass(self):
         gate = FactorGate()
         data = [SimpleNamespace(factor_value=0.5, factor_momentum=0.3)]
@@ -108,7 +110,7 @@ class TestFactorGate:
 
 
 @pytest.mark.asyncio
-class TestSignalGate:
+class TestSignalGate(unittest.IsolatedAsyncioTestCase):
     async def test_pass_with_buy(self):
         gate = SignalGate()
         signals = [SimpleNamespace(direction=SimpleNamespace(value="BUY"))]
@@ -131,7 +133,7 @@ class TestSignalGate:
 
 
 @pytest.mark.asyncio
-class TestEnsembleGate:
+class TestEnsembleGate(unittest.IsolatedAsyncioTestCase):
     async def test_pass(self):
         gate = EnsembleGate()
         result = await gate.evaluate({"A": 0.5, "B": 0.5})
@@ -152,7 +154,7 @@ class TestEnsembleGate:
 
 
 @pytest.mark.asyncio
-class TestPortfolioGate:
+class TestPortfolioGate(unittest.IsolatedAsyncioTestCase):
     async def test_pass(self):
         gate = PortfolioGate()
         portfolio = SimpleNamespace(
@@ -173,7 +175,7 @@ class TestPortfolioGate:
 
 
 @pytest.mark.asyncio
-class TestTradingGuardGate:
+class TestTradingGuardGate(unittest.IsolatedAsyncioTestCase):
     async def test_pass(self):
         gate = TradingGuardGate()
         result = await gate.evaluate(
@@ -197,7 +199,7 @@ class TestTradingGuardGate:
 
 
 @pytest.mark.asyncio
-class TestReconGate:
+class TestReconGate(unittest.IsolatedAsyncioTestCase):
     async def test_pass(self):
         gate = ReconGate()
         data = {"broker_balance": 1_000_000, "internal_balance": 1_000_000, "mismatches": []}
@@ -212,7 +214,7 @@ class TestReconGate:
 
 
 @pytest.mark.asyncio
-class TestExecutionGate:
+class TestExecutionGate(unittest.IsolatedAsyncioTestCase):
     async def test_pass(self):
         gate = ExecutionGate()
         data = {"submitted": True, "broker_order_id": "X-001"}
@@ -227,7 +229,7 @@ class TestExecutionGate:
 
 
 @pytest.mark.asyncio
-class TestFillGate:
+class TestFillGate(unittest.IsolatedAsyncioTestCase):
     async def test_pass_full_fill(self):
         gate = FillGate()
         data = {"status": "FILLED", "requested_quantity": 100, "filled_quantity": 100}
@@ -251,8 +253,9 @@ class TestFillGate:
 # 3. GateRegistry 테스트
 # ══════════════════════════════════════════════════════════════
 
-@pytest.mark.asyncio
-class TestGateRegistry:
+
+@pytest.mark.smoke
+class TestGateRegistry(unittest.IsolatedAsyncioTestCase):
     async def test_register_and_evaluate(self):
         registry = GateRegistry()
         registry.register(DataGate())
@@ -296,6 +299,7 @@ class TestGateRegistry:
 # 4. StateMachine 테스트
 # ══════════════════════════════════════════════════════════════
 
+@pytest.mark.smoke
 class TestPipelineStateMachine:
     def test_initial_state(self):
         sm = PipelineStateMachine()
@@ -363,7 +367,7 @@ class TestPipelineStateMachine:
 # 5. FallbackHandler 테스트
 # ══════════════════════════════════════════════════════════════
 
-class TestFallbackHandler:
+class TestFallbackHandler(unittest.IsolatedAsyncioTestCase):
     def test_pass_no_change(self):
         sm = PipelineStateMachine()
         sm.transition(PipelineState.COLLECTING)
@@ -420,7 +424,7 @@ class TestFallbackHandler:
 # ══════════════════════════════════════════════════════════════
 
 @pytest.mark.asyncio
-class TestIntegrationScenarios:
+class TestIntegrationScenarios(unittest.IsolatedAsyncioTestCase):
     """로드맵 요구: 10+ 통합 시나리오."""
 
     async def test_scenario_normal_flow(self):

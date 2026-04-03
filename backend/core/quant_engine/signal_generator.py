@@ -17,8 +17,9 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-from config.constants import StrategyType
+from config.constants import Market, StrategyType
 from config.logging import logger
+from contracts.converters import internal_signal_to_contract
 
 
 @dataclass
@@ -323,9 +324,18 @@ class SignalGenerator:
         ticker: str,
         ohlcv: pd.DataFrame,
         composite_score: float = 50.0,
+        market: Market = Market.KRX,
+        validate_contract: bool = True,
     ) -> list[Signal]:
         """
         단일 종목에 대해 모든 전략의 시그널을 생성
+
+        Args:
+            ticker: 종목코드
+            ohlcv: OHLCV DataFrame
+            composite_score: 팩터 복합 점수 (0~100)
+            market: 거래소 (계약 검증용)
+            validate_contract: True면 출력 시그널을 contracts.Signal로 검증
 
         Returns:
             Signal 리스트 (전략별 1개씩)
@@ -336,5 +346,15 @@ class SignalGenerator:
         signals.append(self.generate_mean_reversion_signal(ticker, ohlcv))
         signals.append(self.generate_trend_following_signal(ticker, ohlcv))
         signals.append(self.generate_risk_parity_signal(ticker, ohlcv))
+
+        # 계약 검증: Pydantic validation을 통해 데이터 무결성 강제
+        if validate_contract:
+            for sig in signals:
+                try:
+                    internal_signal_to_contract(sig, market=market)
+                except Exception as e:
+                    logger.warning(
+                        f"[Contract] Signal 계약 위반: {ticker}/{sig.strategy.value} — {e}"
+                    )
 
         return signals

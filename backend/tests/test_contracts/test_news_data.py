@@ -19,6 +19,7 @@ def _valid_news(**overrides):
     return defaults
 
 
+@pytest.mark.smoke
 class TestNewsDataValid:
     def test_basic_creation(self):
         n = NewsData(**_valid_news())
@@ -51,6 +52,7 @@ class TestNewsDataValid:
         assert n.source == NewsSource.REUTERS
 
 
+@pytest.mark.smoke
 class TestNewsDataInvalid:
     def test_sentiment_out_of_range_high(self):
         with pytest.raises(ValidationError, match="less than or equal to 1"):

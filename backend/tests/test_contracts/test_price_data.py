@@ -18,6 +18,7 @@ def _valid_price(**overrides):
     return defaults
 
 
+@pytest.mark.smoke
 class TestPriceDataValid:
     def test_basic_creation(self):
         p = PriceData(**_valid_price())
@@ -46,6 +47,7 @@ class TestPriceDataValid:
             p.close = 99999
 
 
+@pytest.mark.smoke
 class TestPriceDataInvalid:
     def test_negative_open(self):
         with pytest.raises(ValidationError, match="greater than 0"):

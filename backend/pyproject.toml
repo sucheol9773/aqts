@@ -5,7 +5,13 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 asyncio_mode = "auto"
 pythonpath = ["."]
-addopts = "-v --tb=short --cov=core --cov=config --cov=db --cov-report=term-missing --cov-report=html:htmlcov"
+addopts = "-v --tb=short --cov=core --cov=config --cov=db --cov=api --cov=contracts --cov-report=term-missing --cov-report=html:htmlcov"
 filterwarnings = [
     "ignore::DeprecationWarning",
+]
+markers = [
+    "smoke: 핵심 기능 빠른 검증 (CI 필수, < 60초)",
+    "regression: 버그 재발 방지 테스트",
+    "integration: 외부 서비스 연동 테스트 (DB, API 등)",
+    "slow: 장시간 소요 테스트 (> 10초)",
 ]

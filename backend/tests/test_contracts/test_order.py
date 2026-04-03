@@ -16,6 +16,7 @@ def _valid_order(**overrides):
     return defaults
 
 
+@pytest.mark.smoke
 class TestOrderValid:
     def test_market_order(self):
         o = OrderIntent(**_valid_order())
@@ -59,6 +60,7 @@ class TestOrderValid:
         assert o.quantity == 1_000_000
 
 
+@pytest.mark.smoke
 class TestOrderInvalid:
     def test_limit_without_price(self):
         with pytest.raises(ValidationError, match="limit_price가 필수"):

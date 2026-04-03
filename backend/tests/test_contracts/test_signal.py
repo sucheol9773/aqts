@@ -18,6 +18,7 @@ def _valid_signal(**overrides):
     return defaults
 
 
+@pytest.mark.smoke
 class TestSignalValid:
     def test_buy_signal(self):
         s = Signal(**_valid_signal())
@@ -54,6 +55,7 @@ class TestSignalValid:
         assert s.reason == ""
 
 
+@pytest.mark.smoke
 class TestSignalInvalid:
     def test_buy_zero_confidence(self):
         with pytest.raises(ValidationError, match="confidence가 0"):

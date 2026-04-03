@@ -11,6 +11,7 @@ def _pos(ticker="005930", market=Market.KRX, target_weight=0.2, **kw):
     return PositionTarget(ticker=ticker, market=market, target_weight=target_weight, **kw)
 
 
+@pytest.mark.smoke
 class TestPositionTargetValid:
     def test_basic(self):
         p = _pos()
@@ -30,6 +31,7 @@ class TestPositionTargetValid:
         assert p.reason == "가치 팩터 상위"
 
 
+@pytest.mark.smoke
 class TestPortfolioTargetValid:
     def test_balanced_portfolio(self):
         positions = [_pos(ticker=f"00{i}930", target_weight=0.15) for i in range(5)]
@@ -62,6 +64,7 @@ class TestPortfolioTargetValid:
         assert pt.rebalance_reason == "월간 리밸런싱"
 
 
+@pytest.mark.smoke
 class TestPortfolioTargetInvalid:
     def test_weight_sum_exceeds(self):
         with pytest.raises(ValidationError, match="비중 합계 불일치"):

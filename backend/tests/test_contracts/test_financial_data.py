@@ -17,6 +17,7 @@ def _valid_fin(**overrides):
     return defaults
 
 
+@pytest.mark.smoke
 class TestFinancialDataValid:
     def test_basic_creation(self):
         f = FinancialData(**_valid_fin())
@@ -42,6 +43,7 @@ class TestFinancialDataValid:
         assert f.debt_ratio == 150.0
 
 
+@pytest.mark.smoke
 class TestFinancialDataInvalid:
     def test_filing_before_period(self):
         with pytest.raises(ValidationError, match="look-ahead bias"):

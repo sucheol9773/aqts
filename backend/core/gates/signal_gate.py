@@ -11,6 +11,10 @@ class SignalGate(BaseGate):
     - 시그널이 없음
     - 모든 시그널이 HOLD (의미 있는 액션 없음)
     - 상충 시그널 비율 초과
+
+    시그널 활성 판정 기준:
+    - direction 속성이 있으면 direction.value != "HOLD" 로 판정
+    - value (float) 속성이 있으면 abs(value) > hold_threshold 로 판정
     """
 
     @property
@@ -18,16 +22,28 @@ class SignalGate(BaseGate):
         return "SignalGate"
 
     async def evaluate(self, data: Any, **kwargs) -> GateResult:
+        hold_threshold = kwargs.get("hold_threshold", 0.05)
+
         if data is None or (isinstance(data, list) and len(data) == 0):
             return self._block("시그널이 없습니다", severity=GateSeverity.CRITICAL)
 
         signals = data if isinstance(data, list) else [data]
 
-        # 모든 HOLD 검사
-        directions = [getattr(s, "direction", None) for s in signals]
-        non_hold = [d for d in directions if d is not None and d.value != "HOLD"]
+        active_count = 0
+        for s in signals:
+            # 방법 1: direction enum (QuantSignal 등)
+            direction = getattr(s, "direction", None)
+            if direction is not None:
+                if direction.value != "HOLD":
+                    active_count += 1
+                continue
 
-        if len(non_hold) == 0:
+            # 방법 2: value float (StrategySignalInput 등)
+            value = getattr(s, "value", None)
+            if value is not None and abs(value) > hold_threshold:
+                active_count += 1
+
+        if active_count == 0:
             return self._block(
                 f"모든 시그널이 HOLD ({len(signals)}건)",
                 severity=GateSeverity.WARNING,
@@ -35,7 +51,7 @@ class SignalGate(BaseGate):
             )
 
         return self._pass(
-            f"시그널 검증 통과 (활성 {len(non_hold)}/{len(signals)}건)",
-            active_signals=len(non_hold),
+            f"시그널 검증 통과 (활성 {active_count}/{len(signals)}건)",
+            active_signals=active_count,
             total_signals=len(signals),
         )

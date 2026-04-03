@@ -18,6 +18,7 @@ def _valid_exec(**overrides):
     return defaults
 
 
+@pytest.mark.smoke
 class TestExecutionValid:
     def test_full_fill(self):
         e = ExecutionResult(**_valid_exec())
@@ -60,6 +61,7 @@ class TestExecutionValid:
         assert e.slippage == -0.002
 
 
+@pytest.mark.smoke
 class TestExecutionInvalid:
     def test_filled_exceeds_requested(self):
         with pytest.raises(ValidationError, match="filled_quantity.*requested_quantity"):

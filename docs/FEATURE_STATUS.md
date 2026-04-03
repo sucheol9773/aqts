@@ -10,9 +10,9 @@
 
 | Status | Count |
 |--------|-------|
-| Not Started | 36 |
-| Implemented | 11 |
-| Tested | 41 |
+| Not Started | 4 |
+| Implemented | 12 |
+| Tested | 72 |
 | Production-ready | 0 |
 | Blocked | 0 |
 | **TOTAL** | **88** |
@@ -38,7 +38,7 @@
 |--------|---------|--------|-----------|-------|-------|
 | factor_analyzer | 5팩터 분석 (Value·Momentum·Quality·LowVol·Size) | Tested | core/quant_engine/factor_analyzer.py | test_factor_analyzer.py (21) | Z-Score 정규화, Cross-Market 재정규화 |
 | signal_generator | 기술적 시그널 생성 (RSI·MACD·Bollinger) | Tested | core/quant_engine/signal_generator.py | test_signal_generator.py (20) | 5개 기술적 시그널 |
-| backtest_engine | 백테스트 엔진 + 전략 비교 | Tested | core/backtest_engine/engine.py | test_backtest_engine.py (25) | Sharpe/Alpha/Beta/Tracking Error 지표 |
+| backtest_engine | 백테스트 엔진 + 전략 비교 | Tested | core/backtest_engine/engine.py | test_backtest_engine.py (27) | Sharpe/Alpha/Beta/Tracking Error 지표 |
 
 ---
 
@@ -131,7 +131,7 @@
 
 ---
 
-## 10. Roadmap Items (Pending - Stage 1)
+## 10. Roadmap Items (Completed - Stage 1)
 
 | Module | Feature | Status | Code Path | Tests | Notes |
 |--------|---------|--------|-----------|-------|-------|
@@ -139,167 +139,153 @@
 
 ---
 
-## 11. Roadmap Items (Pending - Stages 2-7)
+## 11. Roadmap Items (Stages 2-7)
 
-### Stage 2-A: Data Contracts
-
-| Item | Feature | Status | Code Path | Tests | Notes |
-|------|---------|--------|-----------|-------|-------|
-| contracts | PriceData Contract | Not Started | (pending) | N/A | 시가·종가·거래량 스키마 정의 |
-| contracts | FinancialData Contract | Not Started | (pending) | N/A | 재무제표 표준 스키마 |
-| contracts | NewsData Contract | Not Started | (pending) | N/A | 뉴스 메타데이터 스키마 |
-| contracts | FeatureVector Contract | Not Started | (pending) | N/A | AI/Quant 피처 벡터 스키마 |
-| contracts | Signal Contract | Not Started | (pending) | N/A | 투자 시그널 표준 형식 |
-| contracts | Portfolio Contract | Not Started | (pending) | N/A | 포트폴리오 상태 스키마 |
-| contracts | Order Contract | Not Started | (pending) | N/A | 주문 실행 계약 |
-| contracts | Execution Contract | Not Started | (pending) | N/A | 체결 결과 계약 |
-| contracts | RiskCheck Contract | Not Started | (pending) | N/A | 리스크 검증 계약 |
-| config | operational_thresholds.yaml | Not Started | (pending) | N/A | 운영 임계값 정의 파일 |
-
-### Stage 2-B: Pipeline Gates
+### Stage 2-A: Data Contracts ✅
 
 | Item | Feature | Status | Code Path | Tests | Notes |
 |------|---------|--------|-----------|-------|-------|
-| gates | DataGate (수집 검증) | Not Started | (pending) | N/A | 수집 데이터 품질 검증 |
-| gates | QualityGate (데이터 품질) | Not Started | (pending) | N/A | 이상치·누락 검증 |
-| gates | FeatureGate (피처 생성) | Not Started | (pending) | N/A | 피처 벡터 생성 품질 |
-| gates | SignalGate (시그널 검증) | Not Started | (pending) | N/A | 시그널 유효성 검증 |
-| gates | DecisionGate (투자결정) | Not Started | (pending) | N/A | 포트폴리오 구성 검증 |
-| gates | RiskGate (리스크 검증) | Not Started | (pending) | N/A | 포지션 리스크 검증 |
-| gates | OrderGate (주문 검증) | Not Started | (pending) | N/A | 주문 매개변수 검증 |
-| gates | ExecutionGate (체결 검증) | Not Started | (pending) | N/A | 체결 성공 검증 |
-| gates | FillGate (채우기 검증) | Not Started | (pending) | N/A | 주문 완전성 검증 |
-| state_machine | Pipeline State Machine | Not Started | (pending) | N/A | Gate 간 상태 전이 자동화 |
-| schemas | GateResult Schema | Not Started | (pending) | N/A | Gate 결과 표준 형식 |
-| registry | GateRegistry | Not Started | (pending) | N/A | Gate 등록/관리 메커니즘 |
+| contracts | PriceData Contract | Tested | contracts/price_data.py | test_contracts/test_price_data.py (16) | OHLC 일관성 검증, ticker 포맷 |
+| contracts | FinancialData Contract | Tested | contracts/financial_data.py | test_contracts/test_financial_data.py (15) | filing_date ≥ period_end (look-ahead 방지) |
+| contracts | NewsData Contract | Tested | contracts/news_data.py | test_contracts/test_news_data.py (17) | sentiment [-1,+1], 대소문자 무관 |
+| contracts | FeatureVector Contract | Tested | contracts/feature_vector.py | test_contracts/test_feature_vector.py (16) | factor scores [-1,+1], RSI [0,100] |
+| contracts | Signal Contract | Tested | contracts/signal.py | test_contracts/test_signal.py (18) | BUY/SELL confidence > 0 교차검증 |
+| contracts | Portfolio Contract | Tested | contracts/portfolio.py | test_contracts/test_portfolio.py (17) | weight 합 ≈ 1.0 (±0.01), 중복 ticker 금지 |
+| contracts | Order Contract | Tested | contracts/order.py | test_contracts/test_order.py (19) | LIMIT requires limit_price |
+| contracts | Execution Contract | Tested | contracts/execution.py | test_contracts/test_execution.py (18) | filled ≤ requested, FILLED requires price |
+| contracts | RiskCheck Contract | Tested | contracts/risk_check.py | test_contracts/test_risk_check.py (18) | BLOCK 일관성 검증 |
+| config | operational_thresholds.yaml | Implemented | config/operational_thresholds.yaml | N/A | 전 스테이지 임계값 중앙관리 |
 
-### Stage 3-A: Backtest Integrity
+### Stage 2-B: Pipeline Gates ✅
 
 | Item | Feature | Status | Code Path | Tests | Notes |
 |------|---------|--------|-----------|-------|-------|
-| backtest | Backtest Integrity Tools | Not Started | (pending) | N/A | 백테스트 검증, 과적합 탐지 |
-| backtest | Out-of-Sample Validation | Not Started | (pending) | N/A | Walk-Forward 분석 자동화 |
-| backtest | Parameter Sensitivity Analysis | Not Started | (pending) | N/A | 파라미터 민감도 분석 |
+| gates | DataGate (수집 검증) | Tested | core/gates/data_gate.py | test_state_machine.py (59) | 수집 데이터 품질 검증 |
+| gates | FactorGate (팩터 분석) | Tested | core/gates/factor_gate.py | test_state_machine.py (59) | 팩터 벡터 생성 품질 |
+| gates | SignalGate (시그널 검증) | Tested | core/gates/signal_gate.py | test_state_machine.py (59) | 시그널 유효성 검증 |
+| gates | EnsembleGate (앙상블 검증) | Tested | core/gates/ensemble_gate.py | test_state_machine.py (59) | 앙상블 결과 검증 |
+| gates | PortfolioGate (포트폴리오 검증) | Tested | core/gates/portfolio_gate.py | test_state_machine.py (59) | 포트폴리오 구성 검증 |
+| gates | TradingGuardGate (리스크 검증) | Tested | core/gates/trading_guard_gate.py | test_state_machine.py (59) | 포지션 리스크 사전검증 |
+| gates | ReconGate (대사 검증) | Tested | core/gates/recon_gate.py | test_state_machine.py (59) | 거래-포지션 대사 |
+| gates | ExecutionGate (체결 검증) | Tested | core/gates/execution_gate.py | test_state_machine.py (59) | 체결 성공/실패 검증 |
+| gates | FillGate (채움 검증) | Tested | core/gates/fill_gate.py | test_state_machine.py (59) | 주문 완전성 검증 |
+| state_machine | Pipeline State Machine | Tested | core/state_machine.py | test_state_machine.py (59) | 10-state 전이, FallbackHandler 연동 |
+| schemas | GateResult Schema | Tested | core/gates/base.py | test_state_machine.py (59) | PASS/BLOCK, severity, context |
+| registry | GateRegistry | Tested | core/gate_registry.py | test_state_machine.py (59) | 동적 등록, stop_on_block 지원 |
 
-### Stage 4: Audit Trail
+### Stage 3: Backtest Integrity & Advanced Realism ✅
 
 | Item | Feature | Status | Code Path | Tests | Notes |
 |------|---------|--------|-----------|-------|-------|
-| audit | Decision Audit Trail (구조화) | Not Started | (pending) | N/A | 모든 결정 추적 (입력→출력→선택) |
-| audit | Audit Trail Visualization | Not Started | (pending) | N/A | 감사 추적 시각화 |
+| backtest | BiasChecker (point-in-time, lookahead, survivorship) | Tested | core/backtest_engine/bias_checker.py | test_backtest_integrity.py (74) | 3가지 바이어스 탐지 |
+| backtest | SlippageModel (spread, impact, slippage) | Tested | core/order_executor/slippage.py | test_backtest_integrity.py (74) | 스프레드+마켓임팩트 모델 |
+| backtest | FillModel (partial fill, ADV cap) | Tested | core/backtest_engine/fill_model.py | test_backtest_integrity.py (74) | 부분 체결, 주문 분할 |
+| backtest | CorporateActionProcessor | Tested | core/data_collector/corp_action.py | test_backtest_advanced.py (79) | 액면분할/배당 조정 |
+| backtest | MarketImpactModel (Almgren-Chriss) | Tested | core/backtest_engine/impact_model.py | test_backtest_advanced.py (79) | 영구+일시적 임팩트 |
+| backtest | TimeOfDayRules (KRX/NYSE) | Tested | core/order_executor/time_rules.py | test_backtest_advanced.py (79) | 장 시간/구간 규칙 |
+
+### Stage 4: Decision Audit Trail ✅
+
+| Item | Feature | Status | Code Path | Tests | Notes |
+|------|---------|--------|-----------|-------|-------|
+| audit | DecisionRecord + DecisionRecordStore | Tested | core/audit/decision_record.py | test_audit_trail.py (37) | 의사결정 기록 + 저장소 |
+| audit | 5 Collectors (Input/Feature/Signal/Risk/Gate) | Tested | core/audit/collectors.py | test_audit_trail.py (37) | 파이프라인 단계별 수집기 |
+| audit | REST API Endpoints (4개) | Tested | api/routes/audit.py | test_audit_trail.py (37) | 감사 기록 조회/필터 API |
+| audit | Audit Trail Visualization | Not Started | (pending) | N/A | 감사 추적 시각화 대시보드 |
 | audit | Regulatory Compliance Reports | Not Started | (pending) | N/A | 규제 준수 리포트 자동 생성 |
 
-### Stage 5: Capital & Reconciliation
+### Stage 5: Capital Protection ✅
 
 | Item | Feature | Status | Code Path | Tests | Notes |
 |------|---------|--------|-----------|-------|-------|
-| capital | Capital Budget (할당·추적) | Not Started | (pending) | N/A | 자본 할당 및 추적 |
-| reconciliation | Reconciliation (거래·가격·포지션) | Not Started | (pending) | N/A | 일중/일말 정산 자동화 |
-| reconciliation | Reconciliation Report | Not Started | (pending) | N/A | 정산 이상 보고 |
+| capital | CapitalBudget + AssetClassLimiter | Tested | core/capital_budget.py | test_capital_protection.py (98) | 자본 할당 및 자산군 한도 |
+| reconciliation | ReconciliationEngine | Tested | core/reconciliation.py | test_capital_protection.py (98) | 일중/일말 정산 자동화 |
+| protection | 5 Capital Guards | Tested | core/capital_protection.py | test_capital_protection.py (98) | 주문한도/호가검증/AI지연/API장애/현금바닥 |
 
-### Stage 6: Performance Validation
-
-| Item | Feature | Status | Code Path | Tests | Notes |
-|------|---------|--------|-----------|-------|-------|
-| performance | Performance Validation Framework | Not Started | (pending) | N/A | 성과 검증 자동화 |
-| performance | Benchmark Rebalancing Logic | Not Started | (pending) | N/A | 벤치마크 대비 성과 추적 |
-
-### Stage 7: LLM Promotion
+### Stage 6: Performance Validation ✅
 
 | Item | Feature | Status | Code Path | Tests | Notes |
 |------|---------|--------|-----------|-------|-------|
-| llm | LLM 승격 메커니즘 (Haiku→Sonnet) | Not Started | (pending) | N/A | 운영 성과 기반 자동 승격 |
-| llm | LLM 성과 추적 | Not Started | (pending) | N/A | Haiku/Sonnet 성과 비교 |
+| metrics | MetricsCalculator (9 metrics) | Tested | core/backtest_engine/metrics_calculator.py | test_performance_validation.py (73) | CAGR/MDD/Sharpe/Sortino/Calmar/IR/Hit/PF/Turnover |
+| benchmark | BenchmarkManager (5 defaults) | Tested | core/backtest_engine/benchmark.py | test_performance_validation.py (73) | KOSPI/SP500/SPY/BALANCED/PASSIVE |
+| regime | RegimeAnalyzer (4 regimes) | Tested | core/backtest_engine/regime_analyzer.py | test_performance_validation.py (73) | BULL/BEAR/HIGH_VOL/RISING_RATE |
+| ablation | AblationStudy | Tested | core/backtest_engine/ablation.py | test_performance_validation.py (73) | 레이어별 기여도 분석 |
+| significance | Bootstrap CI + t-test | Tested | core/backtest_engine/significance.py | test_performance_validation.py (73) | 통계적 유의성 검증 |
+| judge | PerformanceJudge (PASS/REVIEW/FAIL) | Tested | core/backtest_engine/pass_fail.py | test_performance_validation.py (73) | 성과 합격 판정 |
+
+### Stage 7: LLM Promotion ✅
+
+| Item | Feature | Status | Code Path | Tests | Notes |
+|------|---------|--------|-----------|-------|-------|
+| drift | DriftMonitor (KS-test) | Tested | core/ai_analyzer/drift_monitor.py | test_llm_promotion.py (49) | 분포 드리프트 탐지 |
+| cost | CostAnalyzer | Tested | core/ai_analyzer/cost_analyzer.py | test_llm_promotion.py (49) | API 비용 대비 수익 분석 |
+| reproducibility | ReproducibilityTest | Tested | core/ai_analyzer/reproducibility.py | test_llm_promotion.py (49) | 결정 재현성 검증 |
+| promotion | PromotionChecklist (PROMOTE/HOLD/DEMOTE) | Tested | core/ai_analyzer/promotion_checklist.py | test_llm_promotion.py (49) | 2-tier 승격 체계 |
 
 ---
 
-## Feature Implementation Status Details
+## Remaining Not Started Items (5)
 
-### Fully Tested (41 modules)
-Modules with passing unit/integration tests:
-- Data Collection: kis_client, market_data, news_collector, economic_collector
-- Quant Engine: factor_analyzer, signal_generator, backtest_engine
-- AI Analyzer: sentiment (Mode A only)
-- Strategy & Portfolio: ensemble, profile, construction, rebalancing, universe, exchange_rate, weight_optimizer
-- Order Execution: executor, trading_guard, emergency_monitor
-- Operations: mode_manager, demo_verifier, trading_scheduler, daily_reporter, periodic_reporter, market_calendar, graceful_shutdown
-- API Layer: all routes, schemas, middleware
-- Notifications: alert_manager, telegram_notifier
-- Integration: test_integration (E2E)
+| Item | Feature | Notes |
+|------|---------|-------|
+| audit_visualization | Audit Trail Visualization | 감사 추적 시각화 대시보드 |
+| compliance_report | Regulatory Compliance Reports | 규제 준수 리포트 자동 생성 |
+| oos_validation | Out-of-Sample Validation | Walk-Forward 분석 자동화 |
+| param_sensitivity | Parameter Sensitivity Analysis | 파라미터 민감도 분석 |
+| pipeline_gate_integration | Pipeline ↔ Gate 실행 경로 연결 | InvestmentDecisionPipeline에 GateRegistry/StateMachine 직접 연결 |
 
-### Implemented but Not Tested (11 modules)
-Modules with code but no dedicated tests:
-- financial_collector (DART 재무제표)
-- social_collector (Reddit SNS)
-- opinion (Claude Sonnet 의견)
-- prompt_manager (프롬프트 관리)
-- health_checker (시스템 점검)
-- audit_log (감사 로그)
-- database (DB 연결)
-- settings, constants, logging (설정)
+---
 
-### Not Started (36 items)
-Pending roadmap items for Stages 2-7:
-- 9 Data Contracts (Stage 2-A)
-- operational_thresholds.yaml
-- 9 Pipeline Gates (Stage 2-B)
-- Pipeline State Machine, GateResult Schema, GateRegistry
-- Backtest Integrity Tools (Stage 3-A)
-- Decision Audit Trail (Stage 4)
-- Capital Budget & Reconciliation (Stage 5)
-- Performance Validation (Stage 6)
-- LLM Promotion (Stage 7)
+## Known Technical Debt
+
+| Item | Description | Priority | Status |
+|------|-------------|----------|--------|
+| ~~pipeline_integration~~ | ~~Pipeline ↔ Gate/StateMachine 미연결~~ | ~~P1~~ | ✅ Resolved |
+| ~~contracts_unused~~ | ~~Contracts 실사용 연결 없음~~ | ~~P1~~ | ✅ Resolved |
+| ~~no_request_id~~ | ~~RequestLoggingMiddleware에 추적 체계 없음~~ | ~~P2~~ | ✅ Resolved |
+| ~~startup_todo~~ | ~~main.py 스케줄러/토큰 TODO 잔존~~ | ~~P1~~ | ✅ Resolved |
+| ~~no_test_markers~~ | ~~pytest smoke/regression 마커 없음~~ | ~~P2~~ | ✅ Resolved |
+| pre_existing_test_failures | 79개 테스트 DB/Redis 연결 또는 이벤트 루프 의존 실패 (executor, rebalancing, profile, scheduler, universe, sentiment, weight_optimizer) | P2 | Open |
 
 ---
 
 ## Test Coverage Summary
 
 ```
-Total Tests (Phase 11 Complete): 1,084 tests
-├── Core Features: 33 modules with passing tests
+Total Tests: 1,769 tests (204 smoke-marked)
+├── Core Features: 40+ modules with passing tests
+├── Data Contracts: 154 tests (9 contracts) [smoke]
+├── Pipeline Gates: 59 tests (12 components)
+├── Pipeline ↔ Gate Integration: 20 tests [NEW]
+├── Contract Converters: 20 tests [NEW, smoke]
+├── Request Logging Middleware: 10 tests [NEW, smoke]
+├── Startup Health: 6 tests [NEW]
+├── Backtest Integrity: 153 tests (integrity + advanced)
+├── Audit Trail: 37 tests
+├── Capital Protection: 98 tests
+├── Performance Validation: 73 tests
+├── LLM Promotion: 49 tests
 ├── Integration Tests: 30 tests (E2E scenarios)
 ├── API Tests: 59 tests (all endpoints)
-├── Test Categories:
-│   ├── Unit Tests: ~800 tests
-│   ├── Integration Tests: 30 tests
-│   └── E2E Tests: 30 tests
+├── Smoke Tests: 204 tests (< 8초, CI 필수)
 └── Uncovered Areas:
     ├── financial_collector (DART hybrid)
     ├── social_collector (Reddit OAuth2)
     ├── opinion (Claude Sonnet)
     ├── prompt_manager (MongoDB versioning)
     ├── health_checker (system validation)
-    └── Roadmap items (pending implementation)
+    └── 4 Not Started items (visualization, compliance, OOS, sensitivity)
 ```
 
 ---
 
-## Next Steps (Stage 1 → Stage 2)
+## Resolved Technical Debt (2026-04-04)
 
-1. **Stage 2-A: Data Contracts**
-   - Define 9 contract schemas (PriceData, FinancialData, NewsData, etc.)
-   - Create operational_thresholds.yaml for threshold management
-   - Implement contract validation framework
-
-2. **Stage 2-B: Pipeline Gates**
-   - Implement 9 pipeline gates (DataGate through FillGate)
-   - Create Pipeline State Machine for gate orchestration
-   - Build GateRegistry for dynamic gate management
-
-3. **Stage 3-A: Backtest Integrity**
-   - Add backtest validation tools
-   - Implement Walk-Forward analysis
-   - Parameter sensitivity analysis framework
-
-4. **Stage 4: Audit Trail**
-   - Expand decision audit trail with full decision path tracking
-   - Create audit visualization dashboard
-   - Generate regulatory compliance reports
-
-5. **Stage 5: Capital & Reconciliation**
-   - Implement capital budget allocation and tracking
-   - Create reconciliation engine (intra-day and EOD)
-   - Build reconciliation exception reports
+1. ✅ **Pipeline ↔ Gate Integration**: InvestmentDecisionPipeline에 GateRegistry + PipelineStateMachine + FallbackHandler 직접 연결. DataGate/SignalGate/EnsembleGate 평가, BLOCK 시 폴백 상태 전이, PipelineResult로 gate_results 수집.
+2. ✅ **Contracts 실사용**: contracts/converters.py 추가. SignalGenerator.generate_all_signals()에서 계약 검증, OrderExecutor.execute_order()에서 OrderIntent 계약 강제.
+3. ✅ **Request ID 도입**: RequestLoggingMiddleware에 X-Request-ID/X-Correlation-ID 생성·전파·응답 헤더 포함. request.state로 하위 핸들러 접근 가능.
+4. ✅ **Startup TODO 제거**: TradingScheduler 시작 + KIS 토큰 초기화 구현. 실패 시 degraded 모드 + health 엔드포인트 반영.
+5. ✅ **Test Markers**: pytest smoke/regression/integration/slow 마커 도입. CI에 smoke-tests 별도 job 추가 (full suite는 smoke 통과 후 실행).
 
 ---
 

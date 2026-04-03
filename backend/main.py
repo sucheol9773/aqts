@@ -19,6 +19,8 @@ from config.logging import logger, setup_logging
 from config.settings import get_settings
 from db.database import MongoDBManager, RedisManager, engine
 from core.graceful_shutdown import GracefulShutdownManager
+from core.trading_scheduler import TradingScheduler
+from core.data_collector.kis_client import KISClient
 
 # Phase 5: API 라우터 & 미들웨어
 from api.routes import auth, portfolio, orders, profile, market, alerts, system, audit
@@ -30,6 +32,10 @@ from api.middleware.request_logger import RequestLoggingMiddleware
 # ══════════════════════════════════════
 shutdown_manager = GracefulShutdownManager()
 shutdown_event = asyncio.Event()
+
+# 스케줄러 & KIS 클라이언트 (startup에서 초기화)
+trading_scheduler: TradingScheduler | None = None
+kis_client: KISClient | None = None
 
 
 def _signal_handler(sig, frame):
@@ -67,8 +73,30 @@ async def lifespan(app: FastAPI):
 
         logger.info("PostgreSQL (TimescaleDB) engine ready")
 
-        # TODO: 스케줄러 시작 로직 추가
-        # TODO: 한투 API 토큰 초기화 추가
+        # ── 스케줄러 시작 ──
+        global trading_scheduler
+        try:
+            trading_scheduler = TradingScheduler()
+            await trading_scheduler.start()
+            logger.info("TradingScheduler started successfully")
+        except Exception as e:
+            logger.warning(f"TradingScheduler 시작 실패 (degraded): {e}")
+            trading_scheduler = None
+            app.state.scheduler_degraded = True
+
+        # ── KIS API 토큰 초기화 ──
+        global kis_client
+        try:
+            kis_client = KISClient()
+            if not settings.kis.is_backtest:
+                await kis_client._token_manager.get_access_token()
+                logger.info("KIS API 토큰 초기화 완료")
+            else:
+                logger.info("KIS BACKTEST 모드 — 토큰 발급 건너뜀")
+        except Exception as e:
+            logger.warning(f"KIS 토큰 초기화 실패 (degraded): {e}")
+            kis_client = None
+            app.state.kis_degraded = True
 
         logger.info("AQTS startup complete. System ready.")
 
@@ -80,6 +108,14 @@ async def lifespan(app: FastAPI):
 
     # ── Shutdown (NFR-06: 그레이스풀 셧다운) ──
     logger.info("AQTS shutting down...")
+
+    # 스케줄러 중지
+    if trading_scheduler and trading_scheduler.is_running:
+        try:
+            await trading_scheduler.stop()
+            logger.info("TradingScheduler stopped")
+        except Exception as e:
+            logger.error(f"TradingScheduler stop failed: {e}")
 
     # DB 정리 콜백 등록
     shutdown_manager.register_cleanup(MongoDBManager.disconnect)
@@ -161,6 +197,24 @@ async def health_check():
     except Exception as e:
         health["components"]["redis"] = f"unhealthy: {str(e)}"
         health["status"] = "degraded"
+
+    # 스케줄러 상태 (degraded 허용)
+    if getattr(app.state, "scheduler_degraded", False):
+        health["components"]["scheduler"] = "degraded"
+        health["status"] = "degraded"
+    elif trading_scheduler and trading_scheduler.is_running:
+        health["components"]["scheduler"] = "healthy"
+    else:
+        health["components"]["scheduler"] = "stopped"
+
+    # KIS API 상태 (degraded 허용)
+    if getattr(app.state, "kis_degraded", False):
+        health["components"]["kis_api"] = "degraded"
+        health["status"] = "degraded"
+    elif kis_client:
+        health["components"]["kis_api"] = "healthy"
+    else:
+        health["components"]["kis_api"] = "not_initialized"
 
     return health
 

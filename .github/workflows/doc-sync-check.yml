@@ -33,9 +33,36 @@ jobs:
       - name: Run document sync check
         run: python scripts/check_doc_sync.py --verbose
 
-  tests:
-    name: Run Test Suite
+  smoke-tests:
+    name: Smoke Tests (핵심 기능 빠른 검증)
     runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio pytest-cov pytest-mock
+
+      - name: Run smoke tests
+        env:
+          TRADING_MODE: BACKTEST
+        run: |
+          cd backend
+          python -m pytest tests/ -m smoke -v --tb=short
+
+  tests:
+    name: Run Full Test Suite
+    runs-on: ubuntu-latest
+    needs: smoke-tests
 
     services:
       postgres:
@@ -70,7 +97,7 @@ jobs:
         run: |
           cd backend
           pip install -r requirements.txt
-          pip install pytest pytest-asyncio pytest-cov
+          pip install pytest pytest-asyncio pytest-cov pytest-mock
 
       - name: Run tests
         env:

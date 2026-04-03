@@ -16,6 +16,7 @@ def _valid_fv(**overrides):
     return defaults
 
 
+@pytest.mark.smoke
 class TestFeatureVectorValid:
     def test_basic_creation(self):
         fv = FeatureVector(**_valid_fv())
@@ -55,6 +56,7 @@ class TestFeatureVectorValid:
         assert fv2.tech_rsi == 100.0
 
 
+@pytest.mark.smoke
 class TestFeatureVectorInvalid:
     def test_no_features_at_all(self):
         with pytest.raises(ValidationError, match="최소 1개"):

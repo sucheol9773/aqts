@@ -16,6 +16,7 @@ import pytest
 
 
 @pytest.mark.asyncio
+@pytest.mark.smoke
 class TestAuth401Behavior:
     """Authorization 헤더 미제공 시 401 반환 검증."""
 

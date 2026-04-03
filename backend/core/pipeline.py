@@ -11,8 +11,14 @@ Phase 3 통합 서비스:
 이 모듈은 Phase 3 범위의 "Market re-analysis" 단계를 담당합니다.
 Quant Engine (Phase 2) 시그널과 AI Analyzer (Phase 3) 시그널을
 Strategy Ensemble Engine에 합류시킵니다.
+
+Stage 2-B 통합 (v2):
+GateRegistry / PipelineStateMachine / FallbackHandler 실행 경로 연결.
+각 파이프라인 전이 지점에서 Gate 평가(PASS/BLOCK)를 수행하고,
+BLOCK 시 FallbackHandler가 안전한 상태 전이를 적용합니다.
 """
 
+from dataclasses import dataclass, field
 from typing import Optional
 
 from config.constants import RiskProfile, StrategyType
@@ -20,12 +26,50 @@ from config.logging import logger
 from core.ai_analyzer.opinion import OpinionGenerator
 from core.ai_analyzer.sentiment import SentimentAnalyzer
 from core.data_collector.news_collector import NewsCollectorService
+from core.fallback_handler import FallbackHandler
+from core.gate_registry import GateRegistry
+from core.gates import (
+    DataGate,
+    EnsembleGate,
+    FactorGate,
+    SignalGate,
+)
+from core.gates.base import GateDecision, GateResult
 from core.quant_engine.signal_generator import Signal, SignalGenerator
+from core.state_machine import PipelineState, PipelineStateMachine
 from core.strategy_ensemble.engine import (
     EnsembleSignal,
     StrategyEnsembleEngine,
     StrategySignalInput,
 )
+
+
+@dataclass
+class PipelineResult:
+    """파이프라인 실행 결과 (Gate 평가 포함).
+
+    ensemble_signal: 앙상블 결과 (BLOCK 시 None)
+    gate_results: 실행된 Gate 판정 기록 목록
+    final_state: 파이프라인 최종 상태
+    blocked: Gate 차단으로 중단됐는지 여부
+    blocked_by: 차단한 Gate ID (없으면 None)
+    """
+
+    ensemble_signal: Optional[EnsembleSignal] = None
+    gate_results: list[GateResult] = field(default_factory=list)
+    final_state: PipelineState = PipelineState.IDLE
+    blocked: bool = False
+    blocked_by: Optional[str] = None
+
+
+def _build_default_gate_registry() -> GateRegistry:
+    """분석 파이프라인에서 사용할 기본 Gate 세트를 등록합니다."""
+    registry = GateRegistry()
+    registry.register(DataGate())
+    registry.register(FactorGate())
+    registry.register(SignalGate())
+    registry.register(EnsembleGate())
+    return registry
 
 
 class InvestmentDecisionPipeline:
@@ -34,9 +78,19 @@ class InvestmentDecisionPipeline:
 
     단일 호출로 뉴스 수집 → 감성 분석 → 투자 의견 생성 →
     앙상블 시그널 산출까지 전체 흐름을 실행합니다.
+
+    Gate 통합:
+      각 전이 지점(수집→분석, 시그널→앙상블 등)에서 Gate 평가를 수행합니다.
+      BLOCK 시 FallbackHandler가 상태를 안전하게 전환하고 PipelineResult로 반환합니다.
     """
 
-    def __init__(self, risk_profile: RiskProfile = RiskProfile.BALANCED):
+    def __init__(
+        self,
+        risk_profile: RiskProfile = RiskProfile.BALANCED,
+        gate_registry: Optional[GateRegistry] = None,
+        state_machine: Optional[PipelineStateMachine] = None,
+        fallback_handler: Optional[FallbackHandler] = None,
+    ):
         self._profile = risk_profile
         self._news_service = NewsCollectorService()
         self._sentiment = SentimentAnalyzer()
@@ -44,15 +98,57 @@ class InvestmentDecisionPipeline:
         self._signal_gen = SignalGenerator()
         self._ensemble = StrategyEnsembleEngine(risk_profile)
 
+        # Gate 계층 (optional — 주입하지 않으면 기본 구성 사용)
+        self._sm = state_machine if state_machine is not None else PipelineStateMachine()
+        self._registry = gate_registry if gate_registry is not None else _build_default_gate_registry()
+        self._fallback = fallback_handler if fallback_handler is not None else FallbackHandler(self._sm)
+
+    # ──────────────────────────────────────
+    # 공용 Gate 평가 헬퍼
+    # ──────────────────────────────────────
+    async def _evaluate_gate(
+        self,
+        gate_id: str,
+        data,
+        gate_results: list[GateResult],
+        **kwargs,
+    ) -> Optional[GateResult]:
+        """단일 Gate를 평가하고 결과를 기록합니다.
+
+        Returns:
+            BLOCK이면 해당 GateResult, PASS면 None
+        """
+        gate = self._registry.get(gate_id)
+        if gate is None:
+            # Gate가 등록되어 있지 않으면 건너뜀
+            return None
+
+        result = await gate.evaluate(data, **kwargs)
+        gate_results.append(result)
+
+        logger.info(
+            f"[Gate] {gate_id}: {result.decision.value} "
+            f"(severity={result.severity.value}) — {result.reason}"
+        )
+
+        if result.decision == GateDecision.BLOCK:
+            self._fallback.handle(result)
+            return result
+
+        return None
+
+    # ──────────────────────────────────────
+    # 단일 종목 분석
+    # ──────────────────────────────────────
     async def run_full_analysis(
         self,
         ticker: str,
         quant_signals: Optional[list[Signal]] = None,
         composite_score: float = 50.0,
         force_refresh: bool = False,
-    ) -> EnsembleSignal:
+    ) -> PipelineResult:
         """
-        단일 종목 전체 분석 파이프라인
+        단일 종목 전체 분석 파이프라인 (Gate 통합)
 
         Args:
             ticker: 종목코드
@@ -61,15 +157,34 @@ class InvestmentDecisionPipeline:
             force_refresh: 캐시 무시 여부
 
         Returns:
-            EnsembleSignal (최종 앙상블 시그널)
+            PipelineResult (ensemble_signal + gate_results + 상태)
         """
+        gate_results: list[GateResult] = []
+
+        # ── 상태: IDLE → COLLECTING ──
+        self._sm.reset("파이프라인 시작")
+        self._sm.transition(PipelineState.COLLECTING, f"종목 {ticker} 분석 시작")
+
         logger.info(f"Pipeline started: {ticker}, profile={self._profile.value}")
 
-        # ── Step 1: 뉴스 수집 (이미 저장된 데이터 조회) ──
+        # ── Step 1: 뉴스 수집 ──
         articles = await self._news_service.get_articles_for_ticker(
             ticker, hours=24, limit=20,
         )
         logger.debug(f"[{ticker}] News articles found: {len(articles)}")
+
+        # ── Gate: DataGate (수집 → 분석 전이) ──
+        block = await self._evaluate_gate("DataGate", articles, gate_results)
+        if block:
+            return PipelineResult(
+                gate_results=gate_results,
+                final_state=self._sm.state,
+                blocked=True,
+                blocked_by="DataGate",
+            )
+
+        # ── 상태: COLLECTING → ANALYZING ──
+        self._sm.transition(PipelineState.ANALYZING, "데이터 수집 완료, 분석 시작")
 
         # ── Step 2: AI 감성 분석 (Mode A) ──
         sentiment = await self._sentiment.analyze_ticker(
@@ -77,9 +192,7 @@ class InvestmentDecisionPipeline:
         )
 
         # ── Step 3: AI 투자 의견 (Mode B) ──
-        # 정량 시그널 요약 준비
         quant_summary = self._summarize_quant_signals(quant_signals, composite_score)
-
         opinion = await self._opinion.generate_stock_opinion(
             ticker=ticker,
             sentiment_result=sentiment.to_dict(),
@@ -88,12 +201,42 @@ class InvestmentDecisionPipeline:
             force_refresh=force_refresh,
         )
 
-        # ── Step 4: 시그널 통합 및 앙상블 ──
+        # ── Gate: SignalGate (시그널 → 앙상블 전이) ──
         ensemble_inputs = self._build_ensemble_inputs(
             quant_signals, sentiment, opinion,
         )
+        block = await self._evaluate_gate("SignalGate", ensemble_inputs, gate_results)
+        if block:
+            return PipelineResult(
+                gate_results=gate_results,
+                final_state=self._sm.state,
+                blocked=True,
+                blocked_by="SignalGate",
+            )
 
+        # ── Step 4: 앙상블 ──
         result = await self._ensemble.generate_ensemble_signal(ticker, ensemble_inputs)
+
+        # ── Gate: EnsembleGate (앙상블 → 다음 단계 전이) ──
+        block = await self._evaluate_gate(
+            "EnsembleGate", result.weights_used, gate_results,
+        )
+        if block:
+            return PipelineResult(
+                gate_results=gate_results,
+                final_state=self._sm.state,
+                blocked=True,
+                blocked_by="EnsembleGate",
+            )
+
+        # ── 상태: ANALYZING → COMPLETED ──
+        # 분석 파이프라인이므로 CONSTRUCTING까지 가지 않고 완료 처리
+        # (CONSTRUCTING → VALIDATING → TRADING 은 주문 실행 파이프라인 범위)
+        self._sm.transition(PipelineState.CONSTRUCTING, "분석 완료, 포트폴리오 구성 대기")
+        self._sm.transition(PipelineState.VALIDATING, "포트폴리오 검증 대기")
+        self._sm.transition(PipelineState.TRADING, "분석 사이클 마무리")
+        self._sm.transition(PipelineState.RECONCILING, "대사 대기")
+        self._sm.transition(PipelineState.COMPLETED, f"{ticker} 분석 사이클 완료")
 
         logger.info(
             f"Pipeline complete: {ticker}, "
@@ -101,14 +244,22 @@ class InvestmentDecisionPipeline:
             f"opinion={opinion.action.value}, "
             f"ensemble={result.final_signal:.4f} ({result.action})"
         )
-        return result
 
+        return PipelineResult(
+            ensemble_signal=result,
+            gate_results=gate_results,
+            final_state=PipelineState.COMPLETED,
+        )
+
+    # ──────────────────────────────────────
+    # 배치 분석
+    # ──────────────────────────────────────
     async def run_batch_analysis(
         self,
         tickers: list[str],
         quant_data: Optional[dict[str, dict]] = None,
         force_refresh: bool = False,
-    ) -> dict[str, EnsembleSignal]:
+    ) -> dict[str, PipelineResult]:
         """
         복수 종목 배치 분석 파이프라인
 
@@ -118,9 +269,9 @@ class InvestmentDecisionPipeline:
             force_refresh: 캐시 무시
 
         Returns:
-            {ticker: EnsembleSignal}
+            {ticker: PipelineResult}
         """
-        results: dict[str, EnsembleSignal] = {}
+        results: dict[str, PipelineResult] = {}
 
         for ticker in tickers:
             try:
@@ -139,11 +290,17 @@ class InvestmentDecisionPipeline:
                 logger.error(f"Pipeline failed for {ticker}: {e}")
                 continue
 
+        succeeded = sum(1 for r in results.values() if not r.blocked)
+        blocked = sum(1 for r in results.values() if r.blocked)
         logger.info(
-            f"Batch pipeline complete: {len(results)}/{len(tickers)} tickers"
+            f"Batch pipeline complete: {succeeded} succeeded, "
+            f"{blocked} blocked, {len(tickers) - len(results)} errors"
         )
         return results
 
+    # ──────────────────────────────────────
+    # 뉴스 수집 / 섹터·매크로 분석 (Gate 미적용)
+    # ──────────────────────────────────────
     async def run_news_collection(self) -> dict:
         """
         뉴스/공시 수집 (배치 분석 전 호출)
@@ -170,7 +327,6 @@ class InvestmentDecisionPipeline:
         Returns:
             InvestmentOpinion (SECTOR)
         """
-        # 섹터 종목별 감성 분석 수집
         ticker_sentiments: dict[str, dict] = {}
         for ticker in tickers:
             articles = await self._news_service.get_articles_for_ticker(
@@ -184,12 +340,10 @@ class InvestmentDecisionPipeline:
                 "summary": sentiment.summary,
             }
 
-        # 섹터 관련 뉴스 (카테고리 "sector" 기반)
         sector_news = await self._news_service.get_recent_articles(
             hours=48, category="sector", limit=20,
         )
 
-        # 거시경제 컨텍스트 (최근 매크로 분석 결과가 있으면 활용)
         macro_context = ""
         try:
             macro_articles = await self._news_service.get_macro_articles(hours=48, limit=5)
@@ -286,7 +440,6 @@ class InvestmentDecisionPipeline:
                 ))
 
         # AI 감성 시그널 (Phase 3 - Mode A + Mode B 통합)
-        # 감성 점수와 투자 의견을 가중 평균하여 SENTIMENT 시그널 생성
         sentiment_value = sentiment.to_signal_value()
         opinion_value = opinion.to_signal_value()
 

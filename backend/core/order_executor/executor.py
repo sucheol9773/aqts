@@ -29,6 +29,7 @@ from sqlalchemy import text
 from config.constants import Market, OrderSide, OrderType, OrderStatus
 from config.logging import logger
 from config.settings import get_settings
+from contracts.converters import order_request_to_contract
 from db.database import async_session_factory
 from db.repositories.audit_log import AuditLogger
 from core.data_collector.kis_client import KISClient
@@ -186,6 +187,13 @@ class OrderExecutor:
         """
         try:
             logger.info(f"주문 실행 시작: {request.ticker} {request.side.value} {request.quantity}")
+
+            # 계약 검증: Pydantic validation을 통해 주문 파라미터 무결성 강제
+            try:
+                order_request_to_contract(request)
+            except Exception as e:
+                logger.error(f"[Contract] OrderIntent 계약 위반: {request.ticker} — {e}")
+                raise ValueError(f"주문 계약 위반: {e}") from e
 
             # 주문 검증
             self._validate_order(request)

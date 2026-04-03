@@ -22,6 +22,7 @@ def _valid_result(**overrides):
     return defaults
 
 
+@pytest.mark.smoke
 class TestRiskCheckItemValid:
     def test_pass_item(self):
         item = _item()
@@ -46,6 +47,7 @@ class TestRiskCheckItemValid:
             assert item.severity == sev
 
 
+@pytest.mark.smoke
 class TestRiskCheckResultValid:
     def test_all_pass(self):
         r = RiskCheckResult(**_valid_result())
@@ -84,6 +86,7 @@ class TestRiskCheckResultValid:
         assert len(r.checks) == 1
 
 
+@pytest.mark.smoke
 class TestRiskCheckResultInvalid:
     def test_block_item_but_pass_overall(self):
         with pytest.raises(ValidationError, match="BLOCK.*아닙니다"):
