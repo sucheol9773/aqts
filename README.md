@@ -80,6 +80,9 @@ aqts/
 │   │   │   └── exchange_rate.py     # 환율 관리 (KIS+FRED, Redis 캐싱)
 │   │   ├── order_executor/
 │   │   │   └── executor.py          # 주문 집행 (시장가·지정가·TWAP·VWAP)
+│   │   ├── trading_guard.py         # 트레이딩 안전 장치 (7계층 보호)
+│   │   ├── health_checker.py        # 시스템 건전성 검사 (5항목)
+│   │   ├── mode_manager.py          # 모드 전환 관리 (BACKTEST→DEMO→LIVE)
 │   │   └── notification/
 │   │       ├── alert_manager.py     # 알림 생성·관리·이력 (템플릿 기반)
 │   │       └── telegram_notifier.py # 텔레그램 봇 알림 발송 (레벨 필터·재시도)
@@ -125,7 +128,10 @@ aqts/
 │       ├── test_exchange_rate.py     # 환율 관리 (39 tests)
 │       ├── test_executor.py          # 주문 집행 (33 tests)
 │       ├── test_notification.py      # 알림 시스템 (72 tests)
-│       └── test_api.py               # API·인증·스키마 (59 tests)
+│       ├── test_api.py               # API·인증·스키마 (59 tests)
+│       ├── test_trading_guard.py     # 트레이딩 안전 장치 (72 tests)
+│       ├── test_mode_manager.py      # 모드 전환 관리 (44 tests)
+│       └── test_integration.py       # 통합·E2E 테스트 (30 tests)
 ├── frontend/
 │   └── index.html                   # SPA 대시보드 (Chart.js)
 └── scripts/
@@ -141,7 +147,7 @@ aqts/
 | Phase 3 | AI 정성적 분석, 전략 앙상블, 데이터 소스 확장 | ✅ 완료 |
 | Phase 4 | 포트폴리오 관리, 리밸런싱, 자동매매 | ✅ 완료 |
 | Phase 5 | 웹 대시보드, API, 알림 시스템 | ✅ 완료 |
-| Phase 6 | 통합 테스트, 모의투자 검증, 실투자 전환 | ⏳ 예정 |
+| Phase 6 | 통합 테스트, 모의투자 검증, 실투자 전환 | ✅ 완료 |
 
 ### Phase 3 상세 구현 내역
 
@@ -180,11 +186,22 @@ aqts/
 | 텔레그램 발송 | 알림 → 텔레그램 전달, 레벨 필터(ALL/IMPORTANT/ERROR), 재시도 3회 | telegram_notifier.py |
 | 웹 대시보드 | SPA 대시보드 (Chart.js), 포트폴리오·주문·알림·설정 화면 | frontend/index.html |
 
+### Phase 6 상세 구현 내역
+
+| 기능 | 설명 | 모듈 |
+|------|------|------|
+| 트레이딩 안전 장치 | 7계층 보호: 환경·자본금·일일손실·MDD·연속손실·주문사전검증·Kill Switch | trading_guard.py |
+| 시스템 건전성 검사 | PostgreSQL·MongoDB·Redis·설정유효성·거래모드 종합 점검 | health_checker.py |
+| 모드 전환 관리 | BACKTEST→DEMO→LIVE 전환 조건 검증, 비상 다운그레이드, 이력 기록 | mode_manager.py |
+| 통합 테스트 | TradingGuard+ModeManager 연동, 서킷브레이커 시나리오, 알림 연동 (30 tests) | test_integration.py |
+| TradingGuard 테스트 | 환경검증·자본금·서킷브레이커·Kill Switch·주문검증 (72 tests) | test_trading_guard.py |
+| ModeManager 테스트 | BACKTEST→DEMO→LIVE 전환, 교차검증, 이력관리 (44 tests) | test_mode_manager.py |
+
 ## 테스트 실행
 
 ```bash
 cd backend
-pytest                    # 전체 테스트 (472 tests)
+pytest                    # 전체 테스트 (615 tests)
 pytest -v                 # 상세 출력
 pytest --cov=core --cov=config  # 커버리지 포함
 ```
