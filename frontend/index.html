@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AQTS - AI Quant Trade System</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --bg-primary: #0f1117;
+            --bg-secondary: #1a1d2e;
+            --bg-card: #232740;
+            --text-primary: #e8eaed;
+            --text-secondary: #9aa0b4;
+            --accent-blue: #4285f4;
+            --accent-green: #34a853;
+            --accent-red: #ea4335;
+            --accent-yellow: #fbbc04;
+            --border: #2d3250;
+            --shadow: rgba(0,0,0,0.3);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        /* ── 로그인 화면 ── */
+        .login-overlay {
+            position: fixed; inset: 0;
+            background: var(--bg-primary);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 1000;
+        }
+        .login-overlay.hidden { display: none; }
+        .login-box {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 48px 40px;
+            width: 380px;
+            text-align: center;
+        }
+        .login-box h1 { font-size: 24px; margin-bottom: 8px; }
+        .login-box p { color: var(--text-secondary); margin-bottom: 32px; font-size: 14px; }
+        .login-box input {
+            width: 100%; padding: 12px 16px;
+            background: var(--bg-secondary); color: var(--text-primary);
+            border: 1px solid var(--border); border-radius: 8px;
+            font-size: 14px; margin-bottom: 16px; outline: none;
+        }
+        .login-box input:focus { border-color: var(--accent-blue); }
+        .login-box button {
+            width: 100%; padding: 12px;
+            background: var(--accent-blue); color: white;
+            border: none; border-radius: 8px;
+            font-size: 14px; font-weight: 600; cursor: pointer;
+        }
+        .login-box button:hover { opacity: 0.9; }
+        .login-error {
+            color: var(--accent-red); font-size: 13px;
+            margin-top: 12px; display: none;
+        }
+
+        /* ── 네비게이션 ── */
+        .nav {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            padding: 0 24px;
+            display: flex; align-items: center; height: 56px;
+        }
+        .nav-brand { font-size: 18px; font-weight: 700; margin-right: 40px; }
+        .nav-brand span { color: var(--accent-blue); }
+        .nav-links { display: flex; gap: 4px; flex: 1; }
+        .nav-link {
+            padding: 8px 16px; color: var(--text-secondary);
+            text-decoration: none; border-radius: 8px; font-size: 13px;
+            font-weight: 500; cursor: pointer; transition: all 0.2s;
+        }
+        .nav-link:hover { background: var(--bg-card); color: var(--text-primary); }
+        .nav-link.active { background: var(--accent-blue); color: white; }
+        .nav-right { display: flex; align-items: center; gap: 16px; }
+        .nav-status {
+            font-size: 12px; padding: 4px 10px;
+            border-radius: 12px; background: rgba(52,168,83,0.15);
+            color: var(--accent-green);
+        }
+        .nav-logout {
+            font-size: 13px; color: var(--text-secondary);
+            cursor: pointer; padding: 6px 12px; border-radius: 6px;
+        }
+        .nav-logout:hover { background: var(--bg-card); }
+
+        /* ── 메인 컨텐츠 ── */
+        .main { padding: 24px; max-width: 1400px; margin: 0 auto; }
+        .page { display: none; }
+        .page.active { display: block; }
+
+        /* ── 카드 그리드 ── */
+        .grid { display: grid; gap: 20px; }
+        .grid-4 { grid-template-columns: repeat(4, 1fr); }
+        .grid-2 { grid-template-columns: repeat(2, 1fr); }
+        .grid-3 { grid-template-columns: repeat(3, 1fr); }
+
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+        }
+        .card-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 16px;
+        }
+        .card-title {
+            font-size: 13px; color: var(--text-secondary);
+            font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        .card-value {
+            font-size: 28px; font-weight: 700; margin: 8px 0 4px;
+        }
+        .card-change {
+            font-size: 13px; font-weight: 500;
+        }
+        .card-change.positive { color: var(--accent-green); }
+        .card-change.negative { color: var(--accent-red); }
+
+        /* ── 테이블 ── */
+        .table-wrap { overflow-x: auto; }
+        table {
+            width: 100%; border-collapse: collapse;
+        }
+        th, td {
+            padding: 12px 16px; text-align: left;
+            border-bottom: 1px solid var(--border);
+            font-size: 13px;
+        }
+        th {
+            color: var(--text-secondary); font-weight: 600;
+            text-transform: uppercase; letter-spacing: 0.5px; font-size: 11px;
+        }
+        .badge {
+            display: inline-block; padding: 3px 8px; border-radius: 4px;
+            font-size: 11px; font-weight: 600;
+        }
+        .badge-green { background: rgba(52,168,83,0.15); color: var(--accent-green); }
+        .badge-red { background: rgba(234,67,53,0.15); color: var(--accent-red); }
+        .badge-blue { background: rgba(66,133,244,0.15); color: var(--accent-blue); }
+        .badge-yellow { background: rgba(251,188,4,0.15); color: var(--accent-yellow); }
+
+        /* ── 차트 ── */
+        .chart-container {
+            position: relative; height: 300px; width: 100%;
+        }
+
+        /* ── 알림 목록 ── */
+        .alert-item {
+            display: flex; gap: 12px; padding: 14px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .alert-icon { font-size: 20px; margin-top: 2px; }
+        .alert-content { flex: 1; }
+        .alert-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+        .alert-message { font-size: 13px; color: var(--text-secondary); white-space: pre-line; }
+        .alert-time { font-size: 11px; color: var(--text-secondary); margin-top: 6px; }
+
+        /* ── 설정 ── */
+        .settings-group { margin-bottom: 24px; }
+        .settings-group h3 { font-size: 16px; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+        .setting-row {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 10px 0; font-size: 14px;
+        }
+        .setting-label { color: var(--text-secondary); }
+        .setting-value { font-weight: 600; }
+
+        /* ── 버튼 ── */
+        .btn {
+            padding: 8px 16px; border-radius: 8px; font-size: 13px;
+            font-weight: 600; cursor: pointer; border: none;
+            transition: opacity 0.2s;
+        }
+        .btn:hover { opacity: 0.85; }
+        .btn-primary { background: var(--accent-blue); color: white; }
+        .btn-danger { background: var(--accent-red); color: white; }
+        .btn-sm { padding: 5px 10px; font-size: 12px; }
+
+        /* ── 반응형 ── */
+        @media (max-width: 1024px) {
+            .grid-4 { grid-template-columns: repeat(2, 1fr); }
+            .grid-3 { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (max-width: 640px) {
+            .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; }
+            .nav-links { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- ══════ 로그인 화면 ══════ -->
+<div class="login-overlay" id="loginOverlay">
+    <div class="login-box">
+        <h1>AQTS</h1>
+        <p>AI Quant Trade System Dashboard</p>
+        <input type="password" id="loginPassword" placeholder="Password" onkeydown="if(event.key==='Enter')doLogin()">
+        <button onclick="doLogin()">Login</button>
+        <div class="login-error" id="loginError">Invalid password</div>
+    </div>
+</div>
+
+<!-- ══════ 네비게이션 ══════ -->
+<nav class="nav" id="mainNav" style="display:none;">
+    <div class="nav-brand">AQTS <span>Dashboard</span></div>
+    <div class="nav-links">
+        <a class="nav-link active" data-page="dashboard" onclick="showPage('dashboard')">Dashboard</a>
+        <a class="nav-link" data-page="portfolio" onclick="showPage('portfolio')">Portfolio</a>
+        <a class="nav-link" data-page="orders" onclick="showPage('orders')">Orders</a>
+        <a class="nav-link" data-page="alerts" onclick="showPage('alerts')">Alerts</a>
+        <a class="nav-link" data-page="settings" onclick="showPage('settings')">Settings</a>
+    </div>
+    <div class="nav-right">
+        <div class="nav-status" id="tradingMode">BACKTEST</div>
+        <div class="nav-logout" onclick="doLogout()">Logout</div>
+    </div>
+</nav>
+
+<!-- ══════ 메인 컨텐츠 ══════ -->
+<div class="main" id="mainContent" style="display:none;">
+
+    <!-- ── Dashboard ── -->
+    <div class="page active" id="page-dashboard">
+        <div class="grid grid-4" style="margin-bottom:20px;">
+            <div class="card">
+                <div class="card-title">Total Value</div>
+                <div class="card-value" id="totalValue">--</div>
+                <div class="card-change" id="dailyReturn">--</div>
+            </div>
+            <div class="card">
+                <div class="card-title">Unrealized P&L</div>
+                <div class="card-value" id="unrealizedPnl">--</div>
+                <div class="card-change" id="realizedPnl">Realized: --</div>
+            </div>
+            <div class="card">
+                <div class="card-title">Positions</div>
+                <div class="card-value" id="positionCount">--</div>
+                <div class="card-change">Active holdings</div>
+            </div>
+            <div class="card">
+                <div class="card-title">Cash (KRW)</div>
+                <div class="card-value" id="cashKrw">--</div>
+                <div class="card-change" id="cashUsd">USD: --</div>
+            </div>
+        </div>
+
+        <div class="grid grid-2">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">Portfolio Value</div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="valueChart"></canvas>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">Asset Allocation</div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="allocationChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Portfolio ── -->
+    <div class="page" id="page-portfolio">
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">Holdings</div>
+                <button class="btn btn-primary btn-sm" onclick="refreshPortfolio()">Refresh</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Ticker</th><th>Market</th><th>Qty</th>
+                            <th>Avg Price</th><th>Current</th><th>P&L</th><th>Weight</th>
+                        </tr>
+                    </thead>
+                    <tbody id="positionsTable">
+                        <tr><td colspan="7" style="text-align:center;color:var(--text-secondary)">No positions</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="grid grid-3" style="margin-top:20px;">
+            <div class="card">
+                <div class="card-title">Performance (1M)</div>
+                <div class="card-value" id="perfReturn">--</div>
+                <div class="card-change">Return</div>
+            </div>
+            <div class="card">
+                <div class="card-title">Max Drawdown</div>
+                <div class="card-value" id="perfMdd">--</div>
+                <div class="card-change">MDD</div>
+            </div>
+            <div class="card">
+                <div class="card-title">Sharpe Ratio</div>
+                <div class="card-value" id="perfSharpe">--</div>
+                <div class="card-change">Risk-adjusted</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Orders ── -->
+    <div class="page" id="page-orders">
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">Order History</div>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Order ID</th><th>Ticker</th><th>Side</th>
+                            <th>Qty</th><th>Type</th><th>Status</th><th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ordersTable">
+                        <tr><td colspan="7" style="text-align:center;color:var(--text-secondary)">No orders</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Alerts ── -->
+    <div class="page" id="page-alerts">
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">Notifications</div>
+                <button class="btn btn-primary btn-sm" onclick="markAllRead()">Mark All Read</button>
+            </div>
+            <div id="alertsList">
+                <div style="text-align:center;color:var(--text-secondary);padding:40px;">No alerts</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Settings ── -->
+    <div class="page" id="page-settings">
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">System Settings</div>
+            </div>
+            <div class="settings-group">
+                <h3>Trading</h3>
+                <div class="setting-row"><span class="setting-label">Environment</span><span class="setting-value" id="setEnv">--</span></div>
+                <div class="setting-row"><span class="setting-label">Trading Mode</span><span class="setting-value" id="setMode">--</span></div>
+            </div>
+            <div class="settings-group">
+                <h3>Risk Management</h3>
+                <div class="setting-row"><span class="setting-label">Initial Capital</span><span class="setting-value" id="setCapital">--</span></div>
+                <div class="setting-row"><span class="setting-label">Daily Loss Limit</span><span class="setting-value" id="setDailyLoss">--</span></div>
+                <div class="setting-row"><span class="setting-label">Max Positions</span><span class="setting-value" id="setMaxPos">--</span></div>
+                <div class="setting-row"><span class="setting-label">Max Position Weight</span><span class="setting-value" id="setMaxWeight">--</span></div>
+                <div class="setting-row"><span class="setting-label">Max Drawdown</span><span class="setting-value" id="setMaxDD">--</span></div>
+                <div class="setting-row"><span class="setting-label">Stop Loss</span><span class="setting-value" id="setStopLoss">--</span></div>
+            </div>
+            <div class="settings-group">
+                <h3>Notifications</h3>
+                <div class="setting-row"><span class="setting-label">Telegram Alert Level</span><span class="setting-value" id="setAlertLevel">--</span></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const API = '/api';
+let token = localStorage.getItem('aqts_token') || '';
+
+// ── API Helper ──
+async function api(path, opts = {}) {
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const res = await fetch(API + path, { ...opts, headers });
+    if (res.status === 401) { doLogout(); return null; }
+    return res.json();
+}
+
+// ── Auth ──
+async function doLogin() {
+    const pw = document.getElementById('loginPassword').value;
+    try {
+        const res = await fetch(API + '/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: pw }),
+        });
+        const data = await res.json();
+        if (data.success && data.data) {
+            token = data.data.access_token;
+            localStorage.setItem('aqts_token', token);
+            showApp();
+        } else {
+            document.getElementById('loginError').style.display = 'block';
+        }
+    } catch (e) {
+        document.getElementById('loginError').style.display = 'block';
+    }
+}
+
+function doLogout() {
+    token = '';
+    localStorage.removeItem('aqts_token');
+    document.getElementById('loginOverlay').classList.remove('hidden');
+    document.getElementById('mainNav').style.display = 'none';
+    document.getElementById('mainContent').style.display = 'none';
+}
+
+async function showApp() {
+    document.getElementById('loginOverlay').classList.add('hidden');
+    document.getElementById('mainNav').style.display = 'flex';
+    document.getElementById('mainContent').style.display = 'block';
+    loadDashboard();
+    loadSettings();
+}
+
+// ── Navigation ──
+function showPage(name) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+    document.getElementById('page-' + name).classList.add('active');
+    document.querySelector(`.nav-link[data-page="${name}"]`).classList.add('active');
+
+    if (name === 'portfolio') loadPortfolio();
+    if (name === 'orders') loadOrders();
+    if (name === 'alerts') loadAlerts();
+}
+
+// ── Dashboard ──
+async function loadDashboard() {
+    const res = await api('/portfolio/summary');
+    if (!res || !res.success) return;
+    const d = res.data;
+    document.getElementById('totalValue').textContent = fmt(d.total_value) + ' KRW';
+    document.getElementById('unrealizedPnl').textContent = fmtPnl(d.unrealized_pnl);
+    document.getElementById('realizedPnl').textContent = 'Realized: ' + fmtPnl(d.realized_pnl);
+    document.getElementById('positionCount').textContent = d.position_count;
+    document.getElementById('cashKrw').textContent = fmt(d.cash_krw);
+    document.getElementById('cashUsd').textContent = 'USD: $' + fmt(d.cash_usd);
+
+    const dr = d.daily_return || 0;
+    const drEl = document.getElementById('dailyReturn');
+    drEl.textContent = (dr >= 0 ? '+' : '') + dr.toFixed(2) + '% today';
+    drEl.className = 'card-change ' + (dr >= 0 ? 'positive' : 'negative');
+
+    initCharts();
+}
+
+// ── Portfolio ──
+async function loadPortfolio() {
+    const res = await api('/portfolio/positions');
+    if (!res || !res.success) return;
+    const tbody = document.getElementById('positionsTable');
+    if (!res.data || res.data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-secondary)">No positions</td></tr>';
+    } else {
+        tbody.innerHTML = res.data.map(p => `
+            <tr>
+                <td><strong>${p.ticker}</strong></td>
+                <td>${p.market}</td>
+                <td>${p.quantity}</td>
+                <td>${fmt(p.avg_price)}</td>
+                <td>${fmt(p.current_price)}</td>
+                <td class="${p.unrealized_pnl >= 0 ? 'positive' : 'negative'}" style="color:${p.unrealized_pnl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'}">${fmtPnl(p.unrealized_pnl)}</td>
+                <td>${(p.weight * 100).toFixed(1)}%</td>
+            </tr>
+        `).join('');
+    }
+
+    const perf = await api('/portfolio/performance?period=1M');
+    if (perf && perf.success && perf.data) {
+        document.getElementById('perfReturn').textContent = (perf.data.return_pct >= 0 ? '+' : '') + perf.data.return_pct.toFixed(2) + '%';
+        document.getElementById('perfMdd').textContent = perf.data.mdd.toFixed(2) + '%';
+        document.getElementById('perfSharpe').textContent = perf.data.sharpe.toFixed(2);
+    }
+}
+
+function refreshPortfolio() { loadPortfolio(); }
+
+// ── Orders ──
+async function loadOrders() {
+    const res = await api('/orders/');
+    if (!res || !res.success) return;
+    const tbody = document.getElementById('ordersTable');
+    if (!res.data || res.data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-secondary)">No orders</td></tr>';
+    } else {
+        tbody.innerHTML = res.data.map(o => `
+            <tr>
+                <td>${o.order_id}</td>
+                <td>${o.ticker}</td>
+                <td><span class="badge ${o.side === 'BUY' ? 'badge-green' : 'badge-red'}">${o.side}</span></td>
+                <td>${o.quantity}</td>
+                <td>${o.order_type}</td>
+                <td><span class="badge badge-blue">${o.status}</span></td>
+                <td>${o.created_at ? new Date(o.created_at).toLocaleString('ko-KR') : '--'}</td>
+            </tr>
+        `).join('');
+    }
+}
+
+// ── Alerts ──
+async function loadAlerts() {
+    const res = await api('/alerts/');
+    if (!res || !res.success) return;
+    const container = document.getElementById('alertsList');
+    const alerts = res.data?.alerts || [];
+    if (alerts.length === 0) {
+        container.innerHTML = '<div style="text-align:center;color:var(--text-secondary);padding:40px;">No alerts</div>';
+        return;
+    }
+    const icons = { INFO: 'ℹ️', WARNING: '⚠️', ERROR: '❌', CRITICAL: '🚨' };
+    container.innerHTML = alerts.map(a => `
+        <div class="alert-item">
+            <div class="alert-icon">${icons[a.level] || '📢'}</div>
+            <div class="alert-content">
+                <div class="alert-title">${a.title}</div>
+                <div class="alert-message">${a.message}</div>
+                <div class="alert-time">${a.created_at ? new Date(a.created_at).toLocaleString('ko-KR') : ''}</div>
+            </div>
+        </div>
+    `).join('');
+}
+
+async function markAllRead() {
+    await api('/alerts/read-all', { method: 'PUT' });
+    loadAlerts();
+}
+
+// ── Settings ──
+async function loadSettings() {
+    const res = await api('/system/settings');
+    if (!res || !res.success) return;
+    const d = res.data;
+    document.getElementById('setEnv').textContent = d.environment;
+    document.getElementById('setMode').textContent = d.trading_mode;
+    document.getElementById('tradingMode').textContent = d.trading_mode;
+    const r = d.risk_management;
+    document.getElementById('setCapital').textContent = fmt(r.initial_capital_krw) + ' KRW';
+    document.getElementById('setDailyLoss').textContent = fmt(r.daily_loss_limit_krw) + ' KRW';
+    document.getElementById('setMaxPos').textContent = r.max_positions;
+    document.getElementById('setMaxWeight').textContent = (r.max_position_weight * 100) + '%';
+    document.getElementById('setMaxDD').textContent = (r.max_drawdown * 100) + '%';
+    document.getElementById('setStopLoss').textContent = (r.stop_loss_percent * 100) + '%';
+    document.getElementById('setAlertLevel').textContent = d.telegram?.alert_level || '--';
+}
+
+// ── Charts ──
+function initCharts() {
+    // Portfolio Value Chart (demo data)
+    const labels = [];
+    const values = [];
+    const base = 50000000;
+    for (let i = 30; i >= 0; i--) {
+        const d = new Date(); d.setDate(d.getDate() - i);
+        labels.push(d.toLocaleDateString('ko-KR', { month:'short', day:'numeric' }));
+        values.push(base + Math.random() * 2000000 - 500000);
+    }
+
+    const ctx1 = document.getElementById('valueChart');
+    if (ctx1._chart) ctx1._chart.destroy();
+    ctx1._chart = new Chart(ctx1, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [{
+                data: values, borderColor: '#4285f4',
+                backgroundColor: 'rgba(66,133,244,0.1)',
+                fill: true, tension: 0.4, pointRadius: 0, borderWidth: 2,
+            }],
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { grid: { color: 'rgba(45,50,80,0.5)' }, ticks: { color: '#9aa0b4', font: { size: 10 } } },
+                y: { grid: { color: 'rgba(45,50,80,0.5)' }, ticks: { color: '#9aa0b4', font: { size: 10 }, callback: v => (v/1000000).toFixed(0) + 'M' } },
+            },
+        },
+    });
+
+    // Allocation Chart
+    const ctx2 = document.getElementById('allocationChart');
+    if (ctx2._chart) ctx2._chart.destroy();
+    ctx2._chart = new Chart(ctx2, {
+        type: 'doughnut',
+        data: {
+            labels: ['Cash (KRW)', 'Cash (USD)', 'KR Stocks', 'US Stocks'],
+            datasets: [{
+                data: [20, 10, 40, 30],
+                backgroundColor: ['#4285f4', '#34a853', '#fbbc04', '#ea4335'],
+                borderWidth: 0,
+            }],
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'bottom', labels: { color: '#9aa0b4', padding: 16, font: { size: 12 } } },
+            },
+        },
+    });
+}
+
+// ── Utilities ──
+function fmt(n) { return n != null ? Number(n).toLocaleString('ko-KR') : '--'; }
+function fmtPnl(n) {
+    if (n == null) return '--';
+    return (n >= 0 ? '+' : '') + Number(n).toLocaleString('ko-KR');
+}
+
+// ── Init ──
+(async function init() {
+    if (token) {
+        const check = await api('/auth/me');
+        if (check && check.success) { showApp(); return; }
+    }
+    document.getElementById('loginOverlay').classList.remove('hidden');
+})();
+</script>
+</body>
+</html>

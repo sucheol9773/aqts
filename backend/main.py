@@ -13,10 +13,15 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from config.logging import logger, setup_logging
 from config.settings import get_settings
 from db.database import MongoDBManager, RedisManager, engine
+
+# Phase 5: API 라우터 & 미들웨어
+from api.routes import auth, portfolio, orders, profile, market, alerts, system
+from api.middleware.request_logger import RequestLoggingMiddleware
 
 
 # ══════════════════════════════════════
@@ -60,8 +65,8 @@ async def lifespan(app: FastAPI):
 
         logger.info("PostgreSQL (TimescaleDB) engine ready")
 
-        # TODO: Phase 4에서 스케줄러 시작 로직 추가
-        # TODO: Phase 1에서 한투 API 토큰 초기화 추가
+        # TODO: 스케줄러 시작 로직 추가
+        # TODO: 한투 API 토큰 초기화 추가
 
         logger.info("AQTS startup complete. System ready.")
 
@@ -94,10 +99,11 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="AQTS - AI Quant Trade System",
     description="AI 기반 정량·정성적 분석 통합 퀀트 트레이딩 시스템",
-    version="0.1.0",
+    version="0.5.0",
     lifespan=lifespan,
 )
 
+# ── 미들웨어 등록 ──
 # CORS 설정 (단일 사용자, 개발 환경)
 app.add_middleware(
     CORSMiddleware,
@@ -106,6 +112,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 요청 로깅 미들웨어
+app.add_middleware(RequestLoggingMiddleware)
 
 
 # ══════════════════════════════════════
@@ -153,22 +162,40 @@ async def health_check():
 
 
 # ══════════════════════════════════════
-# 루트 엔드포인트
+# 루트 엔드포인트 (대시보드 / API 정보)
 # ══════════════════════════════════════
-@app.get("/", tags=["Root"])
-async def root():
+@app.get("/api/info", tags=["Root"])
+async def api_info():
+    """API 정보 엔드포인트"""
     return {
         "name": "AQTS - AI Quant Trade System",
-        "version": "0.1.0",
+        "version": "0.5.0",
         "status": "running",
     }
 
 
+# 대시보드 HTML 서빙
+@app.get("/", tags=["Root"])
+async def dashboard():
+    """웹 대시보드 (Frontend SPA)"""
+    import os
+    from fastapi.responses import FileResponse
+
+    frontend_path = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)), "frontend", "index.html"
+    )
+    if os.path.exists(frontend_path):
+        return FileResponse(frontend_path, media_type="text/html")
+    return {"message": "AQTS Dashboard - frontend/index.html not found"}
+
+
 # ══════════════════════════════════════
-# API 라우터 등록
+# API 라우터 등록 (Phase 5)
 # ══════════════════════════════════════
-# TODO: Phase별로 라우터 추가
-# from api.routes import auth, portfolio, market, orders, profile, rebalancing, settings_router, alerts
-# app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
-# app.include_router(portfolio.router, prefix="/api/portfolio", tags=["Portfolio"])
-# ...
+app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
+app.include_router(portfolio.router, prefix="/api/portfolio", tags=["Portfolio"])
+app.include_router(orders.router, prefix="/api/orders", tags=["Orders"])
+app.include_router(profile.router, prefix="/api/profile", tags=["Profile"])
+app.include_router(market.router, prefix="/api/market", tags=["Market"])
+app.include_router(alerts.router, prefix="/api/alerts", tags=["Alerts"])
+app.include_router(system.router, prefix="/api/system", tags=["System"])
