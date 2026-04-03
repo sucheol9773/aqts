@@ -302,3 +302,40 @@ ENSEMBLE_DEFAULT_WEIGHTS = {
         "SENTIMENT": 0.25,
     },
 }
+
+
+# ══════════════════════════════════════
+# [Phase 4] 경제지표 관련 상수
+# ══════════════════════════════════════
+class EconomicDataSource(str, Enum):
+    """경제지표 데이터 소스"""
+    FRED = "FRED"  # Federal Reserve Economic Data (미국)
+    ECOS = "ECOS"  # 한국은행 경제통계
+
+
+class EconomicIndicatorType(str, Enum):
+    """경제지표 유형"""
+    # 미국 지표 (FRED)
+    GDP = "GDP"
+    CPI = "CPI"
+    FED_FUNDS_RATE = "FED_FUNDS_RATE"
+    TREASURY_2Y = "TREASURY_2Y"
+    TREASURY_10Y = "TREASURY_10Y"
+    UNEMPLOYMENT = "UNEMPLOYMENT"
+    PMI = "PMI"
+    VIX = "VIX"
+    USD_KRW = "USD_KRW"
+
+    # 한국 지표 (ECOS)
+    BOK_BASE_RATE = "BOK_BASE_RATE"
+    KR_CPI = "KR_CPI"
+    KR_UNEMPLOYMENT = "KR_UNEMPLOYMENT"
+    KR_GDP = "KR_GDP"
+    KR_CURRENT_ACCOUNT = "KR_CURRENT_ACCOUNT"
+
+
+# 경제지표 수집 배치 스케줄
+ECONOMIC_COLLECTION_SCHEDULE = {
+    "batch_time": "06:00",  # KST 06:00
+    "frequency": "daily",
+}

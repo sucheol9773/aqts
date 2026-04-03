@@ -275,6 +275,7 @@ class ExternalAPISettings(BaseSettings):
 
     dart_api_key: Optional[str] = Field(default=None, alias="DART_API_KEY")
     fred_api_key: Optional[str] = Field(default=None, alias="FRED_API_KEY")
+    ecos_api_key: Optional[str] = Field(default=None, alias="ECOS_API_KEY")
     reddit_client_id: Optional[str] = Field(default=None, alias="REDDIT_CLIENT_ID")
     reddit_client_secret: Optional[str] = Field(default=None, alias="REDDIT_CLIENT_SECRET")
     reddit_user_agent: str = Field(default="AQTS/1.0", alias="REDDIT_USER_AGENT")
