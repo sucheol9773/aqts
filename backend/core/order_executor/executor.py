@@ -794,20 +794,101 @@ class OrderExecutor:
         """
         logger.warning(f"미체결 주문 시장가 전환: {order_id} qty={remaining_qty}")
 
-        # TODO: 실제 구현
-        # 1. 주문번호에서 종목, 매매방향 조회
-        # 2. 시장가 주문으로 남은 수량 전환
+        try:
+            if self._kis_client.is_backtest:
+                # Mock 모드: 시뮬레이션
+                result = OrderResult(
+                    order_id=order_id,
+                    ticker=f"MOCK_{order_id}",
+                    market=Market.KRX,
+                    side=OrderSide.BUY,
+                    quantity=remaining_qty,
+                    filled_quantity=remaining_qty,
+                    avg_price=100.0,  # Mock 가격
+                    status=OrderStatus.FILLED,
+                    executed_at=datetime.now(timezone.utc),
+                )
+                logger.info(f"미체결 주문 Mock 처리 완료: {order_id}")
+                return result
 
-        result = OrderResult(
-            order_id=order_id,
-            ticker="",
-            market=Market.KRX,
-            side=OrderSide.BUY,
-            quantity=remaining_qty,
-            filled_quantity=remaining_qty,
-            avg_price=0.0,
-            status=OrderStatus.FILLED,
-            executed_at=datetime.now(timezone.utc),
-        )
+            # 실제 주문 처리
+            # 1. 주문 정보 조회
+            order_detail = await self._kis_client.get_kr_order_detail(order_id)
+            ticker = order_detail.get("ticker", "")
+            side = order_detail.get("side", "BUY")
+            market_type = order_detail.get("market", Market.KRX)
 
-        return result
+            # side 값 정규화 (OrderSide.BUY / OrderSide.SELL)
+            if isinstance(side, str):
+                side = OrderSide(side) if side in ["BUY", "SELL"] else OrderSide.BUY
+            elif not isinstance(side, OrderSide):
+                side = OrderSide.BUY
+
+            # market 값 정규화
+            if isinstance(market_type, str):
+                market_type = Market(market_type) if market_type in ["KRX", "NYSE", "NASDAQ", "AMEX"] else Market.KRX
+            elif not isinstance(market_type, Market):
+                market_type = Market.KRX
+
+            if not ticker:
+                raise ValueError(f"주문 정보에서 종목 코드를 찾을 수 없습니다: {order_id}")
+
+            logger.info(f"미체결 주문 정보 조회 완료: {order_id} ticker={ticker} side={side.value} qty={remaining_qty}")
+
+            # 2. 기존 미체결 주문 취소
+            try:
+                await self._kis_client.cancel_kr_order(order_id)
+                logger.info(f"미체결 주문 취소 완료: {order_id}")
+            except Exception as e:
+                logger.warning(f"미체결 주문 취소 실패: {order_id} - {e}")
+
+            # 3. 시장가 주문으로 남은 수량 체결
+            if market_type == Market.KRX:
+                api_result = await self._kis_client.place_kr_order(
+                    ticker=ticker,
+                    side=side.value,
+                    quantity=remaining_qty,
+                    price=0,  # 시장가
+                    order_type="01",  # 시장가
+                )
+            else:
+                api_result = await self._kis_client.place_us_order(
+                    ticker=ticker,
+                    side=side.value,
+                    quantity=remaining_qty,
+                    price=0,  # 시장가
+                )
+
+            # 4. 결과 생성
+            new_order_id = api_result.get("order_id", order_id)
+            result = OrderResult(
+                order_id=new_order_id,
+                ticker=ticker,
+                market=market_type,
+                side=side,
+                quantity=remaining_qty,
+                filled_quantity=int(api_result.get("filled_qty", 0)),
+                avg_price=float(api_result.get("avg_price", 0)),
+                status=OrderStatus.SUBMITTED,
+                executed_at=datetime.now(timezone.utc),
+            )
+
+            logger.info(f"미체결 주문 시장가 전환 완료: 원주문={order_id} 신규주문={new_order_id} qty={remaining_qty}")
+            return result
+
+        except Exception as e:
+            logger.error(f"미체결 주문 처리 실패: {order_id} - {e}")
+            # 오류 발생 시 실패 결과 반환
+            result = OrderResult(
+                order_id=order_id,
+                ticker="",
+                market=Market.KRX,
+                side=OrderSide.BUY,
+                quantity=remaining_qty,
+                filled_quantity=0,
+                avg_price=0.0,
+                status=OrderStatus.FAILED,
+                executed_at=datetime.now(timezone.utc),
+                error_message=str(e),
+            )
+            return result

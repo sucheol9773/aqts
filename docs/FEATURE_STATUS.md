@@ -27,8 +27,8 @@
 | market_data | 시세 데이터 수집 및 무결성 검증 | Tested | core/data_collector/market_data.py | test_market_data.py (12) | 가격 데이터 OHLCV, 이상치 검증 |
 | news_collector | RSS 뉴스 + DART 공시 수집 | Tested | core/data_collector/news_collector.py | test_news_collector.py (13) | Naver/Hankyung/Maekyung/Reuters 4개 소스 |
 | economic_collector | FRED·ECOS 경제지표 수집 | Tested | core/data_collector/economic_collector.py | test_economic_collector.py (17) | 미국 9개 + 한국 5개 지표 |
-| financial_collector | DART 재무제표 (하이브리드) | Implemented | core/data_collector/financial_collector.py | (no tests) | API + 일괄 txt, PER/PBR/ROE 파생 |
-| social_collector | Reddit SNS 데이터 수집 | Implemented | core/data_collector/social_collector.py | (no tests) | OAuth2, 8개 서브레딧, 키워드 필터 |
+| financial_collector | DART 재무제표 (하이브리드) | Tested | core/data_collector/financial_collector.py | test_financial_collector.py (36) | API + 일괄 txt, PER/PBR/ROE 파생 |
+| social_collector | Reddit SNS 데이터 수집 | Tested | core/data_collector/social_collector.py | test_social_collector.py (59) | OAuth2, 8개 서브레딧, 키워드 필터 |
 
 ---
 
@@ -47,8 +47,8 @@
 | Module | Feature | Status | Code Path | Tests | Notes |
 |--------|---------|--------|-----------|-------|-------|
 | sentiment | Claude Haiku 감성 분석 (Mode A) | Tested | core/ai_analyzer/sentiment.py | test_sentiment.py (9) | 뉴스/공시 감성 점수 (-1.0 ~ +1.0) |
-| opinion | Claude Sonnet 투자 의견 (Mode B) | Implemented | core/ai_analyzer/opinion.py | (no tests) | STOCK·SECTOR·MACRO 3단계 의견 |
-| prompt_manager | 프롬프트 DB 버전 관리 | Implemented | core/ai_analyzer/prompt_manager.py | (no tests) | MongoDB 버전관리, 롤백, A/B 테스트 |
+| opinion | Claude Sonnet 투자 의견 (Mode B) | Tested | core/ai_analyzer/opinion.py | test_opinion.py (38) | STOCK·SECTOR·MACRO 3단계 의견 |
+| prompt_manager | 프롬프트 DB 버전 관리 | Tested | core/ai_analyzer/prompt_manager.py | test_prompt_manager.py (43) | MongoDB 버전관리, 롤백, A/B 테스트 |
 
 ---
 
@@ -82,7 +82,7 @@
 |--------|---------|--------|-----------|-------|-------|
 | mode_manager | 모드 전환 (BACKTEST→DEMO→LIVE) | Tested | core/mode_manager.py | test_mode_manager.py (41) | 조건 검증, 비상 다운그레이드, 이력 기록 |
 | demo_verifier | DEMO 실전 가동 검증 (11항목) | Tested | core/demo_verifier.py | test_demo_verifier.py (73) | 11개 종합 체크리스트 |
-| health_checker | 시스템 건전성 검사 (5항목) | Implemented | core/health_checker.py | (no tests) | DB·설정·모드 종합 점검 |
+| health_checker | 시스템 건전성 검사 (5항목) | Tested | core/health_checker.py | test_health_checker.py (19) | DB·설정·모드 종합 점검 |
 | trading_scheduler | 자동화 스케줄러 (KRX 장 시간 기반) | Tested | core/trading_scheduler.py | test_trading_scheduler.py (76) | 5단계 자동화, 거래일 판별 |
 | daily_reporter | 일일 리포트 생성 및 발송 | Tested | core/daily_reporter.py | test_daily_reporter.py (70) | 수익률·거래·Top3 리포트 |
 | daily_reporter_top_bottom | Top/Bottom 3 종목 자동 추출 | Tested | core/daily_reporter.py | test_daily_reporter_top_bottom.py (5) | 수익률 기준 상위/하위 종목 |
@@ -252,7 +252,7 @@
 ## Test Coverage Summary
 
 ```
-Total Tests: 1,769 tests (204 smoke-marked) — ALL PASS
+Total Tests: 1,978 tests (413 smoke-marked) — ALL PASS, Coverage 83%
 ├── Core Features: 40+ modules with passing tests
 ├── Data Contracts: 154 tests (9 contracts) [smoke]
 ├── Pipeline Gates: 59 tests (12 components)
@@ -260,20 +260,21 @@ Total Tests: 1,769 tests (204 smoke-marked) — ALL PASS
 ├── Contract Converters: 20 tests [NEW, smoke]
 ├── Request Logging Middleware: 10 tests [NEW, smoke]
 ├── Startup Health: 6 tests [NEW]
+├── Health Checker: 19 tests [NEW, smoke]
+├── System API Routes: 14 tests [NEW, smoke]
+├── Financial Collector: 36 tests [NEW, smoke]
+├── Social Collector: 59 tests [NEW, smoke]
+├── Opinion Generator: 38 tests [NEW, smoke]
+├── Prompt Manager: 43 tests [NEW, smoke]
 ├── Backtest Integrity: 153 tests (integrity + advanced)
 ├── Audit Trail: 37 tests
 ├── Capital Protection: 98 tests
 ├── Performance Validation: 73 tests
 ├── LLM Promotion: 49 tests
 ├── Integration Tests: 30 tests (E2E scenarios)
-├── API Tests: 59 tests (all endpoints)
-├── Smoke Tests: 204 tests (< 8초, CI 필수)
-└── Uncovered Areas:
-    ├── financial_collector (DART hybrid)
-    ├── social_collector (Reddit OAuth2)
-    ├── opinion (Claude Sonnet)
-    ├── prompt_manager (MongoDB versioning)
-    ├── health_checker (system validation)
+├── API Tests: 73 tests (all endpoints)
+├── Smoke Tests: 413 tests (< 13초, CI 필수)
+└── Remaining Uncovered:
     └── 4 Not Started items (visualization, compliance, OOS, sensitivity)
 ```
 

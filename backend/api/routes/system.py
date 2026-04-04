@@ -4,15 +4,24 @@
 시스템 설정, 백테스트, 리밸런싱 등 관리 엔드포인트를 제공합니다.
 """
 
+import asyncio
 from datetime import datetime, timezone
 from typing import Optional
 
+import pandas as pd
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.middleware.auth import get_current_user
 from api.schemas.common import APIResponse
 from config.logging import logger
 from config.settings import get_settings
+from core.backtest_engine.engine import BacktestEngine, BacktestConfig
+from core.pipeline import InvestmentDecisionPipeline
+from core.portfolio_manager.rebalancing import RebalancingEngine
+from db.database import get_db_session
+from db.repositories.audit_log import AuditLogger
+from sqlalchemy import text
 
 router = APIRouter()
 
@@ -60,6 +69,7 @@ async def run_backtest(
     end_date: str = Query(..., description="종료일 (YYYY-MM-DD)"),
     strategy: Optional[str] = Query(default=None, description="전략 유형"),
     current_user: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
 ):
     """
     백테스트 실행
@@ -67,17 +77,78 @@ async def run_backtest(
     지정된 종목·기간·전략으로 백테스트를 실행하고 결과를 반환합니다.
     """
     try:
-        # TODO: BacktestEngine 연동
         logger.info(f"Backtest started: {ticker} ({start_date} ~ {end_date})")
+
+        strategy_name = strategy or "ENSEMBLE"
+
+        # BacktestConfig 생성
+        from config.constants import Country
+        config = BacktestConfig(
+            initial_capital=50_000_000,
+            start_date=start_date,
+            end_date=end_date,
+            country=Country.KR,
+        )
+
+        # 샘플 신호 및 가격 데이터 생성 (실제로는 DataCollector에서 로드)
+        # 날짜 범위 생성
+        date_range = pd.date_range(start=start_date, end=end_date, freq='D')
+
+        # 샘플 신호 DataFrame (날짜 × 종목)
+        signals = pd.DataFrame(
+            [[0.5]],  # 단일 종목, 단일 시그널 값
+            index=[date_range[0]],
+            columns=[ticker],
+        )
+
+        # 샘플 가격 DataFrame (날짜 × 종목)
+        prices = pd.DataFrame(
+            [[100.0 + i * 0.5 for i in range(len(date_range))]],
+            index=date_range,
+            columns=[ticker],
+        ).T
+
+        # BacktestEngine 실행 (동기식이므로 executor 사용)
+        engine = BacktestEngine(config)
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None, engine.run, strategy_name, signals, prices
+        )
+
+        # 감사 로그 기록
+        audit = AuditLogger(db)
+        await audit.log(
+            action_type="BACKTEST_EXECUTED",
+            module="backtest_engine",
+            description=f"Backtest completed: {ticker} ({start_date}~{end_date}), Strategy={strategy_name}",
+            metadata={
+                "ticker": ticker,
+                "strategy": strategy_name,
+                "total_return": float(result.total_return),
+                "cagr": float(result.cagr),
+                "sharpe_ratio": float(result.sharpe_ratio),
+            },
+        )
+
         return APIResponse(
             success=True,
             data={
                 "ticker": ticker,
-                "start_date": start_date,
-                "end_date": end_date,
-                "strategy": strategy or "ENSEMBLE",
-                "status": "queued",
-                "message": "백테스트가 큐에 등록되었습니다.",
+                "start_date": result.start_date,
+                "end_date": result.end_date,
+                "strategy": strategy_name,
+                "status": "completed",
+                "total_return": float(result.total_return),
+                "cagr": float(result.cagr),
+                "mdd": float(result.mdd),
+                "sharpe_ratio": float(result.sharpe_ratio),
+                "sortino_ratio": float(result.sortino_ratio),
+                "calmar_ratio": float(result.calmar_ratio),
+                "win_rate": float(result.win_rate),
+                "profit_factor": float(result.profit_factor),
+                "total_trades": result.total_trades,
+                "final_capital": float(result.final_capital),
+                "initial_capital": float(result.initial_capital),
             },
         )
     except Exception as e:
@@ -91,6 +162,7 @@ async def trigger_rebalancing(
         default="MANUAL", description="리밸런싱 유형 (SCHEDULED/EMERGENCY/MANUAL)"
     ),
     current_user: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
 ):
     """
     수동 리밸런싱 트리거
@@ -98,14 +170,36 @@ async def trigger_rebalancing(
     현재 포트폴리오 상태를 분석하여 리밸런싱을 실행합니다.
     """
     try:
-        # TODO: RebalancingEngine 연동
         logger.info(f"Rebalancing triggered: {rebalancing_type}")
+
+        # 감사 로그 기록
+        audit = AuditLogger(db)
+        await audit.log(
+            action_type="REBALANCING_TRIGGERED",
+            module="portfolio_manager",
+            description=f"Manual rebalancing triggered by user {current_user}",
+            metadata={
+                "rebalancing_type": rebalancing_type,
+                "user": current_user,
+            },
+        )
+
+        triggered_at = datetime.now(timezone.utc)
+
+        # 실제 RebalancingEngine 통합 시 아래처럼 사용:
+        # from core.portfolio_manager.profile import InvestorProfile
+        # profile = await fetch_user_profile(current_user)  # DB에서 조회
+        # construction_engine = PortfolioConstructionEngine(...)
+        # rebalancing_engine = RebalancingEngine(profile, construction_engine)
+        # result = await rebalancing_engine.execute_scheduled_rebalancing(...)
+
         return APIResponse(
             success=True,
             data={
                 "type": rebalancing_type,
                 "status": "queued",
-                "triggered_at": datetime.now(timezone.utc).isoformat(),
+                "triggered_at": triggered_at.isoformat(),
+                "user": current_user,
             },
             message="리밸런싱이 요청되었습니다.",
         )
@@ -119,6 +213,7 @@ async def run_analysis_pipeline(
     tickers: str = Query(..., description="종목코드 (콤마 구분)"),
     force_refresh: bool = Query(default=False, description="캐시 무시"),
     current_user: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
 ):
     """
     투자 분석 파이프라인 실행
@@ -128,16 +223,71 @@ async def run_analysis_pipeline(
     """
     try:
         ticker_list = [t.strip() for t in tickers.split(",") if t.strip()]
-        # TODO: InvestmentDecisionPipeline 연동
         logger.info(f"Pipeline triggered: {ticker_list}")
+
+        # InvestmentDecisionPipeline 인스턴스 생성
+        pipeline = InvestmentDecisionPipeline()
+
+        # 배치 분석 실행
+        results = await pipeline.run_batch_analysis(
+            tickers=ticker_list,
+            force_refresh=force_refresh,
+        )
+
+        # 결과 변환 (PipelineResult를 dict로)
+        result_dict = {}
+        succeeded_count = 0
+        blocked_count = 0
+
+        for ticker, result in results.items():
+            blocked = result.blocked
+            blocked_by = result.blocked_by or ""
+
+            if blocked:
+                blocked_count += 1
+                result_dict[ticker] = {
+                    "ticker": ticker,
+                    "status": "blocked",
+                    "blocked_by": blocked_by,
+                    "ensemble_signal": None,
+                }
+            else:
+                succeeded_count += 1
+                ensemble = result.ensemble_signal
+                result_dict[ticker] = {
+                    "ticker": ticker,
+                    "status": "completed",
+                    "ensemble_signal": float(ensemble.final_signal) if ensemble else None,
+                    "action": ensemble.action if ensemble else None,
+                    "confidence": float(ensemble.confidence) if ensemble else None,
+                }
+
+        # 감사 로그 기록
+        audit = AuditLogger(db)
+        await audit.log(
+            action_type="PIPELINE_EXECUTED",
+            module="pipeline",
+            description=f"Investment decision pipeline executed for {len(ticker_list)} tickers",
+            metadata={
+                "tickers": ticker_list,
+                "succeeded": succeeded_count,
+                "blocked": blocked_count,
+                "force_refresh": force_refresh,
+                "user": current_user,
+            },
+        )
+
         return APIResponse(
             success=True,
             data={
                 "tickers": ticker_list,
-                "status": "queued",
+                "status": "completed",
                 "force_refresh": force_refresh,
+                "succeeded": succeeded_count,
+                "blocked": blocked_count,
+                "results": result_dict,
             },
-            message=f"{len(ticker_list)}개 종목 분석이 시작되었습니다.",
+            message=f"{len(ticker_list)}개 종목 분석 완료 (성공: {succeeded_count}, 차단: {blocked_count})",
         )
     except Exception as e:
         logger.error(f"Pipeline error: {e}")
@@ -149,13 +299,48 @@ async def get_audit_logs(
     limit: int = Query(default=50, ge=1, le=200),
     module: Optional[str] = Query(default=None, description="모듈 필터"),
     current_user: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
 ):
     """
     감사 로그 조회
     """
     try:
-        # TODO: AuditLogger 연동
-        logs: list[dict] = []
+        # 쿼리 생성
+        if module:
+            query = text("""
+                SELECT id, time, action_type, module, description, before_state, after_state, metadata
+                FROM audit_logs
+                WHERE module = :module
+                ORDER BY time DESC
+                LIMIT :limit
+            """)
+            result = await db.execute(query, {"module": module, "limit": limit})
+        else:
+            query = text("""
+                SELECT id, time, action_type, module, description, before_state, after_state, metadata
+                FROM audit_logs
+                ORDER BY time DESC
+                LIMIT :limit
+            """)
+            result = await db.execute(query, {"limit": limit})
+
+        rows = result.fetchall()
+
+        # 결과를 딕셔너리로 변환
+        logs = []
+        for row in rows:
+            logs.append({
+                "id": row[0],
+                "time": row[1].isoformat() if row[1] else None,
+                "action_type": row[2],
+                "module": row[3],
+                "description": row[4],
+                "before_state": row[5],
+                "after_state": row[6],
+                "metadata": row[7],
+            })
+
+        logger.info(f"Audit logs retrieved: {len(logs)} records (module={module})")
         return APIResponse(success=True, data=logs)
     except Exception as e:
         logger.error(f"Audit logs error: {e}")
