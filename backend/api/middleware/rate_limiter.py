@@ -30,7 +30,7 @@ from config.logging import logger
 # Rate Limiter 인스턴스
 # ══════════════════════════════════════
 # 테스트 환경에서는 Rate Limiting 비활성화 (TESTING=1 환경변수)
-_is_testing = os.environ.get("TESTING", "0") == "1"
+_is_testing = os.environ.get("TESTING", "").lower() in ("1", "true", "yes")
 
 limiter = Limiter(
     key_func=get_remote_address,
