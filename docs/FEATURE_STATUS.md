@@ -290,6 +290,7 @@
 | OPS-007 | Docker 환경 세팅 | docs/operations/docker-setup-guide.md | 개발/스테이징/프로덕션 환경 구성 |
 | OPS-008 | 배포 및 검증 로드맵 | docs/operations/deployment-roadmap.md | Phase 0~4 단계별 배포/검증/확장 절차 |
 | OPS-009 | GCP 프로비저닝 가이드 | docs/operations/gcp-provisioning-guide.md | GCP VM 생성, 방화벽, SSL, 배포, NCP 이전 절차 |
+| OPS-010 | CI/CD 파이프라인 | .github/workflows/ci.yml, cd.yml | GitHub Actions CI/CD (Lint→Smoke→Test→Build→Deploy) |
 
 ---
 

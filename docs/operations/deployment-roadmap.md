@@ -288,7 +288,7 @@ Phase 3 안정화 완료 후, 실전 데이터가 충분히 쌓인 상태에서 
 - Kubernetes 마이그레이션 (트래픽 증가 시)
 - Canary 배포 자동화 (rollback-plan.md에 기준 정의됨)
 - 멀티 리전 배포 (해외 시장 확장 시)
-- CI/CD 파이프라인 자동화 (GitHub Actions → Docker Build → Deploy)
+- ~~CI/CD 파이프라인 자동화~~ ✅ (GitHub Actions ci.yml + cd.yml 구성 완료)
 
 ---
 

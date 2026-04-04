@@ -1,4 +1,7 @@
-name: Document-Code-Test Sync Check
+# ══════════════════════════════════════════════════════════════
+# Document-Code Sync Check — 문서↔코드↔테스트 정합성 검증
+# ══════════════════════════════════════════════════════════════
+name: Doc Sync
 
 on:
   push:
@@ -20,91 +23,12 @@ jobs:
   doc-sync:
     name: Document Sync Verification
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: Run document sync check
         run: python scripts/check_doc_sync.py --verbose
-
-  smoke-tests:
-    name: Smoke Tests (핵심 기능 빠른 검증)
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          cd backend
-          pip install -r requirements.txt
-          pip install pytest pytest-asyncio pytest-cov pytest-mock
-
-      - name: Run smoke tests
-        env:
-          TRADING_MODE: BACKTEST
-        run: |
-          cd backend
-          python -m pytest tests/ -m smoke -v --tb=short
-
-  tests:
-    name: Run Full Test Suite
-    runs-on: ubuntu-latest
-    needs: smoke-tests
-
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: aqts
-          POSTGRES_PASSWORD: aqts_test
-          POSTGRES_DB: aqts_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-      redis:
-        image: redis:7.2
-        ports:
-          - 6379:6379
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          cd backend
-          pip install -r requirements.txt
-          pip install pytest pytest-asyncio pytest-cov pytest-mock
-
-      - name: Run tests
-        env:
-          TRADING_MODE: BACKTEST
-          DATABASE_URL: postgresql://aqts:aqts_test@localhost:5432/aqts_test
-          REDIS_URL: redis://localhost:6379/0
-        run: |
-          cd backend
-          python -m pytest tests/ -v --tb=short --co -q | tail -1
-          python -m pytest tests/ -v --tb=short
