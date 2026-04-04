@@ -274,7 +274,12 @@ class TestSystemRoutes:
             mock_audit.return_value = mock_audit_instance
 
             # Execute
+            mock_request = MagicMock()
+            mock_request.client.host = "127.0.0.1"
+            mock_request.url.path = "/api/system/pipeline"
+
             response = await run_analysis_pipeline(
+                request=mock_request,
                 tickers="005930,000660",
                 force_refresh=False,
                 current_user="analyst",
@@ -339,7 +344,12 @@ class TestSystemRoutes:
             mock_audit.return_value = mock_audit_instance
 
             # Execute with spaces
+            mock_request = MagicMock()
+            mock_request.client.host = "127.0.0.1"
+            mock_request.url.path = "/api/system/pipeline"
+
             response = await run_analysis_pipeline(
+                request=mock_request,
                 tickers="005930, 000660 , 360750",
                 force_refresh=False,
                 current_user="admin",
@@ -368,7 +378,12 @@ class TestSystemRoutes:
             mock_pipeline.return_value = mock_pipeline_instance
 
             # Execute
+            mock_request = MagicMock()
+            mock_request.client.host = "127.0.0.1"
+            mock_request.url.path = "/api/system/pipeline"
+
             response = await run_analysis_pipeline(
+                request=mock_request,
                 tickers="005930",
                 force_refresh=False,
                 current_user="admin",

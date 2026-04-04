@@ -65,6 +65,9 @@ lxml==5.2.2
 feedparser==6.0.11
 praw==7.7.1
  
+# ── Rate Limiting ──
+slowapi==0.1.9
+
 # ── Utilities ──
 python-dotenv==1.0.1
 loguru==0.7.2

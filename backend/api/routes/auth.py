@@ -5,8 +5,10 @@
 """
 
 from fastapi import APIRouter, Depends
+from starlette.requests import Request
 
 from api.middleware.auth import AuthService, get_current_user
+from api.middleware.rate_limiter import limiter, RATE_LOGIN
 from api.schemas.auth import LoginRequest, RefreshTokenRequest, TokenResponse
 from api.schemas.common import APIResponse
 from config.settings import get_settings
@@ -15,13 +17,14 @@ router = APIRouter()
 
 
 @router.post("/login", response_model=APIResponse[TokenResponse])
-async def login(request: LoginRequest):
+@limiter.limit(RATE_LOGIN)
+async def login(request: Request, login_req: LoginRequest):
     """
     대시보드 로그인
 
     비밀번호 인증 후 JWT 토큰 쌍(access + refresh)을 반환합니다.
     """
-    access_token, refresh_token = AuthService.authenticate(request.password)
+    access_token, refresh_token = AuthService.authenticate(login_req.password)
     settings = get_settings()
 
     token_data = TokenResponse(

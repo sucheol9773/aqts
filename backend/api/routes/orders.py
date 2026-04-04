@@ -11,8 +11,10 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.requests import Request
 
 from api.middleware.auth import get_current_user
+from api.middleware.rate_limiter import limiter, RATE_ORDER
 from api.schemas.common import APIResponse, PaginatedResponse
 from api.schemas.orders import (
     BatchOrderRequest,
@@ -50,8 +52,10 @@ def _order_result_to_response(
 
 
 @router.post("/", response_model=APIResponse[OrderResponse])
+@limiter.limit(RATE_ORDER)
 async def create_order(
-    request: OrderCreateRequest,
+    request: Request,
+    order_body: OrderCreateRequest,
     current_user: str = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ):
@@ -62,19 +66,19 @@ async def create_order(
     """
     try:
         logger.info(
-            f"Order created: {request.side} {request.ticker} "
-            f"x{request.quantity} ({request.order_type})"
+            f"Order created: {order_body.side} {order_body.ticker} "
+            f"x{order_body.quantity} ({order_body.order_type})"
         )
 
         # API 스키마 → OrderRequest 변환
         order_req = OrderRequest(
-            ticker=request.ticker,
-            market=Market(request.market),
-            side=OrderSide(request.side),
-            quantity=request.quantity,
-            order_type=OrderType(request.order_type),
-            limit_price=request.limit_price,
-            reason=request.reason or "",
+            ticker=order_body.ticker,
+            market=Market(order_body.market),
+            side=OrderSide(order_body.side),
+            quantity=order_body.quantity,
+            order_type=OrderType(order_body.order_type),
+            limit_price=order_body.limit_price,
+            reason=order_body.reason or "",
         )
 
         # OrderExecutor 실행
@@ -87,16 +91,16 @@ async def create_order(
             action_type="ORDER_CREATED",
             module="order_executor",
             description=(
-                f"Order {result.order_id}: {request.side} {request.ticker} "
-                f"x{request.quantity} ({request.order_type}) → {result.status.value}"
+                f"Order {result.order_id}: {order_body.side} {order_body.ticker} "
+                f"x{order_body.quantity} ({order_body.order_type}) → {result.status.value}"
             ),
             metadata=result.to_dict(),
         )
 
         response = _order_result_to_response(
             result,
-            order_type=request.order_type,
-            reason=request.reason or "",
+            order_type=order_body.order_type,
+            reason=order_body.reason or "",
         )
         return APIResponse(success=True, data=response, message="주문이 실행되었습니다.")
     except Exception as e:
@@ -105,8 +109,10 @@ async def create_order(
 
 
 @router.post("/batch", response_model=APIResponse[BatchOrderResponse])
+@limiter.limit(RATE_ORDER)
 async def create_batch_orders(
-    request: BatchOrderRequest,
+    request: Request,
+    batch_body: BatchOrderRequest,
     current_user: str = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ):
@@ -127,7 +133,7 @@ async def create_batch_orders(
                 limit_price=o.limit_price,
                 reason=o.reason or "",
             )
-            for o in request.orders
+            for o in batch_body.orders
         ]
 
         # OrderExecutor 배치 실행
@@ -139,7 +145,7 @@ async def create_batch_orders(
         success_count = 0
         fail_count = 0
 
-        for result, orig in zip(results, request.orders):
+        for result, orig in zip(results, batch_body.orders):
             responses.append(_order_result_to_response(
                 result,
                 order_type=orig.order_type,

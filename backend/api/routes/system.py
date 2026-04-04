@@ -11,8 +11,10 @@ from typing import Optional
 import pandas as pd
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.requests import Request
 
 from api.middleware.auth import get_current_user
+from api.middleware.rate_limiter import limiter, RATE_PIPELINE
 from api.schemas.common import APIResponse
 from config.logging import logger
 from config.settings import get_settings
@@ -20,6 +22,7 @@ from core.backtest_engine.engine import BacktestEngine, BacktestConfig
 from core.pipeline import InvestmentDecisionPipeline
 from core.portfolio_manager.rebalancing import RebalancingEngine
 from db.database import get_db_session
+from core.circuit_breaker import CircuitBreakerRegistry
 from db.repositories.audit_log import AuditLogger
 from sqlalchemy import text
 
@@ -209,7 +212,9 @@ async def trigger_rebalancing(
 
 
 @router.post("/pipeline", response_model=APIResponse[dict])
+@limiter.limit(RATE_PIPELINE)
 async def run_analysis_pipeline(
+    request: Request,
     tickers: str = Query(..., description="종목코드 (콤마 구분)"),
     force_refresh: bool = Query(default=False, description="캐시 무시"),
     current_user: str = Depends(get_current_user),
@@ -345,3 +350,19 @@ async def get_audit_logs(
     except Exception as e:
         logger.error(f"Audit logs error: {e}")
         return APIResponse(success=False, message=f"감사 로그 조회 실패: {str(e)}")
+
+
+@router.get("/circuit-breakers", response_model=APIResponse[dict])
+async def get_circuit_breaker_status(
+    current_user: str = Depends(get_current_user),
+):
+    """
+    Circuit Breaker 상태 조회
+
+    모든 외부 서비스 (KIS, FRED, ECOS, Anthropic)의
+    서킷 브레이커 상태를 반환합니다.
+    """
+    return APIResponse(
+        success=True,
+        data=CircuitBreakerRegistry.status(),
+    )

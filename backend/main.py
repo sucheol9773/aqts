@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from slowapi.errors import RateLimitExceeded
 
 from config.logging import logger, setup_logging
 from config.settings import get_settings
@@ -25,6 +26,7 @@ from core.data_collector.kis_client import KISClient
 # Phase 5: API 라우터 & 미들웨어
 from api.routes import auth, portfolio, orders, profile, market, alerts, system, audit
 from api.middleware.request_logger import RequestLoggingMiddleware
+from api.middleware.rate_limiter import limiter, rate_limit_exceeded_handler
 
 
 # ══════════════════════════════════════
@@ -142,6 +144,10 @@ app = FastAPI(
     version="0.5.0",
     lifespan=lifespan,
 )
+
+# ── Rate Limiting 등록 ──
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 # ── 미들웨어 등록 ──
 # CORS 설정: 환경변수 CORS_ALLOWED_ORIGINS에서 허용 Origin 목록 로드
