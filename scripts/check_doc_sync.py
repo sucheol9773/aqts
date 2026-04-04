@@ -172,7 +172,7 @@ def count_test_functions(test_path: Path) -> int:
 
 def check_test_counts(rows: list[FeatureRow], report: SyncReport):
     """테스트 파일과 수가 실제와 일치하는지 확인합니다."""
-    test_re = re.compile(r"(test_\w+\.py)\s*\((\d+)\)")
+    test_re = re.compile(r"((?:[\w/]+/)?test_\w+\.py)\s*\((\d+)\)")
 
     for row in rows:
         if row.tests in ("N/A", "(no tests)", "(none)", ""):

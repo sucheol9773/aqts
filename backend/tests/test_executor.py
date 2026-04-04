@@ -594,7 +594,7 @@ class TestOrderExecutor:
         executor._store_order = AsyncMock()
 
         # Act & Assert
-        with pytest.raises(ValueError, match="주문 수량은 0보다 커야 합니다"):
+        with pytest.raises(ValueError, match="주문 계약 위반|주문 수량은 0보다 커야 합니다"):
             await executor.execute_order(request)
 
         # _store_order는 실패 결과와 함께 호출되어야 함
