@@ -245,14 +245,14 @@
 | ~~no_request_id~~ | ~~RequestLoggingMiddleware에 추적 체계 없음~~ | ~~P2~~ | ✅ Resolved |
 | ~~startup_todo~~ | ~~main.py 스케줄러/토큰 TODO 잔존~~ | ~~P1~~ | ✅ Resolved |
 | ~~no_test_markers~~ | ~~pytest smoke/regression 마커 없음~~ | ~~P2~~ | ✅ Resolved |
-| pre_existing_test_failures | 79개 테스트 DB/Redis 연결 또는 이벤트 루프 의존 실패 (executor, rebalancing, profile, scheduler, universe, sentiment, weight_optimizer) | P2 | Open |
+| ~~pre_existing_test_failures~~ | ~~79개 테스트 이벤트 루프 의존 실패~~ — conftest.py deprecated session-scoped event_loop 제거 + IsolatedAsyncioTestCase 전환으로 전면 해소 (1,769 all pass) | ~~P2~~ | ✅ Resolved |
 
 ---
 
 ## Test Coverage Summary
 
 ```
-Total Tests: 1,769 tests (204 smoke-marked)
+Total Tests: 1,769 tests (204 smoke-marked) — ALL PASS
 ├── Core Features: 40+ modules with passing tests
 ├── Data Contracts: 154 tests (9 contracts) [smoke]
 ├── Pipeline Gates: 59 tests (12 components)

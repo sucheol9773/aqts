@@ -16,6 +16,7 @@ WeightOptimizer의 종합 단위 테스트
 """
 
 import asyncio
+import unittest
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -471,7 +472,7 @@ class TestEdgeCases:
 # ══════════════════════════════════════
 # 앙상블 엔진 연동 테스트
 # ══════════════════════════════════════
-class TestEnsembleIntegration:
+class TestEnsembleIntegration(unittest.IsolatedAsyncioTestCase):
     """앙상블 엔진 연동 테스트"""
 
     @pytest.mark.asyncio

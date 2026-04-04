@@ -66,12 +66,9 @@ from config.constants import (
 # ══════════════════════════════════════
 # Event Loop
 # ══════════════════════════════════════
-@pytest.fixture(scope="session")
-def event_loop():
-    """세션 범위의 이벤트 루프"""
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
+# pytest-asyncio 0.23+ auto 모드에서는 프레임워크가 함수별 event loop를
+# 자동 관리합니다. session-scoped event_loop fixture는 deprecated이므로
+# 제거하고 auto 모드에 위임합니다.
 
 
 # ══════════════════════════════════════
