@@ -21,19 +21,20 @@ Stage 3-A: Minimum Realism (편향 제거)
    - Order splitting
 """
 
-import pytest
-from datetime import datetime, timedelta
+from datetime import datetime
+
 import pandas as pd
+import pytest
 
-from config.constants import Market, OrderSide, Country
+from config.constants import Country, Market, OrderSide
 from core.backtest_engine.bias_checker import BiasChecker, BiasViolation
+from core.backtest_engine.fill_model import FillModel
 from core.order_executor.slippage import SlippageModel
-from core.backtest_engine.fill_model import FillModel, FillResult
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # BiasChecker Tests
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class TestBiasCheckerInit:
     """BiasChecker 초기화 테스트"""
@@ -314,6 +315,7 @@ class TestBiasCheckerViolationManagement:
 # SlippageModel Tests
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 class TestSlippageModelInit:
     """SlippageModel 초기화 테스트"""
 
@@ -411,9 +413,7 @@ class TestSlippageApplication:
         base_price = 50000
         spread_cost = 0.0001  # 0.01%
         impact_cost = 100
-        adjusted_price = model.apply_slippage(
-            base_price, OrderSide.BUY, spread_cost, impact_cost
-        )
+        adjusted_price = model.apply_slippage(base_price, OrderSide.BUY, spread_cost, impact_cost)
         # BUY: 가격 + spread + impact
         assert adjusted_price > base_price
         expected = base_price + (base_price * spread_cost) + impact_cost
@@ -425,9 +425,7 @@ class TestSlippageApplication:
         base_price = 50000
         spread_cost = 0.0001
         impact_cost = 100
-        adjusted_price = model.apply_slippage(
-            base_price, OrderSide.SELL, spread_cost, impact_cost
-        )
+        adjusted_price = model.apply_slippage(base_price, OrderSide.SELL, spread_cost, impact_cost)
         # SELL: 가격 - spread - impact
         assert adjusted_price < base_price
 
@@ -435,12 +433,8 @@ class TestSlippageApplication:
         """비용이 0"""
         model = SlippageModel()
         base_price = 50000
-        adjusted_price_buy = model.apply_slippage(
-            base_price, OrderSide.BUY, 0.0, 0.0
-        )
-        adjusted_price_sell = model.apply_slippage(
-            base_price, OrderSide.SELL, 0.0, 0.0
-        )
+        adjusted_price_buy = model.apply_slippage(base_price, OrderSide.BUY, 0.0, 0.0)
+        adjusted_price_sell = model.apply_slippage(base_price, OrderSide.SELL, 0.0, 0.0)
         assert adjusted_price_buy == base_price
         assert adjusted_price_sell == base_price
 
@@ -448,6 +442,7 @@ class TestSlippageApplication:
 # ══════════════════════════════════════════════════════════════════════════════
 # FillModel Tests
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class TestFillModelInit:
     """FillModel 초기화 테스트"""
@@ -513,9 +508,9 @@ class TestFillSimulation:
         """FillResult 속성"""
         model = FillModel()
         result = model.simulate_fill(15000, 100000, 50000)
-        assert hasattr(result, 'filled_quantity')
-        assert hasattr(result, 'unfilled_quantity')
-        assert hasattr(result, 'fill_ratio')
+        assert hasattr(result, "filled_quantity")
+        assert hasattr(result, "unfilled_quantity")
+        assert hasattr(result, "fill_ratio")
         assert result.filled_quantity >= 0
         assert result.unfilled_quantity >= 0
 
@@ -614,37 +609,38 @@ class TestFillCostCalculation:
         """소규모 주문 비용"""
         model = FillModel()
         result = model.calculate_fill_cost(1000, 100000, 50000)
-        assert result['fill_result'].fill_ratio == 1.0
-        assert result['avg_fill_price'] >= 50000
-        assert result['cost_pct'] >= 0
+        assert result["fill_result"].fill_ratio == 1.0
+        assert result["avg_fill_price"] >= 50000
+        assert result["cost_pct"] >= 0
 
     def test_fill_cost_large_order(self):
         """대규모 주문 비용"""
         model = FillModel()
         result = model.calculate_fill_cost(50000, 100000, 50000)
-        assert result['fill_result'].fill_ratio < 1.0
+        assert result["fill_result"].fill_ratio < 1.0
         # 부분 체결이므로 추가 비용 발생
-        assert result['cost_pct'] > 0
+        assert result["cost_pct"] > 0
 
     def test_fill_cost_return_structure(self):
         """반환 구조"""
         model = FillModel()
         result = model.calculate_fill_cost(10000, 100000, 50000)
-        assert 'fill_result' in result
-        assert 'avg_fill_price' in result
-        assert 'total_cost' in result
-        assert 'cost_pct' in result
+        assert "fill_result" in result
+        assert "avg_fill_price" in result
+        assert "total_cost" in result
+        assert "cost_pct" in result
 
     def test_fill_cost_zero_adv(self):
         """ADV가 0일 때 비용"""
         model = FillModel()
         result = model.calculate_fill_cost(1000, 0, 50000)
-        assert result['cost_pct'] >= 0
+        assert result["cost_pct"] >= 0
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Integration Tests
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class TestBiasCheckerIntegration:
     """BiasChecker 통합 테스트"""
@@ -685,14 +681,10 @@ class TestSlippageAndFillIntegration:
 
         # 2. Slippage 계산
         spread_cost = slippage_model.calculate_spread_cost("TEST", Market.KRX)
-        impact_cost = slippage_model.calculate_market_impact(
-            filled_qty, adv, base_price
-        )
+        impact_cost = slippage_model.calculate_market_impact(filled_qty, adv, base_price)
 
         # 3. 최종 체결가 계산
-        final_price = slippage_model.apply_slippage(
-            base_price, OrderSide.BUY, spread_cost, impact_cost
-        )
+        final_price = slippage_model.apply_slippage(base_price, OrderSide.BUY, spread_cost, impact_cost)
 
         # 검증
         assert filled_qty <= order_quantity
@@ -702,6 +694,7 @@ class TestSlippageAndFillIntegration:
 # ══════════════════════════════════════════════════════════════════════════════
 # Edge Cases and Boundary Tests
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class TestEdgeCasesAndBoundaries:
     """엣지 케이스 및 경계 테스트"""

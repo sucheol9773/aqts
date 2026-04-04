@@ -13,7 +13,7 @@ Shadow 확장 설계 원칙:
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from enum import Enum
 from typing import Optional
 
@@ -25,12 +25,14 @@ from pydantic import BaseModel, Field
 # ══════════════════════════════════════
 class OOSRunType(str, Enum):
     """실행 유형 (Shadow 확장 대비)"""
+
     OOS = "OOS"
     SHADOW = "SHADOW"  # reserved for v2
 
 
 class OOSStatus(str, Enum):
     """실행 상태"""
+
     PENDING = "PENDING"
     RUNNING = "RUNNING"
     PASS = "PASS"
@@ -41,6 +43,7 @@ class OOSStatus(str, Enum):
 
 class JobStatus(str, Enum):
     """비동기 작업 상태"""
+
     PENDING = "PENDING"
     RUNNING = "RUNNING"
     SUCCEEDED = "SUCCEEDED"
@@ -49,6 +52,7 @@ class JobStatus(str, Enum):
 
 class GateLevel(str, Enum):
     """게이트 단계"""
+
     GATE_A = "GATE_A"  # 절대 기준
     GATE_B = "GATE_B"  # 상대 기준
     GATE_C = "GATE_C"  # 안정성 기준
@@ -56,6 +60,7 @@ class GateLevel(str, Enum):
 
 class GateResult(str, Enum):
     """게이트 판정"""
+
     PASS = "PASS"
     REVIEW = "REVIEW"
     FAIL = "FAIL"
@@ -67,6 +72,7 @@ class GateResult(str, Enum):
 @dataclass
 class OOSWindowResult:
     """단일 walk-forward 윈도우 결과"""
+
     window_index: int
     train_start: str  # YYYY-MM-DD
     train_end: str
@@ -93,17 +99,18 @@ class OOSRun:
 
     walk-forward 전체 실행의 메타데이터 + 집계 결과
     """
-    run_id: str                          # UUID
+
+    run_id: str  # UUID
     run_type: OOSRunType = OOSRunType.OOS
     status: OOSStatus = OOSStatus.PENDING
     # 실행 정보
     strategy_version: str = ""
-    data_version: str = ""               # 데이터 해시 (재현성)
+    data_version: str = ""  # 데이터 해시 (재현성)
     # 기간
     train_months: int = 24
     test_months: int = 3
-    overall_start: str = ""              # 전체 데이터 시작일
-    overall_end: str = ""                # 전체 데이터 종료일
+    overall_start: str = ""  # 전체 데이터 시작일
+    overall_end: str = ""  # 전체 데이터 종료일
     # 타이밍
     started_at: Optional[datetime] = None
     ended_at: Optional[datetime] = None
@@ -114,12 +121,12 @@ class OOSRun:
     avg_mdd: float = 0.0
     avg_cagr: float = 0.0
     worst_mdd: float = 0.0
-    sharpe_variance: float = 0.0         # 윈도우 간 Sharpe 분산 (안정성)
+    sharpe_variance: float = 0.0  # 윈도우 간 Sharpe 분산 (안정성)
     # 게이트 판정
-    gate_a_result: str = ""              # PASS/REVIEW/FAIL
+    gate_a_result: str = ""  # PASS/REVIEW/FAIL
     gate_b_result: str = ""
     gate_c_result: str = ""
-    overall_gate: str = ""               # 최종 판정
+    overall_gate: str = ""  # 최종 판정
     gate_reasons: list = field(default_factory=list)
     # 윈도우별 상세
     windows: list = field(default_factory=list)  # list[OOSWindowResult]
@@ -197,8 +204,9 @@ class OOSMetric:
 
     run_id + metric_name + regime 조합이 유니크
     """
+
     run_id: str
-    metric_name: str       # cagr, mdd, sharpe, calmar, turnover, etc.
+    metric_name: str  # cagr, mdd, sharpe, calmar, turnover, etc.
     metric_value: float
     regime: Optional[str] = None  # nullable; TRENDING_UP, BULL, etc.
     window_index: Optional[int] = None  # nullable; 특정 윈도우 지표
@@ -212,13 +220,14 @@ class OOSShadowAction:
     OOS 실행 중 Shadow 정책이 활성화되면 기록.
     MVP에서는 baseline_threshold만 기록하고 나머지는 null.
     """
+
     run_id: str
-    date: str              # YYYY-MM-DD
-    regime: str            # 현재 레짐
+    date: str  # YYYY-MM-DD
+    regime: str  # 현재 레짐
     baseline_threshold: float  # 기존 정책의 임계값
-    shadow_threshold: Optional[float] = None   # Shadow 정책 추천 임계값 (v2)
-    reward_proxy: Optional[float] = None       # 보상 프록시 (v2)
-    action_taken: Optional[str] = None         # 실제 취한 행동
+    shadow_threshold: Optional[float] = None  # Shadow 정책 추천 임계값 (v2)
+    reward_proxy: Optional[float] = None  # 보상 프록시 (v2)
+    action_taken: Optional[str] = None  # 실제 취한 행동
 
 
 # ══════════════════════════════════════
@@ -226,18 +235,21 @@ class OOSShadowAction:
 # ══════════════════════════════════════
 class OOSRunRequest(BaseModel):
     """OOS 실행 요청"""
+
     strategy_version: str = Field(
         default="current",
         description="전략 버전 식별자",
     )
     train_months: int = Field(
         default=24,
-        ge=6, le=120,
+        ge=6,
+        le=120,
         description="학습 기간 (개월)",
     )
     test_months: int = Field(
         default=3,
-        ge=1, le=12,
+        ge=1,
+        le=12,
         description="평가 기간 (개월)",
     )
     tickers: list[str] = Field(
@@ -251,6 +263,7 @@ class OOSRunRequest(BaseModel):
 
 class OOSJobResponse(BaseModel):
     """OOS 작업 즉시 응답"""
+
     run_id: str
     status: str
     message: str

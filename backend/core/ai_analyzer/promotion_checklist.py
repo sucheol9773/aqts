@@ -21,6 +21,7 @@ Mode B (Opinion):
 
 from enum import Enum
 from typing import Dict, Optional
+
 import yaml
 
 
@@ -67,7 +68,9 @@ class PromotionChecklist:
     def _load_default_thresholds() -> Dict:
         """config/operational_thresholds.yaml에서 기본 임계값을 로드합니다."""
         try:
-            with open("/sessions/practical-eager-davinci/mnt/aqts/backend/config/operational_thresholds.yaml", "r") as f:
+            with open(
+                "/sessions/practical-eager-davinci/mnt/aqts/backend/config/operational_thresholds.yaml", "r"
+            ) as f:
                 config = yaml.safe_load(f)
                 ai_config = config.get("ai", {})
 

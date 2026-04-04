@@ -2,11 +2,11 @@
 FallbackHandler: Gate 차단 시 폴백 행동 정의
 """
 
-from typing import Callable, Dict, Optional
 import logging
+from typing import Callable, Dict, Optional
 
-from core.gates.base import GateResult, GateDecision
-from core.state_machine import PipelineStateMachine, PipelineState
+from core.gates.base import GateDecision, GateResult
+from core.state_machine import PipelineState, PipelineStateMachine
 
 logger = logging.getLogger(__name__)
 
@@ -58,10 +58,7 @@ class FallbackHandler:
         gate_id = gate_result.gate_id
         fallback_state = self._fallbacks.get(gate_id, PipelineState.IDLE)
 
-        logger.warning(
-            f"[FallbackHandler] {gate_id} BLOCK → {fallback_state.value}: "
-            f"{gate_result.reason}"
-        )
+        logger.warning(f"[FallbackHandler] {gate_id} BLOCK → {fallback_state.value}: " f"{gate_result.reason}")
 
         if fallback_state == PipelineState.HALTED:
             self._sm.halt(f"{gate_id}: {gate_result.reason}")

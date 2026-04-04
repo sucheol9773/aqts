@@ -6,7 +6,6 @@ MongoDB: Motor AsyncIOMotorClient
 Redis: aioredis
 """
 
-from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
@@ -28,6 +27,7 @@ settings = get_settings()
 # ══════════════════════════════════════
 class Base(DeclarativeBase):
     """SQLAlchemy ORM 베이스 클래스"""
+
     pass
 
 

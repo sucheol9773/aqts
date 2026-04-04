@@ -15,15 +15,15 @@ Contracts:
     9. RiskCheck         — 리스크 점검 결과
 """
 
-from contracts.price_data import PriceData
+from contracts.execution import ExecutionResult
+from contracts.feature_vector import FeatureVector
 from contracts.financial_data import FinancialData
 from contracts.news_data import NewsData
-from contracts.feature_vector import FeatureVector
-from contracts.signal import Signal
-from contracts.portfolio import PortfolioTarget, PositionTarget
 from contracts.order import OrderIntent
-from contracts.execution import ExecutionResult
-from contracts.risk_check import RiskCheckResult, RiskCheckItem
+from contracts.portfolio import PortfolioTarget, PositionTarget
+from contracts.price_data import PriceData
+from contracts.risk_check import RiskCheckItem, RiskCheckResult
+from contracts.signal import Signal
 
 __all__ = [
     "PriceData",

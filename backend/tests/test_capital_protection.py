@@ -14,22 +14,23 @@ Stage 5 테스트: 자본금 & 재조정 (Capital & Reconciliation)
 """
 
 from datetime import datetime, timedelta
+
 import pytest
 
-from core.capital_budget import CapitalBudget, AssetClassLimiter
-from core.reconciliation import ReconciliationEngine, ReconciliationResult
+from core.capital_budget import AssetClassLimiter, CapitalBudget
 from core.capital_protection import (
-    DailyOrderLimiter,
-    StaleQuoteBlocker,
     AIDelayFallback,
     APIFailureSafeMode,
     CashFloorGuard,
+    DailyOrderLimiter,
+    StaleQuoteBlocker,
 )
-
+from core.reconciliation import ReconciliationEngine
 
 # ══════════════════════════════════════════════════════════════
 # CapitalBudget 테스트
 # ══════════════════════════════════════════════════════════════
+
 
 class TestCapitalBudgetBasics:
     """CapitalBudget 기본 기능 테스트"""
@@ -72,10 +73,7 @@ class TestCapitalBudgetAllocation:
     @pytest.fixture
     def budget(self):
         allocations = {"TREND": 0.50, "MEAN_REV": 0.30, "FACTOR": 0.20}
-        return CapitalBudget(
-            total_capital=1_000_000,
-            strategy_allocations=allocations
-        )
+        return CapitalBudget(total_capital=1_000_000, strategy_allocations=allocations)
 
     def test_get_budget_trend(self, budget):
         """TREND 할당 확인"""
@@ -101,10 +99,7 @@ class TestCapitalBudgetChecking:
     @pytest.fixture
     def budget(self):
         allocations = {"TREND": 0.50, "MEAN_REV": 0.50}
-        return CapitalBudget(
-            total_capital=1_000_000,
-            strategy_allocations=allocations
-        )
+        return CapitalBudget(total_capital=1_000_000, strategy_allocations=allocations)
 
     def test_check_budget_within_limit(self, budget):
         """예산 내 요청은 허용"""
@@ -139,10 +134,7 @@ class TestCapitalBudgetRecordUsage:
     @pytest.fixture
     def budget(self):
         allocations = {"TREND": 0.50, "MEAN_REV": 0.50}
-        return CapitalBudget(
-            total_capital=1_000_000,
-            strategy_allocations=allocations
-        )
+        return CapitalBudget(total_capital=1_000_000, strategy_allocations=allocations)
 
     def test_record_usage_within_budget(self, budget):
         """예산 내 사용 기록"""
@@ -179,10 +171,7 @@ class TestCapitalBudgetRemaining:
     @pytest.fixture
     def budget(self):
         allocations = {"TREND": 0.50, "MEAN_REV": 0.50}
-        return CapitalBudget(
-            total_capital=1_000_000,
-            strategy_allocations=allocations
-        )
+        return CapitalBudget(total_capital=1_000_000, strategy_allocations=allocations)
 
     def test_get_remaining_full(self, budget):
         """사용 전 남은 예산 = 할당"""
@@ -205,10 +194,7 @@ class TestCapitalBudgetReset:
     @pytest.fixture
     def budget(self):
         allocations = {"TREND": 0.50, "MEAN_REV": 0.50}
-        return CapitalBudget(
-            total_capital=1_000_000,
-            strategy_allocations=allocations
-        )
+        return CapitalBudget(total_capital=1_000_000, strategy_allocations=allocations)
 
     def test_reset_daily(self, budget):
         """일일 리셋"""
@@ -231,6 +217,7 @@ class TestCapitalBudgetReset:
 # ══════════════════════════════════════════════════════════════
 # AssetClassLimiter 테스트
 # ══════════════════════════════════════════════════════════════
+
 
 class TestAssetClassLimiter:
     """자산 클래스 한도 테스트"""
@@ -292,6 +279,7 @@ class TestAssetClassLimiter:
 # ══════════════════════════════════════════════════════════════
 # ReconciliationEngine 테스트
 # ══════════════════════════════════════════════════════════════
+
 
 class TestReconciliationEngine:
     """재조정 엔진 테스트"""
@@ -404,6 +392,7 @@ class TestReconciliationEngine:
 # DailyOrderLimiter 테스트
 # ══════════════════════════════════════════════════════════════
 
+
 class TestDailyOrderLimiter:
     """일일 주문 제한 테스트"""
 
@@ -467,6 +456,7 @@ class TestDailyOrderLimiter:
 # ══════════════════════════════════════════════════════════════
 # StaleQuoteBlocker 테스트
 # ══════════════════════════════════════════════════════════════
+
 
 class TestStaleQuoteBlocker:
     """지연 호가 차단 테스트"""
@@ -540,6 +530,7 @@ class TestStaleQuoteBlocker:
 # AIDelayFallback 테스트
 # ══════════════════════════════════════════════════════════════
 
+
 class TestAIDelayFallback:
     """AI 데이터 신선도 테스트"""
 
@@ -603,6 +594,7 @@ class TestAIDelayFallback:
 # ══════════════════════════════════════════════════════════════
 # APIFailureSafeMode 테스트
 # ══════════════════════════════════════════════════════════════
+
 
 class TestAPIFailureSafeMode:
     """API 실패 안전 모드 테스트"""
@@ -673,6 +665,7 @@ class TestAPIFailureSafeMode:
 # ══════════════════════════════════════════════════════════════
 # CashFloorGuard 테스트
 # ══════════════════════════════════════════════════════════════
+
 
 class TestCashFloorGuard:
     """현금 플로어 가드 테스트"""
@@ -761,15 +754,13 @@ class TestCashFloorGuard:
 # 통합 시나리오 테스트
 # ══════════════════════════════════════════════════════════════
 
+
 class TestIntegrationScenarios:
     """다층 보호 메커니즘이 함께 작동하는 시나리오"""
 
     def test_scenario_capital_budget_and_order_limiter(self):
         """자본 예산 + 주문 제한"""
-        budget = CapitalBudget(
-            total_capital=1_000_000,
-            strategy_allocations={"TREND": 1.0}
-        )
+        budget = CapitalBudget(total_capital=1_000_000, strategy_allocations={"TREND": 1.0})
         limiter = DailyOrderLimiter(max_orders=50)
 
         # 첫 주문
@@ -788,10 +779,7 @@ class TestIntegrationScenarios:
         guard = CashFloorGuard(min_cash_ratio=0.10)
 
         # 포지션 재조정
-        result = engine.reconcile(
-            {"005930": 100, "000660": 50},
-            {"005930": 100, "000660": 50}
-        )
+        result = engine.reconcile({"005930": 100, "000660": 50}, {"005930": 100, "000660": 50})
 
         assert result.matched is True
 

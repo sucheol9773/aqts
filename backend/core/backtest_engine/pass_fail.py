@@ -9,9 +9,10 @@ Operational decision framework for strategy validation:
 Uses thresholds from config/operational_thresholds.yaml
 """
 
-import yaml
-from typing import Dict, Optional, Any
 from pathlib import Path
+from typing import Any, Dict, Optional
+
+import yaml
 
 
 class PerformanceJudge:
@@ -185,9 +186,7 @@ class PerformanceJudge:
         else:
             return "FAIL"
 
-    def overall_judgment(
-        self, metrics_dict: Dict[str, float], tolerance: float = 0.15
-    ) -> Dict[str, Any]:
+    def overall_judgment(self, metrics_dict: Dict[str, float], tolerance: float = 0.15) -> Dict[str, Any]:
         """
         Overall judgment across all metrics.
 
@@ -208,9 +207,7 @@ class PerformanceJudge:
 
         # Judge IR
         if metrics_dict.get("information_ratio") is not None:
-            judgments["information_ratio"] = self.judge_ir(
-                metrics_dict["information_ratio"]
-            )
+            judgments["information_ratio"] = self.judge_ir(metrics_dict["information_ratio"])
 
         # Judge excess CAGR (vs benchmark, if available)
         if metrics_dict.get("cagr") is not None:
@@ -219,9 +216,7 @@ class PerformanceJudge:
 
         # Judge max drawdown
         if metrics_dict.get("max_drawdown") is not None:
-            judgments["max_drawdown"] = self.judge_mdd(
-                metrics_dict["max_drawdown"], tolerance
-            )
+            judgments["max_drawdown"] = self.judge_mdd(metrics_dict["max_drawdown"], tolerance)
 
         # Judge turnover
         if metrics_dict.get("turnover") is not None:

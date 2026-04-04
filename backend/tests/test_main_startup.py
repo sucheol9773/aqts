@@ -104,11 +104,13 @@ class TestStartupImports(unittest.TestCase):
 
     def test_trading_scheduler_imported(self):
         import main
+
         assert hasattr(main, "trading_scheduler")
         assert hasattr(main, "TradingScheduler")
 
     def test_kis_client_imported(self):
         import main
+
         assert hasattr(main, "kis_client")
         assert hasattr(main, "KISClient")
 

@@ -22,7 +22,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
 
-import numpy as np
 import pandas as pd
 
 from config.constants import (
@@ -34,8 +33,8 @@ from config.logging import logger
 from core.strategy_ensemble.regime import (
     ConfidenceCalibrator,
     DynamicThreshold,
-    MarketRegimeDetector,
     MarketRegime,
+    MarketRegimeDetector,
     RegimeInfo,
     RegimeWeightRouter,
 )
@@ -49,9 +48,9 @@ from db.database import RedisManager
 class StrategySignalInput:
     """단일 전략의 시그널 입력"""
 
-    strategy: str           # StrategyType.value 또는 "SENTIMENT"
-    value: float            # -1.0 ~ +1.0
-    confidence: float       # 0.0 ~ 1.0
+    strategy: str  # StrategyType.value 또는 "SENTIMENT"
+    value: float  # -1.0 ~ +1.0
+    confidence: float  # 0.0 ~ 1.0
     reason: str = ""
 
 
@@ -60,17 +59,17 @@ class EnsembleSignal:
     """앙상블 최종 시그널 출력"""
 
     ticker: str
-    final_signal: float                            # -1.0 ~ +1.0
-    final_confidence: float                        # 0.0 ~ 1.0
+    final_signal: float  # -1.0 ~ +1.0
+    final_confidence: float  # 0.0 ~ 1.0
     component_signals: dict[str, float] = field(default_factory=dict)
     weights_used: dict[str, float] = field(default_factory=dict)
     risk_profile: str = "BALANCED"
     generated_at: Optional[datetime] = None
     # 레짐 기반 동적 판단
-    regime: str = "SIDEWAYS"                       # MarketRegime.value
+    regime: str = "SIDEWAYS"  # MarketRegime.value
     buy_threshold: float = 0.3
     sell_threshold: float = 0.3
-    raw_confidence: float = 0.0                    # 캘리브레이션 전 원본
+    raw_confidence: float = 0.0  # 캘리브레이션 전 원본
 
     @property
     def action(self) -> str:
@@ -96,13 +95,15 @@ class EnsembleSignal:
     def to_detailed_dict(self) -> dict:
         """상세 정보 (API 응답/모니터링용)"""
         d = self.to_dict()
-        d.update({
-            "regime": self.regime,
-            "buy_threshold": self.buy_threshold,
-            "sell_threshold": self.sell_threshold,
-            "raw_confidence": self.raw_confidence,
-            "action": self.action,
-        })
+        d.update(
+            {
+                "regime": self.regime,
+                "buy_threshold": self.buy_threshold,
+                "sell_threshold": self.sell_threshold,
+                "raw_confidence": self.raw_confidence,
+                "action": self.action,
+            }
+        )
         return d
 
 
@@ -160,10 +161,7 @@ class StrategyEnsembleEngine:
 
         # 3. 기본값
         defaults = ENSEMBLE_DEFAULT_WEIGHTS.get(self._risk_profile, {})
-        self._weights = {
-            (k.value if isinstance(k, StrategyType) else k): v
-            for k, v in defaults.items()
-        }
+        self._weights = {(k.value if isinstance(k, StrategyType) else k): v for k, v in defaults.items()}
         return self._weights.copy()
 
     async def generate_ensemble_signal(
@@ -308,10 +306,7 @@ class StrategyEnsembleEngine:
             result = await self.generate_ensemble_signal(ticker, signals, ohlcv=ohlcv)
             results[ticker] = result
 
-        logger.info(
-            f"Batch ensemble complete: {len(results)} tickers, "
-            f"profile={self._risk_profile.value}"
-        )
+        logger.info(f"Batch ensemble complete: {len(results)} tickers, " f"profile={self._risk_profile.value}")
         return results
 
     # ══════════════════════════════════════
@@ -379,10 +374,7 @@ class StrategyEnsembleEngine:
 
         self._weights = new_weights
 
-        logger.info(
-            f"Weights recalibrated ({method}): "
-            f"{json.dumps(new_weights, indent=2)}"
-        )
+        logger.info(f"Weights recalibrated ({method}): " f"{json.dumps(new_weights, indent=2)}")
         return new_weights
 
     # ══════════════════════════════════════
@@ -413,6 +405,7 @@ class StrategyEnsembleEngine:
         """PostgreSQL strategy_weights 테이블에서 가중치 로드"""
         try:
             from sqlalchemy import text
+
             from db.database import async_session_factory
 
             async with async_session_factory() as session:
@@ -421,9 +414,7 @@ class StrategyEnsembleEngine:
                     FROM strategy_weights
                     WHERE risk_profile = :profile
                 """)
-                rows = await session.execute(
-                    query, {"profile": self._risk_profile.value}
-                )
+                rows = await session.execute(query, {"profile": self._risk_profile.value})
                 data = rows.fetchall()
 
                 if data:
@@ -436,6 +427,7 @@ class StrategyEnsembleEngine:
         """PostgreSQL strategy_weights 테이블에 가중치 저장 (UPSERT)"""
         try:
             from sqlalchemy import text
+
             from db.database import async_session_factory
 
             async with async_session_factory() as session:
@@ -447,11 +439,14 @@ class StrategyEnsembleEngine:
                             weight = :weight,
                             updated_at = NOW()
                     """)
-                    await session.execute(query, {
-                        "strategy_type": strategy_type,
-                        "weight": weight,
-                        "profile": self._risk_profile.value,
-                    })
+                    await session.execute(
+                        query,
+                        {
+                            "strategy_type": strategy_type,
+                            "weight": weight,
+                            "profile": self._risk_profile.value,
+                        },
+                    )
                 await session.commit()
         except Exception as e:
             logger.warning(f"Weight DB save failed: {e}")
@@ -460,6 +455,7 @@ class StrategyEnsembleEngine:
         """앙상블 시그널 결과를 DB에 저장"""
         try:
             from sqlalchemy import text
+
             from db.database import async_session_factory
 
             async with async_session_factory() as session:
@@ -487,6 +483,7 @@ class StrategyEnsembleEngine:
         """가중치 변경 이력 기록"""
         try:
             from sqlalchemy import text
+
             from db.database import async_session_factory
 
             async with async_session_factory() as session:
@@ -497,14 +494,17 @@ class StrategyEnsembleEngine:
                     VALUES
                         (:profile, :old_w, :new_w, :method, :perf, :reason)
                 """)
-                await session.execute(query, {
-                    "profile": self._risk_profile.value,
-                    "old_w": json.dumps(old_weights),
-                    "new_w": json.dumps(new_weights),
-                    "method": method,
-                    "perf": json.dumps(performances),
-                    "reason": f"Auto recalibration via {method}",
-                })
+                await session.execute(
+                    query,
+                    {
+                        "profile": self._risk_profile.value,
+                        "old_w": json.dumps(old_weights),
+                        "new_w": json.dumps(new_weights),
+                        "method": method,
+                        "perf": json.dumps(performances),
+                        "reason": f"Auto recalibration via {method}",
+                    },
+                )
                 await session.commit()
         except Exception as e:
             logger.debug(f"Weight update log failed: {e}")

@@ -6,8 +6,8 @@ Stage 7 LLM Reproducibility Test
   - Mode B (Opinion): 동일 입력에 대한 의견의 일치율 > 80%
 """
 
-from typing import Dict, List
 from statistics import mean, stdev
+from typing import Dict, List
 
 
 class ReproducibilityTest:
@@ -107,9 +107,7 @@ class ReproducibilityTest:
             "is_reproducible": match_rate >= self.min_match_rate,
         }
 
-    def run_full_test(
-        self, sentiment_runs: List[List[float]], opinion_runs: List[List[str]]
-    ) -> Dict:
+    def run_full_test(self, sentiment_runs: List[List[float]], opinion_runs: List[List[str]]) -> Dict:
         """
         감성과 의견의 전체 재현성 테스트를 실행합니다.
 

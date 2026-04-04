@@ -1,6 +1,7 @@
 """FillGate: 주문 체결 완전성 검증 (체결 → 완료 전이)."""
 
 from typing import Any
+
 from core.gates.base import BaseGate, GateResult, GateSeverity
 
 

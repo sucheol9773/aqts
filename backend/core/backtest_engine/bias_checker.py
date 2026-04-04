@@ -10,18 +10,20 @@ Stage 3-A: Minimum Realism (편향 제거)
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
-from typing import Optional, List
+from datetime import datetime
+from typing import List
+
 import pandas as pd
 
 
 @dataclass
 class BiasViolation:
     """편향 위반 기록"""
-    violation_type: str          # "lookahead", "point_in_time", "survivorship"
+
+    violation_type: str  # "lookahead", "point_in_time", "survivorship"
     date: datetime
     description: str
-    severity: str = "high"       # "high", "medium", "low"
+    severity: str = "high"  # "high", "medium", "low"
 
 
 class BiasChecker:
@@ -74,10 +76,10 @@ class BiasChecker:
         violations = []
 
         for record in data_records:
-            if 'date' not in record:
+            if "date" not in record:
                 continue
 
-            record_date = record['date']
+            record_date = record["date"]
             # datetime이 아니면 변환 시도
             if isinstance(record_date, str):
                 try:

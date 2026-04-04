@@ -96,9 +96,7 @@ class TestCorrelationId(unittest.TestCase):
     def test_client_supplied_correlation_id(self):
         """클라이언트가 X-Correlation-ID를 보내면 전파."""
         corr_id = "corr-abc-123"
-        resp = self.client.get(
-            "/test", headers={"X-Correlation-ID": corr_id}
-        )
+        resp = self.client.get("/test", headers={"X-Correlation-ID": corr_id})
         assert resp.headers["X-Correlation-ID"] == corr_id
         assert resp.json()["correlation_id"] == corr_id
 

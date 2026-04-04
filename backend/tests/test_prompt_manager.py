@@ -547,10 +547,20 @@ class TestPromptManager:
     @pytest.mark.asyncio
     async def test_get_version_history_limit(self, _mock_mongodb):
         """버전 이력 조회 - 제한"""
-        docs = [{"prompt_type": "opinion_system", "version": i, "content": f"v{i}",
-                 "content_hash": f"hash{i}", "is_active": i==1, "author": "system",
-                 "change_note": "", "created_at": datetime.now(timezone.utc), "metrics": {}}
-                for i in range(1, 6)]
+        docs = [
+            {
+                "prompt_type": "opinion_system",
+                "version": i,
+                "content": f"v{i}",
+                "content_hash": f"hash{i}",
+                "is_active": i == 1,
+                "author": "system",
+                "change_note": "",
+                "created_at": datetime.now(timezone.utc),
+                "metrics": {},
+            }
+            for i in range(1, 6)
+        ]
 
         mock_cursor = MagicMock()
         mock_cursor.to_list = AsyncMock(return_value=docs[:3])
@@ -671,6 +681,7 @@ class TestPromptManager:
     @pytest.mark.asyncio
     async def test_initialize_defaults_partial(self, _mock_mongodb, _mock_redis):
         """기본 프롬프트 초기화 - 일부만 미등록"""
+
         def side_effect(filter_dict, *args, **kwargs):
             # sentiment_system만 이미 등록됨
             if filter_dict.get("prompt_type") == "sentiment_system":

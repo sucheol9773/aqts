@@ -15,34 +15,62 @@ Phase 3 - F-01-03 구현:
 
 import asyncio
 import base64
-import hashlib
 import re
-import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
 
-from config.constants import NewsSource
 from config.logging import logger
 from config.settings import get_settings
 from db.database import MongoDBManager
-
 
 # ══════════════════════════════════════
 # 금융 키워드 정의
 # ══════════════════════════════════════
 FINANCIAL_KEYWORDS_KR = {
-    "주식", "매수", "매도", "상장", "공매도", "코스피", "코스닥",
-    "배당", "실적", "상한가", "하한가", "급등", "급락", "수익",
-    "손실", "수익률", "포트폴리오", "주가", "종목", "투자",
+    "주식",
+    "매수",
+    "매도",
+    "상장",
+    "공매도",
+    "코스피",
+    "코스닥",
+    "배당",
+    "실적",
+    "상한가",
+    "하한가",
+    "급등",
+    "급락",
+    "수익",
+    "손실",
+    "수익률",
+    "포트폴리오",
+    "주가",
+    "종목",
+    "투자",
 }
 
 FINANCIAL_KEYWORDS_EN = {
-    "stock", "buy", "sell", "bullish", "bearish", "earnings",
-    "dividend", "ipo", "short", "long", "market", "trading",
-    "price", "ticker", "portfolio", "profit", "loss", "investment",
+    "stock",
+    "buy",
+    "sell",
+    "bullish",
+    "bearish",
+    "earnings",
+    "dividend",
+    "ipo",
+    "short",
+    "long",
+    "market",
+    "trading",
+    "price",
+    "ticker",
+    "portfolio",
+    "profit",
+    "loss",
+    "investment",
 }
 
 # 전체 키워드 세트 (대소문자 무시)
@@ -50,8 +78,11 @@ FINANCIAL_KEYWORDS = FINANCIAL_KEYWORDS_KR | {kw.lower() for kw in FINANCIAL_KEY
 
 # 광고 태그 패턴
 ADVERTISEMENT_PATTERNS = {
-    r"\[AD\]", r"\[PROMO\]", r"\[SPONSORED\]",
-    r"^Promoted", r"^Advertising",
+    r"\[AD\]",
+    r"\[PROMO\]",
+    r"\[SPONSORED\]",
+    r"^Promoted",
+    r"^Advertising",
 }
 
 # 한국 종목코드 패턴 (6자리 숫자)
@@ -59,28 +90,54 @@ _KR_TICKER_PATTERN = re.compile(r"\b(\d{6})\b")
 
 # 주요 종목명 ↔ 코드 매핑 (news_collector.py와 동일)
 _KR_NAME_TO_TICKER = {
-    "삼성전자": "005930", "SK하이닉스": "000660", "LG에너지솔루션": "373220",
-    "삼성바이오로직스": "207940", "현대차": "005380", "현대자동차": "005380",
-    "기아": "000270", "셀트리온": "068270", "KB금융": "105560",
-    "POSCO홀딩스": "005490", "포스코홀딩스": "005490", "NAVER": "035420",
-    "네이버": "035420", "카카오": "035720", "LG화학": "051910",
-    "삼성SDI": "006400", "현대모비스": "012330", "신한지주": "055550",
-    "SK이노베이션": "096770", "하나금융지주": "086790", "삼성물산": "028260",
-    "LG전자": "066570", "SK텔레콤": "017670", "카카오뱅크": "323410",
-    "두산에너빌리티": "034020", "에코프로비엠": "247540", "에코프로": "086520",
+    "삼성전자": "005930",
+    "SK하이닉스": "000660",
+    "LG에너지솔루션": "373220",
+    "삼성바이오로직스": "207940",
+    "현대차": "005380",
+    "현대자동차": "005380",
+    "기아": "000270",
+    "셀트리온": "068270",
+    "KB금융": "105560",
+    "POSCO홀딩스": "005490",
+    "포스코홀딩스": "005490",
+    "NAVER": "035420",
+    "네이버": "035420",
+    "카카오": "035720",
+    "LG화학": "051910",
+    "삼성SDI": "006400",
+    "현대모비스": "012330",
+    "신한지주": "055550",
+    "SK이노베이션": "096770",
+    "하나금융지주": "086790",
+    "삼성물산": "028260",
+    "LG전자": "066570",
+    "SK텔레콤": "017670",
+    "카카오뱅크": "323410",
+    "두산에너빌리티": "034020",
+    "에코프로비엠": "247540",
+    "에코프로": "086520",
     "한화에어로스페이스": "012450",
 }
 
 # 미국 종목 코드 매핑 (상위 기업들)
 _US_NAME_TO_TICKER = {
-    "AAPL": "AAPL", "Apple": "AAPL",
-    "MSFT": "MSFT", "Microsoft": "MSFT",
-    "GOOGL": "GOOGL", "Google": "GOOGL",
-    "AMZN": "AMZN", "Amazon": "AMZN",
-    "TSLA": "TSLA", "Tesla": "TSLA",
-    "META": "META", "Facebook": "META",
-    "NVDA": "NVDA", "Nvidia": "NVDA",
-    "JPM": "JPM", "JPMorgan": "JPM",
+    "AAPL": "AAPL",
+    "Apple": "AAPL",
+    "MSFT": "MSFT",
+    "Microsoft": "MSFT",
+    "GOOGL": "GOOGL",
+    "Google": "GOOGL",
+    "AMZN": "AMZN",
+    "Amazon": "AMZN",
+    "TSLA": "TSLA",
+    "Tesla": "TSLA",
+    "META": "META",
+    "Facebook": "META",
+    "NVDA": "NVDA",
+    "Nvidia": "NVDA",
+    "JPM": "JPM",
+    "JPMorgan": "JPM",
 }
 
 
@@ -148,8 +205,7 @@ def is_spam(
     # 동일 저자의 1시간 내 5회 이상 게시 필터
     if author in author_post_count:
         posts_in_last_hour = [
-            ts for ts in author_post_count.get(f"{author}_times", [])
-            if (current_time - ts).total_seconds() < 3600
+            ts for ts in author_post_count.get(f"{author}_times", []) if (current_time - ts).total_seconds() < 3600
         ]
         if len(posts_in_last_hour) >= 5:
             return True
@@ -189,13 +245,13 @@ def extract_sentiment_keywords(text: str) -> list[str]:
 class SocialPost:
     """Reddit 소셜 게시물 데이터 컨테이너"""
 
-    post_id: str                          # 고유 ID (platform_id)
-    platform: str                         # "REDDIT"
-    subreddit: str                        # 서브레딧명
+    post_id: str  # 고유 ID (platform_id)
+    platform: str  # "REDDIT"
+    subreddit: str  # 서브레딧명
     title: str
-    content: str                          # 본문 + 댓글
+    content: str  # 본문 + 댓글
     author: str
-    score: int                            # upvotes - downvotes
+    score: int  # upvotes - downvotes
     num_comments: int
     url: str
     published_at: datetime
@@ -342,9 +398,7 @@ class RedditCollector:
         # 한국 투자 서브레딧
         for subreddit in self.SUBREDDITS["korean"]:
             try:
-                posts = await self._fetch_subreddit_posts(
-                    subreddit, token, limit, comments_limit
-                )
+                posts = await self._fetch_subreddit_posts(subreddit, token, limit, comments_limit)
                 all_posts.extend(posts)
                 await self._rate_limit_delay_async()
             except Exception as e:
@@ -354,9 +408,7 @@ class RedditCollector:
         # 글로벌 투자 서브레딧
         for subreddit in self.SUBREDDITS["global"]:
             try:
-                posts = await self._fetch_subreddit_posts(
-                    subreddit, token, limit, comments_limit
-                )
+                posts = await self._fetch_subreddit_posts(subreddit, token, limit, comments_limit)
                 all_posts.extend(posts)
                 await self._rate_limit_delay_async()
             except Exception as e:
@@ -378,9 +430,7 @@ class RedditCollector:
 
         for sort_by in ["hot", "new"]:
             try:
-                fetched = await self._fetch_posts_by_sort(
-                    subreddit, sort_by, token, limit, comments_limit
-                )
+                fetched = await self._fetch_posts_by_sort(subreddit, sort_by, token, limit, comments_limit)
                 posts.extend(fetched)
                 await self._rate_limit_delay_async()
             except Exception as e:
@@ -440,9 +490,7 @@ class RedditCollector:
                 comment_text = ""
                 try:
                     permalink = post_data.get("permalink", "")
-                    comments = await self._fetch_comments(
-                        permalink, token, limit=comments_limit
-                    )
+                    comments = await self._fetch_comments(permalink, token, limit=comments_limit)
                     if comments:
                         comment_text = "\n".join(comments[:comments_limit])
                         await self._rate_limit_delay_async()
@@ -631,8 +679,7 @@ class SocialCollectorService:
             filtered.append(post)
 
         logger.info(
-            f"Filtered {len(filtered)} / {len(posts)} posts "
-            f"({len(posts) - len(filtered)} spam/non-financial)"
+            f"Filtered {len(filtered)} / {len(posts)} posts " f"({len(posts) - len(filtered)} spam/non-financial)"
         )
         return filtered
 
@@ -669,10 +716,7 @@ class SocialCollectorService:
             "duplicates_skipped": dup_count,
         }
 
-        logger.info(
-            f"Social posts stored: {new_count} new, "
-            f"{dup_count} duplicates, {len(posts)} total"
-        )
+        logger.info(f"Social posts stored: {new_count} new, " f"{dup_count} duplicates, {len(posts)} total")
         return result
 
     async def get_recent_posts(
@@ -717,14 +761,18 @@ class SocialCollectorService:
         collection = MongoDBManager.get_collection(self.COLLECTION_NAME)
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
 
-        cursor = collection.find(
-            {
-                "subreddit": subreddit,
-                "published_at": {"$gte": cutoff},
-                "is_filtered": False,
-            },
-            {"_id": 0},
-        ).sort("published_at", -1).limit(limit)
+        cursor = (
+            collection.find(
+                {
+                    "subreddit": subreddit,
+                    "published_at": {"$gte": cutoff},
+                    "is_filtered": False,
+                },
+                {"_id": 0},
+            )
+            .sort("published_at", -1)
+            .limit(limit)
+        )
 
         return await cursor.to_list(length=limit)
 
@@ -738,15 +786,19 @@ class SocialCollectorService:
         collection = MongoDBManager.get_collection(self.COLLECTION_NAME)
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
 
-        cursor = collection.find(
-            {
-                "tickers": ticker,
-                "published_at": {"$gte": cutoff},
-                "is_filtered": False,
-                "platform": "REDDIT",
-            },
-            {"_id": 0},
-        ).sort("score", -1).limit(limit)
+        cursor = (
+            collection.find(
+                {
+                    "tickers": ticker,
+                    "published_at": {"$gte": cutoff},
+                    "is_filtered": False,
+                    "platform": "REDDIT",
+                },
+                {"_id": 0},
+            )
+            .sort("score", -1)
+            .limit(limit)
+        )
 
         return await cursor.to_list(length=limit)
 

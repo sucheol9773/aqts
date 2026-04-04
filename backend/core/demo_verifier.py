@@ -23,15 +23,16 @@ from typing import Optional
 import httpx
 from loguru import logger
 
-from config.settings import get_settings, TradingMode
-
+from config.settings import TradingMode, get_settings
 
 # ══════════════════════════════════════
 # 검증 결과 데이터 구조
 # ══════════════════════════════════════
 
+
 class VerifyStatus(str, Enum):
     """개별 검증 항목 상태"""
+
     PASS = "PASS"
     FAIL = "FAIL"
     WARN = "WARN"
@@ -41,6 +42,7 @@ class VerifyStatus(str, Enum):
 @dataclass
 class VerifyItem:
     """개별 검증 항목"""
+
     name: str
     category: str
     status: VerifyStatus
@@ -53,6 +55,7 @@ class VerifyItem:
 @dataclass
 class DemoVerificationReport:
     """DEMO 모드 검증 종합 리포트"""
+
     items: list[VerifyItem] = field(default_factory=list)
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: Optional[datetime] = None
@@ -62,11 +65,7 @@ class DemoVerificationReport:
     @property
     def all_required_passed(self) -> bool:
         """필수 항목이 모두 통과했는지"""
-        return all(
-            item.status == VerifyStatus.PASS
-            for item in self.items
-            if item.required
-        )
+        return all(item.status == VerifyStatus.PASS for item in self.items if item.required)
 
     @property
     def can_start_demo(self) -> bool:
@@ -120,6 +119,7 @@ class DemoVerificationReport:
 # ══════════════════════════════════════
 # DEMO 검증 엔진
 # ══════════════════════════════════════
+
 
 class DemoVerifier:
     """DEMO 모드 실전 가동 전 종합 검증 엔진"""
@@ -202,7 +202,9 @@ class DemoVerifier:
                 status=VerifyStatus.PASS,
                 message="모든 DEMO API 자격증명이 설정됨",
                 details={
-                    "app_key": f"{kis.demo_app_key[:6]}...{kis.demo_app_key[-4:]}" if len(kis.demo_app_key) > 10 else "***",
+                    "app_key": (
+                        f"{kis.demo_app_key[:6]}...{kis.demo_app_key[-4:]}" if len(kis.demo_app_key) > 10 else "***"
+                    ),
                     "account_no": kis.demo_account_no,
                 },
             )
@@ -393,8 +395,9 @@ class DemoVerifier:
     async def _verify_postgresql(self) -> VerifyItem:
         """PostgreSQL 연결 검증"""
         try:
-            from db.database import get_db_engine
             from sqlalchemy import text
+
+            from db.database import get_db_engine
 
             engine = get_db_engine()
             start = asyncio.get_event_loop().time()

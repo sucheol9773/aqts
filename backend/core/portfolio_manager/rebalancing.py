@@ -18,30 +18,30 @@
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone, time
-from typing import Optional, Any
+from datetime import datetime, time, timezone
+from typing import Any, Optional
 
 from sqlalchemy import text
 
 from config.constants import (
+    InvestmentStyle,
     Market,
     OrderSide,
     OrderType,
-    RebalancingType,
     RebalancingFrequency,
-    InvestmentStyle,
+    RebalancingType,
 )
 from config.logging import logger
 from config.settings import get_settings
-from db.database import async_session_factory
-from core.portfolio_manager.profile import InvestorProfile
-from core.portfolio_manager.construction import (
-    PortfolioConstructionEngine,
-    TargetPortfolio,
-    TargetAllocation,
-)
 from core.notification.telegram_notifier import TelegramNotifier
 from core.order_executor.executor import OrderExecutor, OrderRequest
+from core.portfolio_manager.construction import (
+    PortfolioConstructionEngine,
+    TargetAllocation,
+    TargetPortfolio,
+)
+from core.portfolio_manager.profile import InvestorProfile
+from db.database import async_session_factory
 
 
 # ══════════════════════════════════════
@@ -469,7 +469,9 @@ class RebalancingEngine:
             optimization_method="defensive",
         )
 
-        logger.info(f"Defensive portfolio generated: {len(defensive_allocations)} positions, cash={cash_ratio*100:.0f}%")
+        logger.info(
+            f"Defensive portfolio generated: {len(defensive_allocations)} positions, cash={cash_ratio*100:.0f}%"
+        )
         return portfolio
 
     def _generate_rebalancing_orders(
@@ -535,8 +537,7 @@ class RebalancingEngine:
             "position_count": portfolio.stock_count,
             "cash_ratio": portfolio.cash_ratio,
             "top_3_positions": [
-                (a.ticker, a.target_weight)
-                for a in sorted(portfolio.allocations, key=lambda a: -a.target_weight)[:3]
+                (a.ticker, a.target_weight) for a in sorted(portfolio.allocations, key=lambda a: -a.target_weight)[:3]
             ],
             "sector_weights": portfolio.sector_weights,
         }
@@ -661,15 +662,18 @@ class RebalancingEngine:
                         :orders, :old_summary, :new_summary, :executed_at
                     )
                 """)
-                await session.execute(query, {
-                    "user_id": self.profile.user_id,
-                    "type": result.rebalancing_type.value,
-                    "reason": result.trigger_reason,
-                    "orders": json.dumps([o.to_dict() for o in result.orders]),
-                    "old_summary": json.dumps(result.old_portfolio_summary),
-                    "new_summary": json.dumps(result.new_portfolio_summary),
-                    "executed_at": result.executed_at,
-                })
+                await session.execute(
+                    query,
+                    {
+                        "user_id": self.profile.user_id,
+                        "type": result.rebalancing_type.value,
+                        "reason": result.trigger_reason,
+                        "orders": json.dumps([o.to_dict() for o in result.orders]),
+                        "old_summary": json.dumps(result.old_portfolio_summary),
+                        "new_summary": json.dumps(result.new_portfolio_summary),
+                        "executed_at": result.executed_at,
+                    },
+                )
                 await session.commit()
         except Exception as e:
             logger.debug(f"Failed to record rebalancing: {e}")

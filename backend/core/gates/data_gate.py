@@ -1,6 +1,7 @@
 """DataGate: 원천 데이터 품질 검증 (수집 → 팩터 전이)."""
 
-from typing import Any, List
+from typing import Any
+
 from core.gates.base import BaseGate, GateResult, GateSeverity
 
 

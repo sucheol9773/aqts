@@ -14,13 +14,14 @@ Test Categories:
 
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
+
 import pytest
 
-from config.constants import OrderSide, PORTFOLIO_CONSTRAINTS
+from config.constants import PORTFOLIO_CONSTRAINTS, OrderSide
 from core.trading_guard import (
+    PreOrderCheckResult,
     TradingGuard,
     TradingGuardState,
-    PreOrderCheckResult,
 )
 
 
@@ -417,9 +418,7 @@ class TestCircuitBreakers:
         result = guard.check_consecutive_losses()
         assert result.allowed is True
 
-    def test_consecutive_losses_exceed_limit_activates_kill_switch(
-        self, guard, mock_settings
-    ):
+    def test_consecutive_losses_exceed_limit_activates_kill_switch(self, guard, mock_settings):
         """Test consecutive losses exceeding limit activates kill switch"""
         guard._state.consecutive_losses = mock_settings.risk.consecutive_loss_limit
 

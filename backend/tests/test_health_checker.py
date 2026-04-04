@@ -8,14 +8,15 @@ HealthChecker 클래스의 모든 public 메서드를 테스트합니다.
 모든 외부 의존성 (DB, Redis, MongoDB, settings) 은 mock으로 처리됩니다.
 """
 
-import pytest
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from core.health_checker import (
+    ComponentHealth,
     HealthChecker,
     HealthStatus,
-    ComponentHealth,
     SystemHealthReport,
 )
 
@@ -35,11 +36,13 @@ class TestHealthChecker:
         checker = HealthChecker()
 
         # Mock 모든 검사 메서드
-        with patch.object(checker, "_check_postgresql") as mock_pg, \
-             patch.object(checker, "_check_mongodb") as mock_mongo, \
-             patch.object(checker, "_check_redis") as mock_redis, \
-             patch.object(checker, "_check_settings_validity") as mock_settings_check, \
-             patch.object(checker, "_check_trading_mode_readiness") as mock_trading:
+        with (
+            patch.object(checker, "_check_postgresql") as mock_pg,
+            patch.object(checker, "_check_mongodb") as mock_mongo,
+            patch.object(checker, "_check_redis") as mock_redis,
+            patch.object(checker, "_check_settings_validity") as mock_settings_check,
+            patch.object(checker, "_check_trading_mode_readiness") as mock_trading,
+        ):
 
             # 모든 컴포넌트가 HEALTHY 반환
             mock_pg.return_value = ComponentHealth(
@@ -92,11 +95,13 @@ class TestHealthChecker:
 
             checker = HealthChecker()
 
-            with patch.object(checker, "_check_postgresql") as mock_pg, \
-                 patch.object(checker, "_check_mongodb") as mock_mongo, \
-                 patch.object(checker, "_check_redis") as mock_redis, \
-                 patch.object(checker, "_check_settings_validity") as mock_settings_check, \
-                 patch.object(checker, "_check_trading_mode_readiness") as mock_trading:
+            with (
+                patch.object(checker, "_check_postgresql") as mock_pg,
+                patch.object(checker, "_check_mongodb") as mock_mongo,
+                patch.object(checker, "_check_redis") as mock_redis,
+                patch.object(checker, "_check_settings_validity") as mock_settings_check,
+                patch.object(checker, "_check_trading_mode_readiness") as mock_trading,
+            ):
 
                 # PostgreSQL만 UNHEALTHY
                 mock_pg.return_value = ComponentHealth(
@@ -145,11 +150,13 @@ class TestHealthChecker:
 
             checker = HealthChecker()
 
-            with patch.object(checker, "_check_postgresql") as mock_pg, \
-                 patch.object(checker, "_check_mongodb") as mock_mongo, \
-                 patch.object(checker, "_check_redis") as mock_redis, \
-                 patch.object(checker, "_check_settings_validity") as mock_settings_check, \
-                 patch.object(checker, "_check_trading_mode_readiness") as mock_trading:
+            with (
+                patch.object(checker, "_check_postgresql") as mock_pg,
+                patch.object(checker, "_check_mongodb") as mock_mongo,
+                patch.object(checker, "_check_redis") as mock_redis,
+                patch.object(checker, "_check_settings_validity") as mock_settings_check,
+                patch.object(checker, "_check_trading_mode_readiness") as mock_trading,
+            ):
 
                 mock_pg.return_value = ComponentHealth(
                     name="postgresql",
@@ -193,11 +200,13 @@ class TestHealthChecker:
         # Setup: conftest 환경 사용
         checker = HealthChecker()
 
-        with patch.object(checker, "_check_postgresql") as mock_pg, \
-             patch.object(checker, "_check_mongodb") as mock_mongo, \
-             patch.object(checker, "_check_redis") as mock_redis, \
-             patch.object(checker, "_check_settings_validity") as mock_settings_check, \
-             patch.object(checker, "_check_trading_mode_readiness") as mock_trading:
+        with (
+            patch.object(checker, "_check_postgresql") as mock_pg,
+            patch.object(checker, "_check_mongodb") as mock_mongo,
+            patch.object(checker, "_check_redis") as mock_redis,
+            patch.object(checker, "_check_settings_validity") as mock_settings_check,
+            patch.object(checker, "_check_trading_mode_readiness") as mock_trading,
+        ):
 
             # Async mocks 설정
             async def raise_error(*args, **kwargs):
@@ -236,11 +245,13 @@ class TestHealthChecker:
 
             checker = HealthChecker()
 
-            with patch.object(checker, "_check_postgresql") as mock_pg, \
-                 patch.object(checker, "_check_mongodb") as mock_mongo, \
-                 patch.object(checker, "_check_redis") as mock_redis, \
-                 patch.object(checker, "_check_settings_validity") as mock_settings_check, \
-                 patch.object(checker, "_check_trading_mode_readiness") as mock_trading:
+            with (
+                patch.object(checker, "_check_postgresql") as mock_pg,
+                patch.object(checker, "_check_mongodb") as mock_mongo,
+                patch.object(checker, "_check_redis") as mock_redis,
+                patch.object(checker, "_check_settings_validity") as mock_settings_check,
+                patch.object(checker, "_check_trading_mode_readiness") as mock_trading,
+            ):
 
                 mock_pg.return_value = ComponentHealth(
                     name="postgresql",

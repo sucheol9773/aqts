@@ -40,10 +40,7 @@ class Signal(BaseModel):
     def validate_confidence_direction(self) -> "Signal":
         """BUY/SELL 시그널은 confidence > 0이어야 합니다."""
         if self.direction != SignalDirection.HOLD and self.confidence == 0.0:
-            raise ValueError(
-                f"{self.direction.value} 시그널의 confidence가 0: "
-                f"확신이 없으면 HOLD 사용"
-            )
+            raise ValueError(f"{self.direction.value} 시그널의 confidence가 0: " f"확신이 없으면 HOLD 사용")
         return self
 
     model_config = {"frozen": True, "extra": "forbid"}

@@ -13,13 +13,11 @@
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from config.constants import StrategyType
 from core.quant_engine.signal_generator import (
     SignalGenerator,
     TechnicalIndicators,
-    Signal,
 )
 
 
@@ -42,13 +40,16 @@ def _make_ohlcv(n: int = 100, trend: str = "up") -> pd.DataFrame:
         prices.append(prices[-1] * (1 + change))
 
     close = np.array(prices)
-    return pd.DataFrame({
-        "open": close * (1 + np.random.uniform(-0.005, 0.005, n)),
-        "high": close * (1 + np.random.uniform(0.005, 0.02, n)),
-        "low": close * (1 - np.random.uniform(0.005, 0.02, n)),
-        "close": close,
-        "volume": np.random.randint(5_000_000, 20_000_000, n),
-    }, index=dates)
+    return pd.DataFrame(
+        {
+            "open": close * (1 + np.random.uniform(-0.005, 0.005, n)),
+            "high": close * (1 + np.random.uniform(0.005, 0.02, n)),
+            "low": close * (1 - np.random.uniform(0.005, 0.02, n)),
+            "close": close,
+            "volume": np.random.randint(5_000_000, 20_000_000, n),
+        },
+        index=dates,
+    )
 
 
 class TestTechnicalIndicators:
@@ -197,11 +198,16 @@ class TestSignalGeneratorRiskParity:
         # 변동성이 매우 낮은 데이터 생성
         dates = pd.bdate_range(start="2025-01-02", periods=100)
         close = 70000 + np.cumsum(np.random.normal(0, 50, 100))
-        ohlcv = pd.DataFrame({
-            "close": close,
-            "open": close, "high": close + 100, "low": close - 100,
-            "volume": np.full(100, 1e7),
-        }, index=dates)
+        ohlcv = pd.DataFrame(
+            {
+                "close": close,
+                "open": close,
+                "high": close + 100,
+                "low": close - 100,
+                "volume": np.full(100, 1e7),
+            },
+            index=dates,
+        )
 
         signal = gen.generate_risk_parity_signal("TEST", ohlcv)
         assert signal.strategy == StrategyType.RISK_PARITY

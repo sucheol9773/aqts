@@ -23,6 +23,7 @@ from config.settings import get_settings
 
 class HealthStatus(str, Enum):
     """건전성 상태"""
+
     HEALTHY = "HEALTHY"
     DEGRADED = "DEGRADED"
     UNHEALTHY = "UNHEALTHY"
@@ -32,6 +33,7 @@ class HealthStatus(str, Enum):
 @dataclass
 class ComponentHealth:
     """개별 컴포넌트 건전성"""
+
     name: str
     status: HealthStatus
     message: str = ""
@@ -51,6 +53,7 @@ class ComponentHealth:
 @dataclass
 class SystemHealthReport:
     """시스템 종합 건전성 리포트"""
+
     overall_status: HealthStatus = HealthStatus.UNKNOWN
     components: list[ComponentHealth] = field(default_factory=list)
     trading_mode: str = ""
@@ -101,11 +104,13 @@ class HealthChecker:
                 component = await check_fn()
                 report.components.append(component)
             except Exception as e:
-                report.components.append(ComponentHealth(
-                    name=check_fn.__name__.replace("_check_", ""),
-                    status=HealthStatus.UNHEALTHY,
-                    message=f"검사 중 오류: {str(e)}",
-                ))
+                report.components.append(
+                    ComponentHealth(
+                        name=check_fn.__name__.replace("_check_", ""),
+                        status=HealthStatus.UNHEALTHY,
+                        message=f"검사 중 오류: {str(e)}",
+                    )
+                )
 
         # 종합 상태 판정
         statuses = [c.status for c in report.components]
@@ -117,13 +122,10 @@ class HealthChecker:
             report.overall_status = HealthStatus.DEGRADED
 
         # 거래 준비 상태
-        report.ready_for_trading = (
-            report.overall_status in (HealthStatus.HEALTHY, HealthStatus.DEGRADED)
-        )
+        report.ready_for_trading = report.overall_status in (HealthStatus.HEALTHY, HealthStatus.DEGRADED)
 
         logger.info(
-            f"Health check complete: {report.overall_status.value}, "
-            f"trading_ready={report.ready_for_trading}"
+            f"Health check complete: {report.overall_status.value}, " f"trading_ready={report.ready_for_trading}"
         )
         return report
 
@@ -133,8 +135,10 @@ class HealthChecker:
     async def _check_postgresql(self) -> ComponentHealth:
         """PostgreSQL 연결 검사"""
         import time
+
         try:
             from sqlalchemy import text
+
             from db.database import async_session_factory
 
             start = time.monotonic()
@@ -159,6 +163,7 @@ class HealthChecker:
     async def _check_mongodb(self) -> ComponentHealth:
         """MongoDB 연결 검사"""
         import time
+
         try:
             from db.database import MongoDBManager
 
@@ -183,6 +188,7 @@ class HealthChecker:
     async def _check_redis(self) -> ComponentHealth:
         """Redis 연결 검사"""
         import time
+
         try:
             from db.database import RedisManager
 

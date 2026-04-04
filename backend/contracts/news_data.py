@@ -24,12 +24,8 @@ class NewsData(BaseModel):
     published_at: datetime = Field(..., description="뉴스 발행 시각")
     url: Optional[str] = Field(None, max_length=2048, description="원문 URL")
 
-    sentiment_score: Optional[float] = Field(
-        None, ge=-1.0, le=1.0, description="감성 점수 (-1.0 ~ +1.0)"
-    )
-    sentiment_label: Optional[str] = Field(
-        None, description="감성 레이블 (POSITIVE/NEUTRAL/NEGATIVE)"
-    )
+    sentiment_score: Optional[float] = Field(None, ge=-1.0, le=1.0, description="감성 점수 (-1.0 ~ +1.0)")
+    sentiment_label: Optional[str] = Field(None, description="감성 레이블 (POSITIVE/NEUTRAL/NEGATIVE)")
 
     collected_at: datetime = Field(
         default_factory=datetime.utcnow,

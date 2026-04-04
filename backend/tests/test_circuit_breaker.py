@@ -6,7 +6,6 @@ CircuitBreaker, CircuitBreakerRegistry의 상태 전이,
 """
 
 import asyncio
-import time
 
 import pytest
 
@@ -47,9 +46,7 @@ class TestCircuitBreakerStates:
     @pytest.mark.asyncio
     async def test_opens_after_threshold_failures(self):
         """실패 임계값 도달 시 OPEN으로 전이"""
-        breaker = CircuitBreaker(
-            name="test_open", failure_threshold=3, recovery_timeout=60.0
-        )
+        breaker = CircuitBreaker(name="test_open", failure_threshold=3, recovery_timeout=60.0)
 
         @breaker
         async def fail():
@@ -65,9 +62,7 @@ class TestCircuitBreakerStates:
     @pytest.mark.asyncio
     async def test_open_rejects_calls(self):
         """OPEN 상태에서 요청은 CircuitBreakerError로 거부"""
-        breaker = CircuitBreaker(
-            name="test_reject", failure_threshold=2, recovery_timeout=60.0
-        )
+        breaker = CircuitBreaker(name="test_reject", failure_threshold=2, recovery_timeout=60.0)
 
         @breaker
         async def fail():
@@ -241,9 +236,7 @@ class TestContextManager:
     @pytest.mark.asyncio
     async def test_context_manager_open_rejection(self):
         """OPEN 상태에서 컨텍스트 매니저 진입 거부"""
-        breaker = CircuitBreaker(
-            name="test_ctx_open", failure_threshold=2, recovery_timeout=60.0
-        )
+        breaker = CircuitBreaker(name="test_ctx_open", failure_threshold=2, recovery_timeout=60.0)
 
         for _ in range(2):
             with pytest.raises(RuntimeError):

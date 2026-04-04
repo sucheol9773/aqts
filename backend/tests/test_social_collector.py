@@ -12,25 +12,24 @@ Tests cover:
 - MongoDB storage operations
 """
 
-import asyncio
+from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from datetime import datetime, timezone, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch, call
-import httpx
 
 from core.data_collector.social_collector import (
-    SocialPost,
-    RedditOAuth2Manager,
+    ADVERTISEMENT_PATTERNS,
+    FINANCIAL_KEYWORDS,
+    FINANCIAL_KEYWORDS_EN,
+    FINANCIAL_KEYWORDS_KR,
     RedditCollector,
+    RedditOAuth2Manager,
     SocialCollectorService,
+    SocialPost,
+    extract_sentiment_keywords,
     extract_tickers,
     is_financial_content,
     is_spam,
-    extract_sentiment_keywords,
-    FINANCIAL_KEYWORDS,
-    FINANCIAL_KEYWORDS_KR,
-    FINANCIAL_KEYWORDS_EN,
-    ADVERTISEMENT_PATTERNS,
 )
 
 
@@ -114,11 +113,7 @@ class TestRedditOAuth2Manager:
 
     def test_oauth_manager_initialization(self):
         """Test RedditOAuth2Manager initialization"""
-        manager = RedditOAuth2Manager(
-            client_id="test_client_id",
-            client_secret="test_secret",
-            user_agent="TestBot/1.0"
-        )
+        manager = RedditOAuth2Manager(client_id="test_client_id", client_secret="test_secret", user_agent="TestBot/1.0")
 
         assert manager._client_id == "test_client_id"
         assert manager._client_secret == "test_secret"
@@ -126,22 +121,14 @@ class TestRedditOAuth2Manager:
 
     def test_oauth_manager_is_available_returns_false_when_missing_credentials(self):
         """Test is_available returns False when credentials are missing"""
-        manager = RedditOAuth2Manager(
-            client_id="",
-            client_secret="test_secret",
-            user_agent="TestBot/1.0"
-        )
+        manager = RedditOAuth2Manager(client_id="", client_secret="test_secret", user_agent="TestBot/1.0")
 
         assert manager.is_available is False
 
     @pytest.mark.asyncio
     async def test_get_valid_token_success(self):
         """Test successful OAuth2 token acquisition"""
-        manager = RedditOAuth2Manager(
-            client_id="test_client_id",
-            client_secret="test_secret",
-            user_agent="TestBot/1.0"
-        )
+        manager = RedditOAuth2Manager(client_id="test_client_id", client_secret="test_secret", user_agent="TestBot/1.0")
 
         with patch("core.data_collector.social_collector.httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
@@ -163,11 +150,7 @@ class TestRedditOAuth2Manager:
     @pytest.mark.asyncio
     async def test_get_valid_token_returns_cached_token_if_valid(self):
         """Test get_valid_token returns cached token if still valid"""
-        manager = RedditOAuth2Manager(
-            client_id="test_client_id",
-            client_secret="test_secret",
-            user_agent="TestBot/1.0"
-        )
+        manager = RedditOAuth2Manager(client_id="test_client_id", client_secret="test_secret", user_agent="TestBot/1.0")
 
         # Set a token that expires far in the future
         manager._access_token = "cached_token"
@@ -180,11 +163,7 @@ class TestRedditOAuth2Manager:
     @pytest.mark.asyncio
     async def test_get_valid_token_returns_none_when_not_available(self):
         """Test get_valid_token returns None when credentials not available"""
-        manager = RedditOAuth2Manager(
-            client_id="",
-            client_secret="",
-            user_agent="TestBot/1.0"
-        )
+        manager = RedditOAuth2Manager(client_id="", client_secret="", user_agent="TestBot/1.0")
 
         token = await manager.get_valid_token()
 
@@ -193,11 +172,7 @@ class TestRedditOAuth2Manager:
     @pytest.mark.asyncio
     async def test_get_valid_token_handles_api_error(self):
         """Test get_valid_token handles API errors"""
-        manager = RedditOAuth2Manager(
-            client_id="test_client_id",
-            client_secret="test_secret",
-            user_agent="TestBot/1.0"
-        )
+        manager = RedditOAuth2Manager(client_id="test_client_id", client_secret="test_secret", user_agent="TestBot/1.0")
 
         with patch("core.data_collector.social_collector.httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
@@ -342,7 +317,7 @@ class TestIsSpam:
                 current_time - timedelta(minutes=15),
                 current_time - timedelta(minutes=20),
                 current_time - timedelta(minutes=25),
-            ]
+            ],
         }
         content = "This is legitimate content that is at least 10 characters long"
         assert is_spam(content, "spam_user", author_post_count, current_time) is True
@@ -488,10 +463,7 @@ class TestRedditCollector:
                     mock_comments.return_value = []
 
                     result = await collector._fetch_posts_by_sort(
-                        subreddit="ko_stocks",
-                        sort_by="hot",
-                        token="test_token",
-                        limit=25
+                        subreddit="ko_stocks", sort_by="hot", token="test_token", limit=25
                     )
 
                     assert len(result) == 1
@@ -519,18 +491,14 @@ class TestRedditCollector:
                             {"data": {"body": "I agree with this"}},
                         ]
                     }
-                }
+                },
             ]
             mock_client.get.return_value = mock_response
 
             with patch.object(collector, "_get_user_agent", new_callable=AsyncMock) as mock_ua:
                 mock_ua.return_value = "TestBot/1.0"
 
-                comments = await collector._fetch_comments(
-                    permalink="/r/ko_stocks/abc123",
-                    token="test_token",
-                    limit=5
-                )
+                comments = await collector._fetch_comments(permalink="/r/ko_stocks/abc123", token="test_token", limit=5)
 
                 assert len(comments) == 2
                 assert "Great analysis" in comments
@@ -556,18 +524,14 @@ class TestRedditCollector:
                             {"data": {"body": "[deleted by user]"}},
                         ]
                     }
-                }
+                },
             ]
             mock_client.get.return_value = mock_response
 
             with patch.object(collector, "_get_user_agent", new_callable=AsyncMock) as mock_ua:
                 mock_ua.return_value = "TestBot/1.0"
 
-                comments = await collector._fetch_comments(
-                    permalink="/r/ko_stocks/abc123",
-                    token="test_token",
-                    limit=5
-                )
+                comments = await collector._fetch_comments(permalink="/r/ko_stocks/abc123", token="test_token", limit=5)
 
                 assert len(comments) == 1
                 assert comments[0] == "Good comment"
@@ -861,10 +825,12 @@ class TestSocialCollectorService:
 
                 # Create a mock cursor that supports chaining: find().sort().limit().to_list()
                 mock_cursor = AsyncMock()
-                mock_cursor.to_list = AsyncMock(return_value=[
-                    {"post_id": "1", "title": "Test"},
-                    {"post_id": "2", "title": "Test 2"},
-                ])
+                mock_cursor.to_list = AsyncMock(
+                    return_value=[
+                        {"post_id": "1", "title": "Test"},
+                        {"post_id": "2", "title": "Test 2"},
+                    ]
+                )
                 # Mock the sort() method to return the cursor (for chaining)
                 mock_cursor.sort = MagicMock(return_value=mock_cursor)
                 # Mock the limit() method to return the cursor (for chaining)
@@ -872,11 +838,7 @@ class TestSocialCollectorService:
                 # Mock find() to return the cursor
                 mock_collection.find = MagicMock(return_value=mock_cursor)
 
-                result = await service.get_recent_posts(
-                    tickers=["005930"],
-                    hours=24,
-                    limit=50
-                )
+                result = await service.get_recent_posts(tickers=["005930"], hours=24, limit=50)
 
                 assert len(result) == 2
                 assert result[0]["post_id"] == "1"

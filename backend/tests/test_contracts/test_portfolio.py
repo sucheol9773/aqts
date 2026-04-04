@@ -3,8 +3,8 @@
 import pytest
 from pydantic import ValidationError
 
-from contracts.portfolio import PositionTarget, PortfolioTarget
 from config.constants import Market
+from contracts.portfolio import PortfolioTarget, PositionTarget
 
 
 def _pos(ticker="005930", market=Market.KRX, target_weight=0.2, **kw):
@@ -107,9 +107,7 @@ class TestPortfolioTargetInvalid:
 
     def test_extra_field(self):
         with pytest.raises(ValidationError, match="Extra inputs"):
-            PortfolioTarget(
-                positions=[], cash_weight=1.0, benchmark="KOSPI"
-            )
+            PortfolioTarget(positions=[], cash_weight=1.0, benchmark="KOSPI")
 
     def test_immutable(self):
         pt = PortfolioTarget(positions=[], cash_weight=1.0)

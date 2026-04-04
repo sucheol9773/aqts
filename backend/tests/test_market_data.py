@@ -12,14 +12,12 @@
 - 상하한가/서킷브레이커 범위 내 급변 정상 처리
 """
 
-from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import numpy as np
 import pandas as pd
-import pytest
 
-from config.constants import Market, DATA_INTEGRITY
+from config.constants import DATA_INTEGRITY
 
 
 class TestConsecutiveMissing:
@@ -29,6 +27,7 @@ class TestConsecutiveMissing:
         """MarketDataCollector 인스턴스 생성 (DB 세션 Mock)"""
         with patch("core.data_collector.market_data.KISClient"):
             from core.data_collector.market_data import MarketDataCollector
+
             mock_session = AsyncMock()
             collector = MarketDataCollector(mock_session)
             return collector
@@ -48,11 +47,13 @@ class TestConsecutiveMissing:
         dates = pd.bdate_range(start="2026-03-01", periods=10)
         # 3번째 영업일 제거
         dates_with_gap = dates.delete(2)
-        df = pd.DataFrame({
-            "time": dates_with_gap,
-            "close": range(len(dates_with_gap)),
-            "volume": range(len(dates_with_gap)),
-        })
+        df = pd.DataFrame(
+            {
+                "time": dates_with_gap,
+                "close": range(len(dates_with_gap)),
+                "volume": range(len(dates_with_gap)),
+            }
+        )
 
         result = collector._check_consecutive_missing(df)
         assert result == 1
@@ -63,11 +64,13 @@ class TestConsecutiveMissing:
         dates = pd.bdate_range(start="2026-03-01", periods=10)
         # 3,4,5번째 영업일 제거
         dates_with_gap = dates.delete([2, 3, 4])
-        df = pd.DataFrame({
-            "time": dates_with_gap,
-            "close": range(len(dates_with_gap)),
-            "volume": range(len(dates_with_gap)),
-        })
+        df = pd.DataFrame(
+            {
+                "time": dates_with_gap,
+                "close": range(len(dates_with_gap)),
+                "volume": range(len(dates_with_gap)),
+            }
+        )
 
         result = collector._check_consecutive_missing(df)
         assert result == 3
@@ -78,11 +81,13 @@ class TestConsecutiveMissing:
         dates = pd.bdate_range(start="2026-03-01", periods=10)
         # 4일 연속 제거
         dates_with_gap = dates.delete([2, 3, 4, 5])
-        df = pd.DataFrame({
-            "time": dates_with_gap,
-            "close": range(len(dates_with_gap)),
-            "volume": range(len(dates_with_gap)),
-        })
+        df = pd.DataFrame(
+            {
+                "time": dates_with_gap,
+                "close": range(len(dates_with_gap)),
+                "volume": range(len(dates_with_gap)),
+            }
+        )
 
         result = collector._check_consecutive_missing(df)
         assert result > DATA_INTEGRITY["max_consecutive_missing_days"]

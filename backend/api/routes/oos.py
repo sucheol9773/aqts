@@ -12,18 +12,17 @@ run_id를 즉시 반환 (polling 패턴).
 """
 
 import asyncio
-from typing import Optional
 
 import numpy as np
 import pandas as pd
-from fastapi import APIRouter, Depends, Body
+from fastapi import APIRouter, Body, Depends
 from starlette.requests import Request
 
 from api.middleware.auth import get_current_user
 from api.schemas.common import APIResponse
 from config.logging import logger
-from core.oos.models import OOSRunRequest, OOSStatus
 from core.oos.job_manager import OOSJobManager
+from core.oos.models import OOSRunRequest
 
 router = APIRouter()
 
@@ -119,10 +118,7 @@ async def create_oos_run(
             None,  # market_data
         )
 
-        logger.info(
-            f"OOS run created: {result.run_id}, "
-            f"status={result.status.value}, user={current_user}"
-        )
+        logger.info(f"OOS run created: {result.run_id}, " f"status={result.status.value}, user={current_user}")
 
         return APIResponse(
             success=True,

@@ -5,15 +5,14 @@ Provides query endpoints for accessing the 7-step decision audit chain + GateRes
 """
 
 from datetime import datetime
-from typing import Optional, List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query
 
 from api.middleware.auth import get_current_user
 from api.schemas.common import APIResponse
-from core.audit import DecisionRecord, get_decision_store
 from config.logging import logger
-
+from core.audit import DecisionRecord, get_decision_store
 
 router = APIRouter(prefix="/api/audit", tags=["audit"])
 

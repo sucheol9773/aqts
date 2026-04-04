@@ -27,13 +27,13 @@ from db.database import RedisManager
 class InvestmentOpinion:
     """투자 의견 결과 컨테이너"""
 
-    ticker: Optional[str]                    # 종목코드 (MACRO는 None)
-    opinion_type: OpinionType                # STOCK / SECTOR / MACRO
-    action: OpinionAction                    # STRONG_BUY ~ STRONG_SELL
-    conviction: float                        # 확신도 0.0 ~ 1.0
-    target_weight: Optional[float] = None    # 권장 포트폴리오 비중
-    reasoning: str = ""                      # 투자 근거 (상세)
-    market_context: str = ""                 # 시장 환경 요약
+    ticker: Optional[str]  # 종목코드 (MACRO는 None)
+    opinion_type: OpinionType  # STOCK / SECTOR / MACRO
+    action: OpinionAction  # STRONG_BUY ~ STRONG_SELL
+    conviction: float  # 확신도 0.0 ~ 1.0
+    target_weight: Optional[float] = None  # 권장 포트폴리오 비중
+    reasoning: str = ""  # 투자 근거 (상세)
+    market_context: str = ""  # 시장 환경 요약
     risk_factors: list[str] = field(default_factory=list)
     model_used: str = ""
     generated_at: Optional[datetime] = None
@@ -218,8 +218,7 @@ class OpinionGenerator:
         await self._store_to_db(opinion)
 
         logger.info(
-            f"Opinion generated: {ticker}, action={opinion.action.value}, "
-            f"conviction={opinion.conviction:.2f}"
+            f"Opinion generated: {ticker}, action={opinion.action.value}, " f"conviction={opinion.conviction:.2f}"
         )
         return opinion
 
@@ -459,6 +458,7 @@ class OpinionGenerator:
         """PostgreSQL에 투자 의견 저장"""
         try:
             from sqlalchemy import text
+
             from db.database import async_session_factory
 
             async with async_session_factory() as session:
@@ -470,18 +470,21 @@ class OpinionGenerator:
                         (:time, :ticker, :opinion_type, :action, :conviction,
                          :target_weight, :reasoning, :market_context, :risk_factors, :model_used)
                 """)
-                await session.execute(query, {
-                    "time": opinion.generated_at or datetime.now(timezone.utc),
-                    "ticker": opinion.ticker,
-                    "opinion_type": opinion.opinion_type.value,
-                    "action": opinion.action.value,
-                    "conviction": opinion.conviction,
-                    "target_weight": opinion.target_weight,
-                    "reasoning": opinion.reasoning,
-                    "market_context": opinion.market_context,
-                    "risk_factors": json.dumps(opinion.risk_factors, ensure_ascii=False),
-                    "model_used": opinion.model_used,
-                })
+                await session.execute(
+                    query,
+                    {
+                        "time": opinion.generated_at or datetime.now(timezone.utc),
+                        "ticker": opinion.ticker,
+                        "opinion_type": opinion.opinion_type.value,
+                        "action": opinion.action.value,
+                        "conviction": opinion.conviction,
+                        "target_weight": opinion.target_weight,
+                        "reasoning": opinion.reasoning,
+                        "market_context": opinion.market_context,
+                        "risk_factors": json.dumps(opinion.risk_factors, ensure_ascii=False),
+                        "model_used": opinion.model_used,
+                    },
+                )
                 await session.commit()
         except Exception as e:
             logger.warning(f"Opinion DB store failed: {e}")

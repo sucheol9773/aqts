@@ -43,20 +43,22 @@ from config.logging import logger
 # ══════════════════════════════════════
 class MarketRegime(str, Enum):
     """시장 레짐 분류"""
-    TRENDING_UP = "TRENDING_UP"        # 상승 추세
-    TRENDING_DOWN = "TRENDING_DOWN"    # 하락 추세
-    SIDEWAYS = "SIDEWAYS"              # 횡보/박스권
+
+    TRENDING_UP = "TRENDING_UP"  # 상승 추세
+    TRENDING_DOWN = "TRENDING_DOWN"  # 하락 추세
+    SIDEWAYS = "SIDEWAYS"  # 횡보/박스권
     HIGH_VOLATILITY = "HIGH_VOLATILITY"  # 고변동 (방향 불명)
 
 
 @dataclass
 class RegimeInfo:
     """레짐 감지 결과"""
+
     regime: MarketRegime
-    confidence: float            # 레짐 판단 확신도 (0~1)
+    confidence: float  # 레짐 판단 확신도 (0~1)
     volatility_percentile: float  # 변동성 백분위 (0~1)
-    trend_strength: float         # 추세 강도 (-1~+1, 양수=상승)
-    details: dict                 # 세부 지표
+    trend_strength: float  # 추세 강도 (-1~+1, 양수=상승)
+    details: dict  # 세부 지표
 
 
 # ══════════════════════════════════════
@@ -115,9 +117,7 @@ class MarketRegimeDetector:
         rolling_vol = returns.rolling(20).std() * np.sqrt(252)
         rolling_vol = rolling_vol.dropna()
         if len(rolling_vol) > 0:
-            vol_percentile = float(
-                (rolling_vol < vol_20d).sum() / len(rolling_vol)
-            )
+            vol_percentile = float((rolling_vol < vol_20d).sum() / len(rolling_vol))
         else:
             vol_percentile = 0.5
 
@@ -130,9 +130,7 @@ class MarketRegimeDetector:
         ma_spread = (ma20 - ma60) / ma60 if ma60 > 0 else 0.0
 
         # ── 모멘텀 ──
-        momentum_20d = float(
-            (close.iloc[-1] / close.iloc[-20] - 1.0) if len(close) >= 20 else 0.0
-        )
+        momentum_20d = float((close.iloc[-1] / close.iloc[-20] - 1.0) if len(close) >= 20 else 0.0)
 
         # ── 추세 강도 ──
         trend_strength = np.clip(ma_spread * 10.0, -1.0, 1.0)
@@ -171,9 +169,7 @@ class MarketRegimeDetector:
             details=details,
         )
 
-    def _compute_adx(
-        self, high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14
-    ) -> float:
+    def _compute_adx(self, high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> float:
         """ADX (Average Directional Index) 계산"""
         if len(close) < period * 2:
             return 0.0
@@ -197,12 +193,10 @@ class MarketRegimeDetector:
         # Smoothed (Wilder's)
         atr = tr.ewm(alpha=1.0 / period, min_periods=period, adjust=False).mean()
         plus_di = 100.0 * (
-            plus_dm.ewm(alpha=1.0 / period, min_periods=period, adjust=False).mean()
-            / atr.replace(0, np.nan)
+            plus_dm.ewm(alpha=1.0 / period, min_periods=period, adjust=False).mean() / atr.replace(0, np.nan)
         )
         minus_di = 100.0 * (
-            minus_dm.ewm(alpha=1.0 / period, min_periods=period, adjust=False).mean()
-            / atr.replace(0, np.nan)
+            minus_dm.ewm(alpha=1.0 / period, min_periods=period, adjust=False).mean() / atr.replace(0, np.nan)
         )
 
         # DX → ADX
@@ -274,9 +268,7 @@ class DynamicThreshold:
     # 변동성 보정 계수 (vol_percentile 0.5 기준)
     VOL_ADJUSTMENT_FACTOR = 0.15
 
-    def compute(
-        self, regime_info: RegimeInfo
-    ) -> tuple[float, float]:
+    def compute(self, regime_info: RegimeInfo) -> tuple[float, float]:
         """
         동적 임계값 산출
 
@@ -308,9 +300,7 @@ class DynamicThreshold:
         # 매수/매도 동일 임계값 (비대칭 설정 가능하도록 tuple 반환)
         return round(final, 4), round(final, 4)
 
-    def classify_action(
-        self, signal: float, regime_info: RegimeInfo
-    ) -> str:
+    def classify_action(self, signal: float, regime_info: RegimeInfo) -> str:
         """
         시그널 + 레짐 기반 액션 분류
 
@@ -385,12 +375,12 @@ class ConfidenceCalibrator:
         # ── 1. 시그널 불일치 페널티 ──
         signal_values = list(component_signals.values())
         disagreement = self._compute_disagreement(signal_values)
-        calibrated *= (1.0 - disagreement * self.DISAGREEMENT_PENALTY)
+        calibrated *= 1.0 - disagreement * self.DISAGREEMENT_PENALTY
 
         # ── 2. 변동성 페널티 ──
         if regime_info is not None:
             vol_penalty = max(0, regime_info.volatility_percentile - 0.5) * self.VOLATILITY_PENALTY
-            calibrated *= (1.0 - vol_penalty)
+            calibrated *= 1.0 - vol_penalty
 
             # 고변동 레짐 추가 감쇠
             if regime_info.regime == MarketRegime.HIGH_VOLATILITY:
@@ -406,7 +396,7 @@ class ConfidenceCalibrator:
         # ── 4. 전략 수 보정 ──
         n_strategies = len(signal_values)
         if n_strategies < self.MIN_STRATEGIES:
-            calibrated *= (n_strategies / self.MIN_STRATEGIES)
+            calibrated *= n_strategies / self.MIN_STRATEGIES
 
         return round(max(0.0, min(1.0, calibrated)), 4)
 
@@ -451,24 +441,24 @@ class RegimeWeightRouter:
     REGIME_MULTIPLIERS: dict[MarketRegime, dict[str, float]] = {
         MarketRegime.TRENDING_UP: {
             "FACTOR": 0.8,
-            "MEAN_REVERSION": 0.5,       # 추세장에서 역추세 전략 약화
-            "TREND_FOLLOWING": 1.5,       # 추세추종 강화
+            "MEAN_REVERSION": 0.5,  # 추세장에서 역추세 전략 약화
+            "TREND_FOLLOWING": 1.5,  # 추세추종 강화
             "RISK_PARITY": 0.9,
             "ML_SIGNAL": 1.0,
-            "SENTIMENT": 1.2,            # 감성 약간 강화
+            "SENTIMENT": 1.2,  # 감성 약간 강화
         },
         MarketRegime.TRENDING_DOWN: {
             "FACTOR": 0.7,
             "MEAN_REVERSION": 0.6,
-            "TREND_FOLLOWING": 1.4,       # 하락 추세에서도 추세추종 유효
-            "RISK_PARITY": 1.3,           # 리스크 관리 강화
+            "TREND_FOLLOWING": 1.4,  # 하락 추세에서도 추세추종 유효
+            "RISK_PARITY": 1.3,  # 리스크 관리 강화
             "ML_SIGNAL": 1.0,
             "SENTIMENT": 1.1,
         },
         MarketRegime.SIDEWAYS: {
-            "FACTOR": 1.2,               # 팩터 유효
-            "MEAN_REVERSION": 1.5,        # 평균회귀 강화
-            "TREND_FOLLOWING": 0.6,       # 추세추종 약화
+            "FACTOR": 1.2,  # 팩터 유효
+            "MEAN_REVERSION": 1.5,  # 평균회귀 강화
+            "TREND_FOLLOWING": 0.6,  # 추세추종 약화
             "RISK_PARITY": 1.0,
             "ML_SIGNAL": 1.0,
             "SENTIMENT": 1.0,
@@ -477,9 +467,9 @@ class RegimeWeightRouter:
             "FACTOR": 0.7,
             "MEAN_REVERSION": 0.8,
             "TREND_FOLLOWING": 0.7,
-            "RISK_PARITY": 1.8,           # 리스크패리티 크게 강화
+            "RISK_PARITY": 1.8,  # 리스크패리티 크게 강화
             "ML_SIGNAL": 1.0,
-            "SENTIMENT": 0.6,            # 감성 약화 (뉴스 과반응 가능)
+            "SENTIMENT": 0.6,  # 감성 약화 (뉴스 과반응 가능)
         },
     }
 
@@ -529,9 +519,6 @@ class RegimeWeightRouter:
         if total > 0:
             adjusted = {k: round(v / total, 4) for k, v in adjusted.items()}
 
-        logger.debug(
-            f"RegimeWeightRouter: {regime_info.regime.value} → "
-            f"adjusted_weights={adjusted}"
-        )
+        logger.debug(f"RegimeWeightRouter: {regime_info.regime.value} → " f"adjusted_weights={adjusted}")
 
         return adjusted

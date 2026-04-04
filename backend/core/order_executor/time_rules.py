@@ -8,7 +8,8 @@ Stage 3-B: Backtest integrity advanced realism modules (market microstructure re
 """
 
 from datetime import time
-from typing import Dict, Optional
+from typing import Dict
+
 from config.constants import Market
 
 
@@ -34,19 +35,19 @@ class TimeOfDayRules:
         """
         return {
             Market.KRX: {
-                "open": time(9, 0),          # 09:00
-                "close": time(15, 30),       # 15:30
-                "auction_open_start": time(8, 30),    # 08:30 opening auction
-                "auction_open_end": time(9, 0),       # 09:00
+                "open": time(9, 0),  # 09:00
+                "close": time(15, 30),  # 15:30
+                "auction_open_start": time(8, 30),  # 08:30 opening auction
+                "auction_open_end": time(9, 0),  # 09:00
                 "auction_close_start": time(15, 20),  # 15:20 closing auction
-                "auction_close_end": time(15, 30),    # 15:30
-                "daily_limit_pct": 0.30,    # ±30% circuit breaker
+                "auction_close_end": time(15, 30),  # 15:30
+                "daily_limit_pct": 0.30,  # ±30% circuit breaker
             },
             Market.NYSE: {
-                "open": time(9, 30),         # 09:30
-                "close": time(16, 0),        # 16:00
-                "auction_open_start": time(9, 28),    # Pre-market, ~2 min before open
-                "auction_open_end": time(9, 30),      # First 5 min = opening auction-like
+                "open": time(9, 30),  # 09:30
+                "close": time(16, 0),  # 16:00
+                "auction_open_start": time(9, 28),  # Pre-market, ~2 min before open
+                "auction_open_end": time(9, 30),  # First 5 min = opening auction-like
                 "auction_close_start": time(15, 55),  # Last 5 minutes (15:55-16:00)
                 "auction_close_end": time(16, 0),
                 "circuit_breaker_l1": 0.07,  # 7% market-wide limit
@@ -54,8 +55,8 @@ class TimeOfDayRules:
                 "circuit_breaker_l3": 0.20,  # 20% market-wide limit
             },
             Market.NASDAQ: {
-                "open": time(9, 30),         # 09:30
-                "close": time(16, 0),        # 16:00
+                "open": time(9, 30),  # 09:30
+                "close": time(16, 0),  # 16:00
                 "auction_open_start": time(9, 28),
                 "auction_open_end": time(9, 30),
                 "auction_close_start": time(15, 55),

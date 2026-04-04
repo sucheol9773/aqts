@@ -24,10 +24,6 @@ KRX 및 NYSE 영업일 캘린더 통합 관리
 
 from datetime import date, datetime, time, timedelta, timezone
 from enum import Enum
-from typing import Optional
-
-from config.logging import logger
-
 
 # ══════════════════════════════════════
 # 시간대 정의
@@ -39,7 +35,8 @@ EDT = timezone(timedelta(hours=-4))
 
 class Market(str, Enum):
     """거래소"""
-    KRX = "KRX"    # 한국거래소
+
+    KRX = "KRX"  # 한국거래소
     NYSE = "NYSE"  # 뉴욕증권거래소
 
 
@@ -48,12 +45,12 @@ class Market(str, Enum):
 # ══════════════════════════════════════
 MARKET_HOURS = {
     Market.KRX: {
-        "open": time(9, 0),    # 09:00 KST
-        "close": time(15, 30), # 15:30 KST
+        "open": time(9, 0),  # 09:00 KST
+        "close": time(15, 30),  # 15:30 KST
         "tz": KST,
     },
     Market.NYSE: {
-        "open": time(9, 30),   # 09:30 ET
+        "open": time(9, 30),  # 09:30 ET
         "close": time(16, 0),  # 16:00 ET
         "early_close": time(13, 0),  # 13:00 ET (조기 폐장일)
         "tz": EST,  # 기본 EST (DST 기간에는 EDT)
@@ -66,17 +63,37 @@ MARKET_HOURS = {
 # ══════════════════════════════════════
 KR_HOLIDAYS = {
     # 2025
-    date(2025, 1, 1), date(2025, 1, 28), date(2025, 1, 29),
-    date(2025, 1, 30), date(2025, 3, 1), date(2025, 5, 5),
-    date(2025, 5, 6), date(2025, 6, 6), date(2025, 8, 15),
-    date(2025, 10, 3), date(2025, 10, 6), date(2025, 10, 7),
-    date(2025, 10, 8), date(2025, 10, 9), date(2025, 12, 25),
+    date(2025, 1, 1),
+    date(2025, 1, 28),
+    date(2025, 1, 29),
+    date(2025, 1, 30),
+    date(2025, 3, 1),
+    date(2025, 5, 5),
+    date(2025, 5, 6),
+    date(2025, 6, 6),
+    date(2025, 8, 15),
+    date(2025, 10, 3),
+    date(2025, 10, 6),
+    date(2025, 10, 7),
+    date(2025, 10, 8),
+    date(2025, 10, 9),
+    date(2025, 12, 25),
     # 2026
-    date(2026, 1, 1), date(2026, 2, 16), date(2026, 2, 17),
-    date(2026, 2, 18), date(2026, 3, 1), date(2026, 5, 5),
-    date(2026, 5, 24), date(2026, 6, 6), date(2026, 8, 15),
-    date(2026, 9, 24), date(2026, 9, 25), date(2026, 9, 26),
-    date(2026, 10, 3), date(2026, 10, 9), date(2026, 12, 25),
+    date(2026, 1, 1),
+    date(2026, 2, 16),
+    date(2026, 2, 17),
+    date(2026, 2, 18),
+    date(2026, 3, 1),
+    date(2026, 5, 5),
+    date(2026, 5, 24),
+    date(2026, 6, 6),
+    date(2026, 8, 15),
+    date(2026, 9, 24),
+    date(2026, 9, 25),
+    date(2026, 9, 26),
+    date(2026, 10, 3),
+    date(2026, 10, 9),
+    date(2026, 12, 25),
 }
 
 
@@ -146,16 +163,16 @@ def get_nyse_holidays(year: int) -> set[date]:
     holidays = set()
 
     # 고정 공휴일 (관찰 규칙)
-    holidays.add(_observed_holiday(date(year, 1, 1)))    # New Year's
-    holidays.add(_observed_holiday(date(year, 7, 4)))    # Independence Day
+    holidays.add(_observed_holiday(date(year, 1, 1)))  # New Year's
+    holidays.add(_observed_holiday(date(year, 7, 4)))  # Independence Day
     holidays.add(_observed_holiday(date(year, 12, 25)))  # Christmas
-    holidays.add(_observed_holiday(date(year, 6, 19)))   # Juneteenth
+    holidays.add(_observed_holiday(date(year, 6, 19)))  # Juneteenth
 
     # 이동 공휴일
-    holidays.add(_nth_weekday(year, 1, 0, 3))   # MLK Day: 1월 3째 월
-    holidays.add(_nth_weekday(year, 2, 0, 3))   # Presidents' Day: 2월 3째 월
-    holidays.add(_last_weekday(year, 5, 0))      # Memorial Day: 5월 마지막 월
-    holidays.add(_nth_weekday(year, 9, 0, 1))   # Labor Day: 9월 1째 월
+    holidays.add(_nth_weekday(year, 1, 0, 3))  # MLK Day: 1월 3째 월
+    holidays.add(_nth_weekday(year, 2, 0, 3))  # Presidents' Day: 2월 3째 월
+    holidays.add(_last_weekday(year, 5, 0))  # Memorial Day: 5월 마지막 월
+    holidays.add(_nth_weekday(year, 9, 0, 1))  # Labor Day: 9월 1째 월
     holidays.add(_nth_weekday(year, 11, 3, 4))  # Thanksgiving: 11월 4째 목
 
     # Good Friday (부활절 - 2일)
@@ -389,8 +406,8 @@ class MarketCalendar:
 
         3월 둘째 일요일 ~ 11월 첫째 일요일
         """
-        dst_start = _nth_weekday(d.year, 3, 6, 2)   # 3월 2째 일요일
-        dst_end = _nth_weekday(d.year, 11, 6, 1)     # 11월 1째 일요일
+        dst_start = _nth_weekday(d.year, 3, 6, 2)  # 3월 2째 일요일
+        dst_end = _nth_weekday(d.year, 11, 6, 1)  # 11월 1째 일요일
         return dst_start <= d < dst_end
 
     def get_market_tz(self, d: date, market: Market) -> timezone:

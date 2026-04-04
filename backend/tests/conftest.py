@@ -8,7 +8,6 @@ NFR-07 명세:
 """
 
 import os
-import asyncio
 
 
 # ══════════════════════════════════════
@@ -44,26 +43,19 @@ def pytest_configure(config):
     }
     for key, value in test_env_vars.items():
         os.environ.setdefault(key, value)
-from datetime import datetime, timedelta
-from typing import AsyncGenerator
+
+
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-import pytest_asyncio
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
 
 from config.constants import (
     AssetType,
-    Country,
+    InvestmentStyle,
     Market,
     RiskProfile,
-    InvestmentStyle,
 )
-
 
 # ══════════════════════════════════════
 # Event Loop
@@ -191,8 +183,8 @@ def mock_telegram_bot():
 @pytest.fixture
 def sample_ohlcv_data():
     """테스트용 OHLCV 샘플 데이터"""
-    import pandas as pd
     import numpy as np
+    import pandas as pd
 
     np.random.seed(42)
     dates = pd.bdate_range(start="2025-01-02", periods=60)
@@ -203,17 +195,19 @@ def sample_ohlcv_data():
         change = np.random.normal(0, 0.015)
         prices.append(prices[-1] * (1 + change))
 
-    df = pd.DataFrame({
-        "time": dates,
-        "ticker": "005930",
-        "market": Market.KRX.value,
-        "open": [p * (1 + np.random.uniform(-0.005, 0.005)) for p in prices],
-        "high": [p * (1 + np.random.uniform(0.005, 0.02)) for p in prices],
-        "low": [p * (1 - np.random.uniform(0.005, 0.02)) for p in prices],
-        "close": prices,
-        "volume": [int(np.random.uniform(5e6, 2e7)) for _ in prices],
-        "interval": "1d",
-    })
+    df = pd.DataFrame(
+        {
+            "time": dates,
+            "ticker": "005930",
+            "market": Market.KRX.value,
+            "open": [p * (1 + np.random.uniform(-0.005, 0.005)) for p in prices],
+            "high": [p * (1 + np.random.uniform(0.005, 0.02)) for p in prices],
+            "low": [p * (1 - np.random.uniform(0.005, 0.02)) for p in prices],
+            "close": prices,
+            "volume": [int(np.random.uniform(5e6, 2e7)) for _ in prices],
+            "interval": "1d",
+        }
+    )
     return df
 
 
@@ -243,11 +237,46 @@ def sample_user_profile():
 def sample_portfolio():
     """테스트용 포트폴리오"""
     return [
-        {"ticker": "005930", "market": "KRX", "quantity": 100, "avg_price": 70000, "current_price": 71400, "target_weight": 0.182},
-        {"ticker": "360750", "market": "KRX", "quantity": 480, "avg_price": 15800, "current_price": 18230, "target_weight": 0.155},
-        {"ticker": "069500", "market": "KRX", "quantity": 190, "avg_price": 35700, "current_price": 37850, "target_weight": 0.128},
-        {"ticker": "000660", "market": "KRX", "quantity": 30, "avg_price": 161700, "current_price": 198500, "target_weight": 0.103},
-        {"ticker": "136340", "market": "KRX", "quantity": 46, "avg_price": 102400, "current_price": 105120, "target_weight": 0.085},
+        {
+            "ticker": "005930",
+            "market": "KRX",
+            "quantity": 100,
+            "avg_price": 70000,
+            "current_price": 71400,
+            "target_weight": 0.182,
+        },
+        {
+            "ticker": "360750",
+            "market": "KRX",
+            "quantity": 480,
+            "avg_price": 15800,
+            "current_price": 18230,
+            "target_weight": 0.155,
+        },
+        {
+            "ticker": "069500",
+            "market": "KRX",
+            "quantity": 190,
+            "avg_price": 35700,
+            "current_price": 37850,
+            "target_weight": 0.128,
+        },
+        {
+            "ticker": "000660",
+            "market": "KRX",
+            "quantity": 30,
+            "avg_price": 161700,
+            "current_price": 198500,
+            "target_weight": 0.103,
+        },
+        {
+            "ticker": "136340",
+            "market": "KRX",
+            "quantity": 46,
+            "avg_price": 102400,
+            "current_price": 105120,
+            "target_weight": 0.085,
+        },
     ]
 
 

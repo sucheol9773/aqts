@@ -17,7 +17,7 @@ from typing import Any, Optional
 import yaml
 
 from config.logging import logger
-from core.oos.models import GateLevel, GateResult, OOSWindowResult
+from core.oos.models import GateResult, OOSWindowResult
 
 
 class GateEvaluator:
@@ -50,9 +50,7 @@ class GateEvaluator:
 
     def _load_thresholds(self) -> dict[str, float]:
         """operational_thresholds.yaml에서 OOS 게이트 임계값 로드"""
-        config_path = (
-            Path(__file__).parent.parent.parent / "config" / "operational_thresholds.yaml"
-        )
+        config_path = Path(__file__).parent.parent.parent / "config" / "operational_thresholds.yaml"
 
         if config_path.exists():
             try:
@@ -139,9 +137,7 @@ class GateEvaluator:
 
         if abs(worst_mdd) > mdd_limit:
             result = GateResult.FAIL.value
-            reasons.append(
-                f"GATE_A: worst MDD {worst_mdd:.2%} exceeds hard limit {mdd_limit:.2%}"
-            )
+            reasons.append(f"GATE_A: worst MDD {worst_mdd:.2%} exceeds hard limit {mdd_limit:.2%}")
 
         return {"result": result, "reasons": reasons}
 
@@ -169,15 +165,11 @@ class GateEvaluator:
 
         if avg_sharpe < min_sharpe:
             review_count += 1
-            reasons.append(
-                f"GATE_B: avg Sharpe {avg_sharpe:.3f} < minimum {min_sharpe}"
-            )
+            reasons.append(f"GATE_B: avg Sharpe {avg_sharpe:.3f} < minimum {min_sharpe}")
 
         if avg_calmar < min_calmar:
             review_count += 1
-            reasons.append(
-                f"GATE_B: avg Calmar {avg_calmar:.3f} < minimum {min_calmar}"
-            )
+            reasons.append(f"GATE_B: avg Calmar {avg_calmar:.3f} < minimum {min_calmar}")
 
         # 레짐별 최악 MDD 확인
         for w in windows:
@@ -219,18 +211,13 @@ class GateEvaluator:
 
         if sharpe_variance > max_var:
             result = GateResult.REVIEW.value
-            reasons.append(
-                f"GATE_C: Sharpe variance {sharpe_variance:.4f} > limit {max_var}"
-            )
+            reasons.append(f"GATE_C: Sharpe variance {sharpe_variance:.4f} > limit {max_var}")
 
         if windows:
             positive_count = sum(1 for w in windows if w.total_return > 0)
             positive_ratio = positive_count / len(windows)
             if positive_ratio < min_positive:
                 result = GateResult.REVIEW.value
-                reasons.append(
-                    f"GATE_C: positive window ratio {positive_ratio:.1%} "
-                    f"< minimum {min_positive:.1%}"
-                )
+                reasons.append(f"GATE_C: positive window ratio {positive_ratio:.1%} " f"< minimum {min_positive:.1%}")
 
         return {"result": result, "reasons": reasons}

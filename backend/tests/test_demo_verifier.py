@@ -15,24 +15,24 @@ Test categories:
 11. Report properties: can_start_demo, passed_count, failed_count, summary, to_dict
 """
 
-import asyncio
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch, Mock
-import pytest
-import httpx
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
+import pytest
+
+from config.settings import TradingMode
 from core.demo_verifier import (
-    DemoVerifier,
     DemoVerificationReport,
+    DemoVerifier,
     VerifyItem,
     VerifyStatus,
 )
-from config.settings import TradingMode
-
 
 # ══════════════════════════════════════
 # 1. VerifyStatus / VerifyItem / Report Tests
 # ══════════════════════════════════════
+
 
 class TestVerifyStatus:
     """Test VerifyStatus enum"""
@@ -221,6 +221,7 @@ class TestDemoVerificationReport:
 # 2. _verify_trading_mode Tests
 # ══════════════════════════════════════
 
+
 class TestVerifyTradingMode:
     """Test _verify_trading_mode method"""
 
@@ -266,6 +267,7 @@ class TestVerifyTradingMode:
 # ══════════════════════════════════════
 # 3. _verify_demo_credentials Tests
 # ══════════════════════════════════════
+
 
 class TestVerifyDemoCredentials:
     """Test _verify_demo_credentials method"""
@@ -388,6 +390,7 @@ class TestVerifyDemoCredentials:
 # 4. _verify_kis_token_issuance Tests
 # ══════════════════════════════════════
 
+
 class TestVerifyKisTokenIssuance:
     """Test _verify_kis_token_issuance async method"""
 
@@ -402,9 +405,7 @@ class TestVerifyKisTokenIssuance:
 
             mock_response = MagicMock()
             mock_response.status_code = 200
-            mock_response.json.return_value = {
-                "access_token": "test_token_1234567890abcdefghij"
-            }
+            mock_response.json.return_value = {"access_token": "test_token_1234567890abcdefghij"}
 
             with patch("core.demo_verifier.httpx.AsyncClient") as mock_client_class:
                 mock_client = AsyncMock()
@@ -536,6 +537,7 @@ class TestVerifyKisTokenIssuance:
 # ══════════════════════════════════════
 # 5. _verify_kis_balance_query Tests
 # ══════════════════════════════════════
+
 
 class TestVerifyKisBalanceQuery:
     """Test _verify_kis_balance_query async method"""
@@ -714,6 +716,7 @@ class TestVerifyKisBalanceQuery:
 # 6. _verify_risk_settings Tests
 # ══════════════════════════════════════
 
+
 class TestVerifyRiskSettings:
     """Test _verify_risk_settings method"""
 
@@ -815,6 +818,7 @@ class TestVerifyRiskSettings:
 # 7. _verify_trading_guard Tests
 # ══════════════════════════════════════
 
+
 class TestVerifyTradingGuard:
     """Test _verify_trading_guard method"""
 
@@ -877,6 +881,7 @@ class TestVerifyTradingGuard:
 # ══════════════════════════════════════
 # 8. _verify_telegram Tests
 # ══════════════════════════════════════
+
 
 class TestVerifyTelegram:
     """Test _verify_telegram async method"""
@@ -989,6 +994,7 @@ class TestVerifyTelegram:
 # ══════════════════════════════════════
 # 9. _verify_anthropic_api Tests
 # ══════════════════════════════════════
+
 
 class TestVerifyAnthropicApi:
     """Test _verify_anthropic_api async method"""
@@ -1144,6 +1150,7 @@ class TestVerifyAnthropicApi:
 # 10. run_full_verification Integration Tests
 # ══════════════════════════════════════
 
+
 class TestRunFullVerification:
     """Integration tests for run_full_verification"""
 
@@ -1176,10 +1183,7 @@ class TestRunFullVerification:
                 verifier = DemoVerifier()
                 # Just test basic structure without running full async verification
                 # which requires database mocking that's complex
-                report = DemoVerificationReport(
-                    trading_mode="DEMO",
-                    environment="development"
-                )
+                report = DemoVerificationReport(trading_mode="DEMO", environment="development")
                 report.items = [
                     VerifyItem("Trading Mode", "설정", VerifyStatus.PASS, "DEMO mode OK"),
                     VerifyItem("Credentials", "설정", VerifyStatus.PASS, "Creds OK"),
@@ -1231,10 +1235,7 @@ class TestRunFullVerification:
 
     def test_full_verification_report_properties(self):
         """Test report to_dict and properties"""
-        report = DemoVerificationReport(
-            trading_mode="DEMO",
-            environment="development"
-        )
+        report = DemoVerificationReport(trading_mode="DEMO", environment="development")
         report.items = [
             VerifyItem("Item 1", "cat1", VerifyStatus.PASS, "OK", required=True),
             VerifyItem("Item 2", "cat2", VerifyStatus.WARN, "Warning", required=False),
@@ -1258,6 +1259,7 @@ class TestRunFullVerification:
 # 11. Import and Module Tests
 # ══════════════════════════════════════
 
+
 class TestImportAndModuleHandling:
     """Test that verifier handles missing database functions gracefully"""
 
@@ -1272,21 +1274,17 @@ class TestImportAndModuleHandling:
 
     def test_verify_item_str_representation(self):
         """Test VerifyItem has proper string representation"""
-        item = VerifyItem(
-            name="Test",
-            category="Test",
-            status=VerifyStatus.PASS,
-            message="Test message"
-        )
+        item = VerifyItem(name="Test", category="Test", status=VerifyStatus.PASS, message="Test message")
         # Should have attributes
-        assert hasattr(item, 'name')
-        assert hasattr(item, 'status')
+        assert hasattr(item, "name")
+        assert hasattr(item, "status")
         assert item.name == "Test"
 
 
 # ══════════════════════════════════════
 # 12. Edge Cases and Coverage Tests
 # ══════════════════════════════════════
+
 
 class TestEdgeCases:
     """Test edge cases and boundary conditions"""

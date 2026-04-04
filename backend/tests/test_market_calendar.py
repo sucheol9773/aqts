@@ -16,7 +16,7 @@ MarketCalendar의 종합 단위 테스트
 - 장 운영 시간 확인
 """
 
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta
 
 import pytest
 
@@ -27,11 +27,11 @@ from core.market_calendar import (
     Market,
     MarketCalendar,
     _calculate_easter,
-    _nth_weekday,
     _last_weekday,
+    _nth_weekday,
     _observed_holiday,
-    get_nyse_holidays,
     get_nyse_early_close_dates,
+    get_nyse_holidays,
 )
 
 
@@ -241,7 +241,7 @@ class TestTradingDaysBetween:
     def test_one_week(self, cal):
         """평일 한 주 = 5 거래일"""
         start = date(2026, 1, 5)  # 월
-        end = date(2026, 1, 9)    # 금
+        end = date(2026, 1, 9)  # 금
         days = cal.trading_days_between(start, end, Market.NYSE)
         assert len(days) == 5
 
@@ -256,15 +256,13 @@ class TestTradingDaysBetween:
         """공휴일이 포함된 주"""
         # 2026-01-01 (목) 공휴일
         start = date(2025, 12, 29)  # 월
-        end = date(2026, 1, 2)      # 금
+        end = date(2026, 1, 2)  # 금
         days = cal.trading_days_between(start, end, Market.NYSE)
         assert date(2026, 1, 1) not in days
 
     def test_trading_day_count(self, cal):
         """거래일 수 카운트"""
-        count = cal.trading_day_count(
-            date(2026, 1, 1), date(2026, 1, 31), Market.NYSE
-        )
+        count = cal.trading_day_count(date(2026, 1, 1), date(2026, 1, 31), Market.NYSE)
         assert 19 <= count <= 22  # 대략 20일 내외
 
 

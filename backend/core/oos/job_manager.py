@@ -12,20 +12,16 @@ MVP에서는 in-memory 상태 관리.
 동일 파라미터 해시로 기존 run_id 조회 (간이 idempotency).
 """
 
-import asyncio
 import hashlib
 import json
 from datetime import datetime, timezone
 from typing import Optional
 
-import numpy as np
 import pandas as pd
 
 from config.logging import logger
 from core.oos.models import (
-    JobStatus,
     OOSRun,
-    OOSRunType,
     OOSStatus,
 )
 from core.oos.walk_forward import WalkForwardEngine
@@ -39,8 +35,8 @@ class OOSJobManager:
     """
 
     _instance: Optional["OOSJobManager"] = None
-    _runs: dict[str, OOSRun]      # run_id → OOSRun
-    _param_index: dict[str, str]   # param_hash → run_id (idempotency)
+    _runs: dict[str, OOSRun]  # run_id → OOSRun
+    _param_index: dict[str, str]  # param_hash → run_id (idempotency)
 
     def __new__(cls):
         if cls._instance is None:
@@ -97,12 +93,14 @@ class OOSJobManager:
         # 최근 5개 실행의 게이트 결과
         gate_history = []
         for run in runs[:5]:
-            gate_history.append({
-                "run_id": run.run_id,
-                "status": run.status.value,
-                "overall_gate": run.overall_gate,
-                "started_at": run.started_at.isoformat() if run.started_at else None,
-            })
+            gate_history.append(
+                {
+                    "run_id": run.run_id,
+                    "status": run.status.value,
+                    "overall_gate": run.overall_gate,
+                    "started_at": run.started_at.isoformat() if run.started_at else None,
+                }
+            )
 
         # 배포 허용 여부: 최신 게이트가 PASS여야 함
         deploy_allowed = latest.overall_gate == "PASS"
@@ -124,12 +122,15 @@ class OOSJobManager:
         tickers: list[str],
     ) -> str:
         """파라미터 해시 (idempotency 키)"""
-        key = json.dumps({
-            "v": strategy_version,
-            "train": train_months,
-            "test": test_months,
-            "tickers": sorted(tickers),
-        }, sort_keys=True)
+        key = json.dumps(
+            {
+                "v": strategy_version,
+                "train": train_months,
+                "test": test_months,
+                "tickers": sorted(tickers),
+            },
+            sort_keys=True,
+        )
         return hashlib.md5(key.encode()).hexdigest()[:12]
 
     def find_existing_run(
@@ -144,9 +145,7 @@ class OOSJobManager:
 
         실행 중이거나 완료된 동일 파라미터 작업이 있으면 반환.
         """
-        param_hash = self._compute_param_hash(
-            strategy_version, train_months, test_months, tickers
-        )
+        param_hash = self._compute_param_hash(strategy_version, train_months, test_months, tickers)
         existing_id = self._param_index.get(param_hash)
         if existing_id:
             existing = self._runs.get(existing_id)
@@ -179,9 +178,7 @@ class OOSJobManager:
             완료된 OOSRun
         """
         # idempotency 체크
-        existing = self.find_existing_run(
-            strategy_version, train_months, test_months, tickers
-        )
+        existing = self.find_existing_run(strategy_version, train_months, test_months, tickers)
         if existing:
             logger.info(f"OOS run already exists: {existing.run_id}")
             return existing
@@ -199,9 +196,7 @@ class OOSJobManager:
 
         # 저장
         self._runs[result.run_id] = result
-        param_hash = self._compute_param_hash(
-            strategy_version, train_months, test_months, tickers
-        )
+        param_hash = self._compute_param_hash(strategy_version, train_months, test_months, tickers)
         self._param_index[param_hash] = result.run_id
 
         return result

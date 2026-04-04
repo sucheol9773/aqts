@@ -20,7 +20,7 @@ from anthropic import AsyncAnthropic
 from config.constants import AI_CACHE_TTL, SentimentMode
 from config.logging import logger
 from config.settings import get_settings
-from db.database import MongoDBManager, RedisManager
+from db.database import RedisManager
 
 
 @dataclass
@@ -28,12 +28,12 @@ class SentimentResult:
     """감성 분석 결과 컨테이너"""
 
     ticker: str
-    score: float                          # -1.0 ~ +1.0
-    confidence: float                     # 0.0 ~ 1.0
-    summary: str = ""                     # 요약 (1~2문장)
+    score: float  # -1.0 ~ +1.0
+    confidence: float  # 0.0 ~ 1.0
+    summary: str = ""  # 요약 (1~2문장)
     positive_factors: list[str] = field(default_factory=list)
     negative_factors: list[str] = field(default_factory=list)
-    news_count: int = 0                   # 분석에 사용된 뉴스 수
+    news_count: int = 0  # 분석에 사용된 뉴스 수
     model_used: str = ""
     analyzed_at: Optional[datetime] = None
 
@@ -304,6 +304,7 @@ class SentimentAnalyzer:
         """PostgreSQL에 감성 분석 결과 저장"""
         try:
             from sqlalchemy import text
+
             from db.database import async_session_factory
 
             async with async_session_factory() as session:
@@ -315,17 +316,20 @@ class SentimentAnalyzer:
                         (:time, :ticker, :score, :confidence, :summary,
                          :positive_factors, :negative_factors, :news_count, :model_used)
                 """)
-                await session.execute(query, {
-                    "time": result.analyzed_at or datetime.now(timezone.utc),
-                    "ticker": result.ticker,
-                    "score": result.score,
-                    "confidence": result.confidence,
-                    "summary": result.summary,
-                    "positive_factors": json.dumps(result.positive_factors, ensure_ascii=False),
-                    "negative_factors": json.dumps(result.negative_factors, ensure_ascii=False),
-                    "news_count": result.news_count,
-                    "model_used": result.model_used,
-                })
+                await session.execute(
+                    query,
+                    {
+                        "time": result.analyzed_at or datetime.now(timezone.utc),
+                        "ticker": result.ticker,
+                        "score": result.score,
+                        "confidence": result.confidence,
+                        "summary": result.summary,
+                        "positive_factors": json.dumps(result.positive_factors, ensure_ascii=False),
+                        "negative_factors": json.dumps(result.negative_factors, ensure_ascii=False),
+                        "news_count": result.news_count,
+                        "model_used": result.model_used,
+                    },
+                )
                 await session.commit()
         except Exception as e:
             logger.warning(f"Sentiment DB store failed for {result.ticker}: {e}")

@@ -10,21 +10,20 @@ from typing import Optional
 
 import pandas as pd
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
 from api.middleware.auth import get_current_user
-from api.middleware.rate_limiter import limiter, RATE_PIPELINE
+from api.middleware.rate_limiter import RATE_PIPELINE, limiter
 from api.schemas.common import APIResponse
 from config.logging import logger
 from config.settings import get_settings
-from core.backtest_engine.engine import BacktestEngine, BacktestConfig
-from core.pipeline import InvestmentDecisionPipeline
-from core.portfolio_manager.rebalancing import RebalancingEngine
-from db.database import get_db_session
+from core.backtest_engine.engine import BacktestConfig, BacktestEngine
 from core.circuit_breaker import CircuitBreakerRegistry
+from core.pipeline import InvestmentDecisionPipeline
+from db.database import get_db_session
 from db.repositories.audit_log import AuditLogger
-from sqlalchemy import text
 
 router = APIRouter()
 
@@ -86,6 +85,7 @@ async def run_backtest(
 
         # BacktestConfig 생성
         from config.constants import Country
+
         config = BacktestConfig(
             initial_capital=50_000_000,
             start_date=start_date,
@@ -95,7 +95,7 @@ async def run_backtest(
 
         # 샘플 신호 및 가격 데이터 생성 (실제로는 DataCollector에서 로드)
         # 날짜 범위 생성
-        date_range = pd.date_range(start=start_date, end=end_date, freq='D')
+        date_range = pd.date_range(start=start_date, end=end_date, freq="D")
 
         # 샘플 신호 DataFrame (날짜 × 종목)
         signals = pd.DataFrame(
@@ -114,9 +114,7 @@ async def run_backtest(
         # BacktestEngine 실행 (동기식이므로 executor 사용)
         engine = BacktestEngine(config)
         loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            None, engine.run, strategy_name, signals, prices
-        )
+        result = await loop.run_in_executor(None, engine.run, strategy_name, signals, prices)
 
         # 감사 로그 기록
         audit = AuditLogger(db)
@@ -161,9 +159,7 @@ async def run_backtest(
 
 @router.post("/rebalancing", response_model=APIResponse[dict])
 async def trigger_rebalancing(
-    rebalancing_type: str = Query(
-        default="MANUAL", description="리밸런싱 유형 (SCHEDULED/EMERGENCY/MANUAL)"
-    ),
+    rebalancing_type: str = Query(default="MANUAL", description="리밸런싱 유형 (SCHEDULED/EMERGENCY/MANUAL)"),
     current_user: str = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ):
@@ -334,16 +330,18 @@ async def get_audit_logs(
         # 결과를 딕셔너리로 변환
         logs = []
         for row in rows:
-            logs.append({
-                "id": row[0],
-                "time": row[1].isoformat() if row[1] else None,
-                "action_type": row[2],
-                "module": row[3],
-                "description": row[4],
-                "before_state": row[5],
-                "after_state": row[6],
-                "metadata": row[7],
-            })
+            logs.append(
+                {
+                    "id": row[0],
+                    "time": row[1].isoformat() if row[1] else None,
+                    "action_type": row[2],
+                    "module": row[3],
+                    "description": row[4],
+                    "before_state": row[5],
+                    "after_state": row[6],
+                    "metadata": row[7],
+                }
+            )
 
         logger.info(f"Audit logs retrieved: {len(logs)} records (module={module})")
         return APIResponse(success=True, data=logs)

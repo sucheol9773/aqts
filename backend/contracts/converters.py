@@ -10,10 +10,7 @@ from typing import Optional
 
 from config.constants import (
     Market,
-    OrderSide,
-    OrderType,
     SignalDirection,
-    StrategyType,
 )
 from contracts.order import OrderIntent
 from contracts.signal import Signal as SignalContract

@@ -16,8 +16,9 @@ All returns are daily fractional returns (e.g., 0.01 = 1%).
 Annualization factor defaults to 252 (trading days/year).
 """
 
+from typing import Dict, List, Optional, Union
+
 import numpy as np
-from typing import List, Optional, Dict, Union
 
 
 class MetricsCalculator:
@@ -345,9 +346,7 @@ class MetricsCalculator:
 
         # Information ratio (requires benchmark)
         if benchmark_returns is not None:
-            metrics["information_ratio"] = cls.information_ratio(
-                returns, benchmark_returns, periods
-            )
+            metrics["information_ratio"] = cls.information_ratio(returns, benchmark_returns, periods)
         else:
             metrics["information_ratio"] = None
 

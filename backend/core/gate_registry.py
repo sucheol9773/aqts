@@ -2,10 +2,10 @@
 GateRegistry: Gate 동적 등록 및 실행 관리
 """
 
-from typing import Any, Dict, List, Optional
 import logging
+from typing import Any, Dict, List, Optional
 
-from core.gates.base import BaseGate, GateResult, GateDecision
+from core.gates.base import BaseGate, GateDecision, GateResult
 
 logger = logging.getLogger(__name__)
 
@@ -43,9 +43,7 @@ class GateRegistry:
         """등록된 Gate ID 목록 (실행 순서)."""
         return list(self._execution_order)
 
-    async def evaluate_single(
-        self, gate_id: str, data: Any, **kwargs
-    ) -> GateResult:
+    async def evaluate_single(self, gate_id: str, data: Any, **kwargs) -> GateResult:
         """단일 Gate를 실행합니다."""
         gate = self._gates.get(gate_id)
         if gate is None:
@@ -75,9 +73,7 @@ class GateRegistry:
                 continue
 
             data = data_map.get(gate_id)
-            gate_kwargs = kwargs.get(gate_id, {}) if isinstance(
-                kwargs.get(gate_id), dict
-            ) else {}
+            gate_kwargs = kwargs.get(gate_id, {}) if isinstance(kwargs.get(gate_id), dict) else {}
 
             result = await gate.evaluate(data, **gate_kwargs)
             results.append(result)

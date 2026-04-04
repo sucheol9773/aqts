@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends
 from starlette.requests import Request
 
 from api.middleware.auth import AuthService, get_current_user
-from api.middleware.rate_limiter import limiter, RATE_LOGIN
+from api.middleware.rate_limiter import RATE_LOGIN, limiter
 from api.schemas.auth import LoginRequest, RefreshTokenRequest, TokenResponse
 from api.schemas.common import APIResponse
 from config.settings import get_settings

@@ -10,8 +10,8 @@ Tests cover:
 - Error handling and edge cases
 """
 
-from datetime import datetime, time, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from datetime import datetime, time
+from unittest.mock import AsyncMock, MagicMock, patch
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -20,7 +20,6 @@ from core.portfolio_manager.exchange_rate import (
     ExchangeRate,
     ExchangeRateManager,
 )
-
 
 # ============================================================================
 # TestExchangeRate - Dataclass Tests
@@ -100,15 +99,19 @@ def exchange_rate_manager(mock_settings, mock_kis_client, mock_redis_manager):
     - KISClient() to return mock_kis_client
     - RedisManager to return mock_redis_manager
     """
-    with patch(
-        "core.portfolio_manager.exchange_rate.get_settings",
-        return_value=mock_settings,
-    ), patch(
-        "core.portfolio_manager.exchange_rate.KISClient",
-        return_value=mock_kis_client,
-    ), patch(
-        "core.portfolio_manager.exchange_rate.RedisManager",
-        return_value=mock_redis_manager,
+    with (
+        patch(
+            "core.portfolio_manager.exchange_rate.get_settings",
+            return_value=mock_settings,
+        ),
+        patch(
+            "core.portfolio_manager.exchange_rate.KISClient",
+            return_value=mock_kis_client,
+        ),
+        patch(
+            "core.portfolio_manager.exchange_rate.RedisManager",
+            return_value=mock_redis_manager,
+        ),
     ):
         manager = ExchangeRateManager()
         yield manager
@@ -132,18 +135,14 @@ class TestExchangeRateManagerCache:
             fetched_at=datetime.now(ZoneInfo("UTC")),
         )
 
-        exchange_rate_manager._get_cached_rate = AsyncMock(
-            return_value=cached_rate
-        )
+        exchange_rate_manager._get_cached_rate = AsyncMock(return_value=cached_rate)
 
         result = await exchange_rate_manager.get_current_rate("USD/KRW")
 
         assert result.source == "CACHE"
         assert result.rate == 1350.0
         assert result.pair == "USD/KRW"
-        exchange_rate_manager._get_cached_rate.assert_called_once_with(
-            "USD/KRW"
-        )
+        exchange_rate_manager._get_cached_rate.assert_called_once_with("USD/KRW")
 
     @pytest.mark.asyncio
     async def test_get_current_rate_from_kis(self, exchange_rate_manager):
@@ -163,9 +162,7 @@ class TestExchangeRateManagerCache:
     async def test_get_current_rate_fred_fallback(self, exchange_rate_manager):
         """Test falling back to FRED when KIS fails."""
         exchange_rate_manager._get_cached_rate = AsyncMock(return_value=None)
-        exchange_rate_manager.fetch_from_kis = AsyncMock(
-            side_effect=Exception("KIS API error")
-        )
+        exchange_rate_manager.fetch_from_kis = AsyncMock(side_effect=Exception("KIS API error"))
         exchange_rate_manager.fetch_from_fred = AsyncMock(return_value=1345.0)
         exchange_rate_manager._cache_rate = AsyncMock()
 
@@ -191,9 +188,7 @@ class TestExchangeRateManagerCache:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=_json.dumps(cached_data))
 
-        with patch(
-            "core.portfolio_manager.exchange_rate.RedisManager"
-        ) as mock_rm:
+        with patch("core.portfolio_manager.exchange_rate.RedisManager") as mock_rm:
             mock_rm.get_client.return_value = mock_client
             result = await exchange_rate_manager._get_cached_rate("USD/KRW")
 
@@ -203,25 +198,19 @@ class TestExchangeRateManagerCache:
         mock_client.get.assert_called_once_with("exchange_rate:USD_KRW")
 
     @pytest.mark.asyncio
-    async def test_get_cached_rate_miss(
-        self, exchange_rate_manager, mock_redis_manager
-    ):
+    async def test_get_cached_rate_miss(self, exchange_rate_manager, mock_redis_manager):
         """Test cache miss returns None."""
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=None)
 
-        with patch(
-            "core.portfolio_manager.exchange_rate.RedisManager"
-        ) as mock_rm:
+        with patch("core.portfolio_manager.exchange_rate.RedisManager") as mock_rm:
             mock_rm.get_client.return_value = mock_client
             result = await exchange_rate_manager._get_cached_rate("USD/KRW")
 
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_cache_rate_market_hours(
-        self, exchange_rate_manager, mock_redis_manager
-    ):
+    async def test_cache_rate_market_hours(self, exchange_rate_manager, mock_redis_manager):
         """Test caching rate with market hours TTL (300 seconds)."""
         exchange_rate_manager._is_market_hours = MagicMock(return_value=True)
         mock_client = AsyncMock()
@@ -234,9 +223,7 @@ class TestExchangeRateManagerCache:
             fetched_at=datetime.now(ZoneInfo("UTC")),
         )
 
-        with patch(
-            "core.portfolio_manager.exchange_rate.RedisManager"
-        ) as mock_rm:
+        with patch("core.portfolio_manager.exchange_rate.RedisManager") as mock_rm:
             mock_rm.get_client.return_value = mock_client
             await exchange_rate_manager._cache_rate(rate)
 
@@ -246,9 +233,7 @@ class TestExchangeRateManagerCache:
         assert call_args[0][1] == 300  # MARKET_HOURS_TTL
 
     @pytest.mark.asyncio
-    async def test_cache_rate_off_hours(
-        self, exchange_rate_manager, mock_redis_manager
-    ):
+    async def test_cache_rate_off_hours(self, exchange_rate_manager, mock_redis_manager):
         """Test caching rate with off-hours TTL (86400 seconds)."""
         exchange_rate_manager._is_market_hours = MagicMock(return_value=False)
         mock_client = AsyncMock()
@@ -261,9 +246,7 @@ class TestExchangeRateManagerCache:
             fetched_at=datetime.now(ZoneInfo("UTC")),
         )
 
-        with patch(
-            "core.portfolio_manager.exchange_rate.RedisManager"
-        ) as mock_rm:
+        with patch("core.portfolio_manager.exchange_rate.RedisManager") as mock_rm:
             mock_rm.get_client.return_value = mock_client
             await exchange_rate_manager._cache_rate(rate)
 
@@ -283,9 +266,7 @@ class TestExchangeRateManagerFetching:
     @pytest.mark.asyncio
     async def test_fetch_from_kis(self, exchange_rate_manager, mock_kis_client):
         """Test fetching rate from KIS client."""
-        mock_kis_client.get_exchange_rate = AsyncMock(
-            return_value={"exchange_rate": 1350.0}
-        )
+        mock_kis_client.get_exchange_rate = AsyncMock(return_value={"exchange_rate": 1350.0})
 
         result = await exchange_rate_manager.fetch_from_kis()
 
@@ -293,25 +274,17 @@ class TestExchangeRateManagerFetching:
         mock_kis_client.get_exchange_rate.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_fetch_from_kis_invalid_rate(
-        self, exchange_rate_manager, mock_kis_client
-    ):
+    async def test_fetch_from_kis_invalid_rate(self, exchange_rate_manager, mock_kis_client):
         """Test KIS fetching with invalid (zero) rate raises ValueError."""
-        mock_kis_client.get_exchange_rate = AsyncMock(
-            return_value={"exchange_rate": 0}
-        )
+        mock_kis_client.get_exchange_rate = AsyncMock(return_value={"exchange_rate": 0})
 
         with pytest.raises(ValueError, match="유효하지 않은 환율"):
             await exchange_rate_manager.fetch_from_kis()
 
     @pytest.mark.asyncio
-    async def test_fetch_from_kis_negative_rate(
-        self, exchange_rate_manager, mock_kis_client
-    ):
+    async def test_fetch_from_kis_negative_rate(self, exchange_rate_manager, mock_kis_client):
         """Test KIS fetching with negative rate raises ValueError."""
-        mock_kis_client.get_exchange_rate = AsyncMock(
-            return_value={"exchange_rate": -100.0}
-        )
+        mock_kis_client.get_exchange_rate = AsyncMock(return_value={"exchange_rate": -100.0})
 
         with pytest.raises(ValueError, match="유효하지 않은 환율"):
             await exchange_rate_manager.fetch_from_kis()
@@ -321,17 +294,11 @@ class TestExchangeRateManagerFetching:
         """Test fetching rate from FRED API."""
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
-        mock_response.json.return_value = {
-            "observations": [{"value": "1345.0"}]
-        }
+        mock_response.json.return_value = {"observations": [{"value": "1345.0"}]}
 
-        with patch(
-            "core.portfolio_manager.exchange_rate.httpx.AsyncClient"
-        ) as mock_http:
+        with patch("core.portfolio_manager.exchange_rate.httpx.AsyncClient") as mock_http:
             mock_http_instance = AsyncMock()
-            mock_http_instance.__aenter__ = AsyncMock(
-                return_value=mock_http_instance
-            )
+            mock_http_instance.__aenter__ = AsyncMock(return_value=mock_http_instance)
             mock_http_instance.__aexit__ = AsyncMock(return_value=None)
             mock_http_instance.get = AsyncMock(return_value=mock_response)
             mock_http.return_value = mock_http_instance
@@ -348,13 +315,9 @@ class TestExchangeRateManagerFetching:
         mock_response.raise_for_status = MagicMock()
         mock_response.json.return_value = {"observations": []}
 
-        with patch(
-            "core.portfolio_manager.exchange_rate.httpx.AsyncClient"
-        ) as mock_http:
+        with patch("core.portfolio_manager.exchange_rate.httpx.AsyncClient") as mock_http:
             mock_http_instance = AsyncMock()
-            mock_http_instance.__aenter__ = AsyncMock(
-                return_value=mock_http_instance
-            )
+            mock_http_instance.__aenter__ = AsyncMock(return_value=mock_http_instance)
             mock_http_instance.__aexit__ = AsyncMock(return_value=None)
             mock_http_instance.get = AsyncMock(return_value=mock_response)
             mock_http.return_value = mock_http_instance
@@ -384,6 +347,7 @@ class TestExchangeRateManagerMarketHours:
     def _make_utc(self, year, month, day, hour, minute=0):
         """UTC timezone-aware datetime 생성"""
         from datetime import timezone as tz
+
         return datetime(year, month, day, hour, minute, 0, tzinfo=tz.utc)
 
     def test_is_market_hours_weekday_morning(self, exchange_rate_manager):
@@ -394,7 +358,7 @@ class TestExchangeRateManagerMarketHours:
         with patch("core.portfolio_manager.exchange_rate.datetime") as mock_dt:
             mock_dt.now.return_value = utc_time
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
-            from datetime import timedelta as real_td
+
             # timedelta is used directly from datetime module import, not datetime.timedelta
             result = exchange_rate_manager._is_market_hours()
 
@@ -546,9 +510,7 @@ class TestExchangeRateManagerPortfolioValue:
     """Tests for portfolio value calculations in KRW."""
 
     @pytest.mark.asyncio
-    async def test_get_portfolio_krw_value_with_mixed_holdings(
-        self, exchange_rate_manager
-    ):
+    async def test_get_portfolio_krw_value_with_mixed_holdings(self, exchange_rate_manager):
         """Test calculating portfolio KRW value with mixed holdings."""
         exchange_rate_manager.get_current_rate = AsyncMock(
             return_value=ExchangeRate(
@@ -610,9 +572,7 @@ class TestExchangeRateManagerPortfolioValue:
         assert result == 2_700_000.0
 
     @pytest.mark.asyncio
-    async def test_get_portfolio_krw_value_empty_portfolio(
-        self, exchange_rate_manager
-    ):
+    async def test_get_portfolio_krw_value_empty_portfolio(self, exchange_rate_manager):
         """Test empty portfolio returns 0."""
         portfolio = {
             "krw_holdings": [],
@@ -661,12 +621,8 @@ class TestExchangeRateManagerErrorHandling:
     async def test_get_current_rate_all_sources_fail(self, exchange_rate_manager):
         """Test that exception is raised when all sources fail."""
         exchange_rate_manager._get_cached_rate = AsyncMock(return_value=None)
-        exchange_rate_manager.fetch_from_kis = AsyncMock(
-            side_effect=Exception("KIS failed")
-        )
-        exchange_rate_manager.fetch_from_fred = AsyncMock(
-            side_effect=Exception("FRED failed")
-        )
+        exchange_rate_manager.fetch_from_kis = AsyncMock(side_effect=Exception("KIS failed"))
+        exchange_rate_manager.fetch_from_fred = AsyncMock(side_effect=Exception("FRED failed"))
 
         with pytest.raises(Exception):
             await exchange_rate_manager.get_current_rate("USD/KRW")
@@ -678,13 +634,9 @@ class TestExchangeRateManagerErrorHandling:
         mock_response.raise_for_status = MagicMock()  # httpx: sync method
         mock_response.json.return_value = {}
 
-        with patch(
-            "core.portfolio_manager.exchange_rate.httpx.AsyncClient"
-        ) as mock_http:
+        with patch("core.portfolio_manager.exchange_rate.httpx.AsyncClient") as mock_http:
             mock_http_instance = AsyncMock()
-            mock_http_instance.__aenter__ = AsyncMock(
-                return_value=mock_http_instance
-            )
+            mock_http_instance.__aenter__ = AsyncMock(return_value=mock_http_instance)
             mock_http_instance.__aexit__ = AsyncMock(return_value=None)
             mock_http_instance.get = AsyncMock(return_value=mock_response)
             mock_http.return_value = mock_http_instance
@@ -734,14 +686,10 @@ class TestExchangeRateManagerIntegration:
     """Integration-style tests combining multiple features."""
 
     @pytest.mark.asyncio
-    async def test_full_workflow_cache_miss_kis_success(
-        self, exchange_rate_manager, mock_kis_client
-    ):
+    async def test_full_workflow_cache_miss_kis_success(self, exchange_rate_manager, mock_kis_client):
         """Test full workflow: cache miss → KIS success → cache write."""
         exchange_rate_manager._get_cached_rate = AsyncMock(return_value=None)
-        mock_kis_client.get_exchange_rate = AsyncMock(
-            return_value={"exchange_rate": 1350.0}
-        )
+        mock_kis_client.get_exchange_rate = AsyncMock(return_value={"exchange_rate": 1350.0})
         exchange_rate_manager._cache_rate = AsyncMock()
         exchange_rate_manager._is_market_hours = MagicMock(return_value=True)
 
@@ -760,9 +708,7 @@ class TestExchangeRateManagerIntegration:
             source="CACHE",
             fetched_at=datetime.now(ZoneInfo("UTC")),
         )
-        exchange_rate_manager._get_cached_rate = AsyncMock(
-            return_value=cached_rate
-        )
+        exchange_rate_manager._get_cached_rate = AsyncMock(return_value=cached_rate)
         exchange_rate_manager.fetch_from_kis = AsyncMock()
 
         result = await exchange_rate_manager.get_current_rate("USD/KRW")
@@ -771,13 +717,9 @@ class TestExchangeRateManagerIntegration:
         exchange_rate_manager.fetch_from_kis.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_full_workflow_portfolio_calculation(
-        self, exchange_rate_manager, mock_kis_client
-    ):
+    async def test_full_workflow_portfolio_calculation(self, exchange_rate_manager, mock_kis_client):
         """Test complete workflow: get rate → convert → calculate portfolio value."""
-        mock_kis_client.get_exchange_rate = AsyncMock(
-            return_value={"exchange_rate": 1350.0}
-        )
+        mock_kis_client.get_exchange_rate = AsyncMock(return_value={"exchange_rate": 1350.0})
         exchange_rate_manager._get_cached_rate = AsyncMock(return_value=None)
         exchange_rate_manager._cache_rate = AsyncMock()
 

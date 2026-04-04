@@ -5,7 +5,6 @@
 ExchangeRateManager, EconomicCollectorService, UniverseManager와 직접 연동합니다.
 """
 
-from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -13,10 +12,10 @@ from fastapi import APIRouter, Depends, Query
 from api.middleware.auth import get_current_user
 from api.schemas.common import APIResponse
 from config.logging import logger
-from core.portfolio_manager.exchange_rate import ExchangeRateManager
 from core.data_collector.economic_collector import EconomicCollectorService
-from core.portfolio_manager.universe import UniverseManager
+from core.portfolio_manager.exchange_rate import ExchangeRateManager
 from core.portfolio_manager.profile import InvestorProfileManager
+from core.portfolio_manager.universe import UniverseManager
 
 router = APIRouter()
 
@@ -62,24 +61,30 @@ async def get_market_indices(current_user: str = Depends(get_current_user)):
 
         # 국내 주요 지수 ETF로 간접 조회 (KODEX 200 → KOSPI 근사, KODEX 코스닥150)
         kr_index_proxies = [
-            ("KOSPI", "069500"),   # KODEX 200
+            ("KOSPI", "069500"),  # KODEX 200
             ("KOSDAQ", "229200"),  # KODEX 코스닥150
         ]
 
         for name, proxy_ticker in kr_index_proxies:
             try:
                 data = await kis.get_kr_stock_price(proxy_ticker)
-                indices.append({
-                    "name": name,
-                    "value": float(data.get("stck_prpr", 0)),
-                    "change": float(data.get("prdy_vrss", 0)),
-                    "change_pct": float(data.get("prdy_ctrt", 0)),
-                })
+                indices.append(
+                    {
+                        "name": name,
+                        "value": float(data.get("stck_prpr", 0)),
+                        "change": float(data.get("prdy_vrss", 0)),
+                        "change_pct": float(data.get("prdy_ctrt", 0)),
+                    }
+                )
             except Exception:
-                indices.append({
-                    "name": name, "value": 0,
-                    "change": 0.0, "change_pct": 0.0,
-                })
+                indices.append(
+                    {
+                        "name": name,
+                        "value": 0,
+                        "change": 0.0,
+                        "change_pct": 0.0,
+                    }
+                )
 
         # 미국 지수 ETF 근사 (SPY → S&P500, QQQ → NASDAQ)
         us_index_proxies = [
@@ -90,17 +95,23 @@ async def get_market_indices(current_user: str = Depends(get_current_user)):
         for name, proxy_ticker, exchange in us_index_proxies:
             try:
                 data = await kis.get_us_stock_price(proxy_ticker, exchange)
-                indices.append({
-                    "name": name,
-                    "value": float(data.get("last", 0)),
-                    "change": float(data.get("diff", 0)),
-                    "change_pct": float(data.get("rate", 0)),
-                })
+                indices.append(
+                    {
+                        "name": name,
+                        "value": float(data.get("last", 0)),
+                        "change": float(data.get("diff", 0)),
+                        "change_pct": float(data.get("rate", 0)),
+                    }
+                )
             except Exception:
-                indices.append({
-                    "name": name, "value": 0,
-                    "change": 0.0, "change_pct": 0.0,
-                })
+                indices.append(
+                    {
+                        "name": name,
+                        "value": 0,
+                        "change": 0.0,
+                        "change_pct": 0.0,
+                    }
+                )
 
         return APIResponse(success=True, data=indices)
     except Exception as e:
@@ -110,9 +121,7 @@ async def get_market_indices(current_user: str = Depends(get_current_user)):
 
 @router.get("/economic-indicators", response_model=APIResponse[list[dict]])
 async def get_economic_indicators(
-    source: Optional[str] = Query(
-        default=None, description="데이터 소스 (FRED / ECOS)"
-    ),
+    source: Optional[str] = Query(default=None, description="데이터 소스 (FRED / ECOS)"),
     current_user: str = Depends(get_current_user),
 ):
     """
@@ -129,13 +138,15 @@ async def get_economic_indicators(
             try:
                 fred_data = await service._fred.collect_all()
                 for item in fred_data:
-                    indicators.append({
-                        "indicator": item.indicator_name,
-                        "value": item.value,
-                        "date": item.date.isoformat() if hasattr(item, "date") and item.date else None,
-                        "source": "FRED",
-                        "country": "US",
-                    })
+                    indicators.append(
+                        {
+                            "indicator": item.indicator_name,
+                            "value": item.value,
+                            "date": item.date.isoformat() if hasattr(item, "date") and item.date else None,
+                            "source": "FRED",
+                            "country": "US",
+                        }
+                    )
             except Exception as fred_err:
                 logger.warning(f"FRED data collection failed: {fred_err}")
 
@@ -143,13 +154,15 @@ async def get_economic_indicators(
             try:
                 ecos_data = await service._ecos.collect_all()
                 for item in ecos_data:
-                    indicators.append({
-                        "indicator": item.indicator_name,
-                        "value": item.value,
-                        "date": item.date.isoformat() if hasattr(item, "date") and item.date else None,
-                        "source": "ECOS",
-                        "country": "KR",
-                    })
+                    indicators.append(
+                        {
+                            "indicator": item.indicator_name,
+                            "value": item.value,
+                            "date": item.date.isoformat() if hasattr(item, "date") and item.date else None,
+                            "source": "ECOS",
+                            "country": "KR",
+                        }
+                    )
             except Exception as ecos_err:
                 logger.warning(f"ECOS data collection failed: {ecos_err}")
 
@@ -174,8 +187,8 @@ async def get_universe(current_user: str = Depends(get_current_user)):
 
         if profile is None:
             # 프로필 미존재 시 기본 프로필로 유니버스 생성
+            from config.constants import InvestmentStyle, RiskProfile
             from core.portfolio_manager.profile import InvestorProfile
-            from config.constants import RiskProfile, InvestmentStyle, RebalancingFrequency
 
             profile = InvestorProfile(
                 user_id=current_user,

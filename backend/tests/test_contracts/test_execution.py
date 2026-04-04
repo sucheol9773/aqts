@@ -3,16 +3,20 @@
 import pytest
 from pydantic import ValidationError
 
-from contracts.execution import ExecutionResult
 from config.constants import Market, OrderSide, OrderStatus
+from contracts.execution import ExecutionResult
 
 
 def _valid_exec(**overrides):
     defaults = dict(
-        broker_order_id="KIS-2024-001", ticker="005930",
-        market=Market.KRX, side=OrderSide.BUY,
-        status=OrderStatus.FILLED, requested_quantity=100,
-        filled_quantity=100, filled_price=70000.0,
+        broker_order_id="KIS-2024-001",
+        ticker="005930",
+        market=Market.KRX,
+        side=OrderSide.BUY,
+        status=OrderStatus.FILLED,
+        requested_quantity=100,
+        filled_quantity=100,
+        filled_price=70000.0,
     )
     defaults.update(overrides)
     return defaults
@@ -26,21 +30,15 @@ class TestExecutionValid:
         assert e.filled_price == 70000.0
 
     def test_partial_fill(self):
-        e = ExecutionResult(**_valid_exec(
-            status=OrderStatus.PARTIAL, filled_quantity=50, filled_price=70000.0
-        ))
+        e = ExecutionResult(**_valid_exec(status=OrderStatus.PARTIAL, filled_quantity=50, filled_price=70000.0))
         assert e.status == OrderStatus.PARTIAL
 
     def test_cancelled(self):
-        e = ExecutionResult(**_valid_exec(
-            status=OrderStatus.CANCELLED, filled_quantity=0, filled_price=None
-        ))
+        e = ExecutionResult(**_valid_exec(status=OrderStatus.CANCELLED, filled_quantity=0, filled_price=None))
         assert e.filled_quantity == 0
 
     def test_pending_no_fill(self):
-        e = ExecutionResult(**_valid_exec(
-            status=OrderStatus.PENDING, filled_quantity=0, filled_price=None
-        ))
+        e = ExecutionResult(**_valid_exec(status=OrderStatus.PENDING, filled_quantity=0, filled_price=None))
         assert e.status == OrderStatus.PENDING
 
     def test_with_commission_and_slippage(self):
@@ -69,15 +67,11 @@ class TestExecutionInvalid:
 
     def test_filled_status_no_price(self):
         with pytest.raises(ValidationError, match="filled_price가 필수"):
-            ExecutionResult(**_valid_exec(
-                status=OrderStatus.FILLED, filled_quantity=100, filled_price=None
-            ))
+            ExecutionResult(**_valid_exec(status=OrderStatus.FILLED, filled_quantity=100, filled_price=None))
 
     def test_partial_status_no_price(self):
         with pytest.raises(ValidationError, match="filled_price가 필수"):
-            ExecutionResult(**_valid_exec(
-                status=OrderStatus.PARTIAL, filled_quantity=50, filled_price=None
-            ))
+            ExecutionResult(**_valid_exec(status=OrderStatus.PARTIAL, filled_quantity=50, filled_price=None))
 
     def test_negative_requested_quantity(self):
         with pytest.raises(ValidationError, match="greater than 0"):

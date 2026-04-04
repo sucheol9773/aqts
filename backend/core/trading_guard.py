@@ -15,9 +15,8 @@ Phase 6: 실투자 전환을 위한 다층 안전 메커니즘
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Optional
 
-from config.constants import Market, OrderSide, PORTFOLIO_CONSTRAINTS
+from config.constants import PORTFOLIO_CONSTRAINTS, OrderSide
 from config.logging import logger
 from config.settings import get_settings
 
@@ -25,6 +24,7 @@ from config.settings import get_settings
 @dataclass
 class TradingGuardState:
     """트레이딩 안전 장치 상태"""
+
     is_active: bool = True
     kill_switch_on: bool = False
     kill_switch_reason: str = ""
@@ -54,6 +54,7 @@ class TradingGuardState:
 @dataclass
 class PreOrderCheckResult:
     """주문 사전 검증 결과"""
+
     allowed: bool
     reason: str = ""
     warnings: list[str] = field(default_factory=list)
@@ -115,8 +116,10 @@ class TradingGuard:
                 )
 
             # LIVE와 DEMO 자격증명 교차 확인
-            if (self._settings.kis.live_app_key == self._settings.kis.demo_app_key
-                    and self._settings.kis.live_app_key != ""):
+            if (
+                self._settings.kis.live_app_key == self._settings.kis.demo_app_key
+                and self._settings.kis.live_app_key != ""
+            ):
                 warnings.append("LIVE와 DEMO API 키가 동일합니다. 확인해 주세요.")
 
         return PreOrderCheckResult(allowed=True, warnings=warnings)
@@ -131,10 +134,7 @@ class TradingGuard:
         if current_balance < min_capital:
             return PreOrderCheckResult(
                 allowed=False,
-                reason=(
-                    f"잔고 부족: {current_balance:,.0f}원 < "
-                    f"최소 요구 자본금 {min_capital:,.0f}원"
-                ),
+                reason=(f"잔고 부족: {current_balance:,.0f}원 < " f"최소 요구 자본금 {min_capital:,.0f}원"),
             )
         return PreOrderCheckResult(allowed=True)
 
@@ -144,9 +144,7 @@ class TradingGuard:
     def check_daily_loss_limit(self) -> PreOrderCheckResult:
         """일일 손실 한도 확인"""
         if self._state.daily_realized_pnl <= -self._risk.daily_loss_limit_krw:
-            self._activate_kill_switch(
-                f"일일 손실 한도 도달: {self._state.daily_realized_pnl:,.0f}원"
-            )
+            self._activate_kill_switch(f"일일 손실 한도 도달: {self._state.daily_realized_pnl:,.0f}원")
             return PreOrderCheckResult(
                 allowed=False,
                 reason=f"일일 손실 한도 초과: {self._state.daily_realized_pnl:,.0f}원",
@@ -160,15 +158,12 @@ class TradingGuard:
         """최대 낙폭(MDD) 한도 확인"""
         if self._state.peak_portfolio_value > 0:
             dd = (
-                (self._state.peak_portfolio_value - self._state.current_portfolio_value)
-                / self._state.peak_portfolio_value
-            )
+                self._state.peak_portfolio_value - self._state.current_portfolio_value
+            ) / self._state.peak_portfolio_value
             self._state.current_drawdown = dd
 
             if dd >= self._risk.max_drawdown:
-                self._activate_kill_switch(
-                    f"최대 낙폭 한도 도달: {dd:.2%}"
-                )
+                self._activate_kill_switch(f"최대 낙폭 한도 도달: {dd:.2%}")
                 return PreOrderCheckResult(
                     allowed=False,
                     reason=f"MDD 한도 초과: {dd:.2%} >= {self._risk.max_drawdown:.2%}",
@@ -181,9 +176,7 @@ class TradingGuard:
     def check_consecutive_losses(self) -> PreOrderCheckResult:
         """연속 손실 횟수 확인"""
         if self._state.consecutive_losses >= self._risk.consecutive_loss_limit:
-            self._activate_kill_switch(
-                f"연속 손실 한도 도달: {self._state.consecutive_losses}회"
-            )
+            self._activate_kill_switch(f"연속 손실 한도 도달: {self._state.consecutive_losses}회")
             return PreOrderCheckResult(
                 allowed=False,
                 reason=(
@@ -253,8 +246,7 @@ class TradingGuard:
                 return PreOrderCheckResult(
                     allowed=False,
                     reason=(
-                        f"주문 금액 초과: {order_amount_krw:,.0f}원 > "
-                        f"한도 {self._risk.max_order_amount_krw:,.0f}원"
+                        f"주문 금액 초과: {order_amount_krw:,.0f}원 > " f"한도 {self._risk.max_order_amount_krw:,.0f}원"
                     ),
                 )
 
@@ -263,18 +255,13 @@ class TradingGuard:
             if new_position_weight > max_weight:
                 return PreOrderCheckResult(
                     allowed=False,
-                    reason=(
-                        f"종목 비중 초과: {ticker} "
-                        f"{new_position_weight:.1%} > {max_weight:.1%}"
-                    ),
+                    reason=(f"종목 비중 초과: {ticker} " f"{new_position_weight:.1%} > {max_weight:.1%}"),
                 )
 
             # 섹터 비중 한도
             max_sector = PORTFOLIO_CONSTRAINTS["max_sector_weight"]
             if new_sector_weight > max_sector:
-                warnings.append(
-                    f"섹터 비중 경고: {new_sector_weight:.1%} > {max_sector:.1%}"
-                )
+                warnings.append(f"섹터 비중 경고: {new_sector_weight:.1%} > {max_sector:.1%}")
 
         return PreOrderCheckResult(allowed=True, warnings=warnings)
 

@@ -14,13 +14,12 @@ Telegram으로 발송합니다.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, date, timezone, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from loguru import logger
 
 from config.settings import get_settings
-
 
 # ══════════════════════════════════════
 # 일일 리포트 데이터 구조
@@ -32,6 +31,7 @@ KST = timezone(timedelta(hours=9))
 @dataclass
 class TradeRecord:
     """개별 거래 기록"""
+
     ticker: str
     name: str
     side: str  # BUY / SELL
@@ -45,6 +45,7 @@ class TradeRecord:
 @dataclass
 class PositionSnapshot:
     """포지션 스냅샷"""
+
     ticker: str
     name: str
     quantity: int
@@ -59,6 +60,7 @@ class PositionSnapshot:
 @dataclass
 class DailyReport:
     """일일 리포트"""
+
     report_date: date
     trading_mode: str = "DEMO"
 
@@ -124,6 +126,7 @@ class DailyReport:
 # 일일 리포트 생성기
 # ══════════════════════════════════════
 
+
 class DailyReporter:
     """
     일일 거래 리포트 생성 및 발송
@@ -172,15 +175,9 @@ class DailyReporter:
 
         # 수익률 계산
         daily_pnl = portfolio_value_end - portfolio_value_start
-        daily_return_pct = (
-            (daily_pnl / portfolio_value_start * 100)
-            if portfolio_value_start > 0 else 0.0
-        )
+        daily_return_pct = (daily_pnl / portfolio_value_start * 100) if portfolio_value_start > 0 else 0.0
         cumulative_pnl = portfolio_value_end - initial_capital
-        cumulative_return_pct = (
-            (cumulative_pnl / initial_capital * 100)
-            if initial_capital > 0 else 0.0
-        )
+        cumulative_return_pct = (cumulative_pnl / initial_capital * 100) if initial_capital > 0 else 0.0
 
         # 거래 통계
         buy_trades = [t for t in trades if t.side == "BUY"]
@@ -221,10 +218,7 @@ class DailyReporter:
         )
 
         self._report_history.append(report.to_dict())
-        logger.info(
-            f"일일 리포트 생성: {report_date} | "
-            f"PnL: {daily_pnl:+,.0f}원 ({daily_return_pct:+.2f}%)"
-        )
+        logger.info(f"일일 리포트 생성: {report_date} | " f"PnL: {daily_pnl:+,.0f}원 ({daily_return_pct:+.2f}%)")
 
         return report
 
@@ -257,26 +251,23 @@ class DailyReporter:
         mode_label = "🔵 모의투자" if report.trading_mode == "DEMO" else "🔴 실투자"
 
         lines = [
-            f"━━━━━━━━━━━━━━━━",
-            f"📊 AQTS 일일 리포트",
-            f"━━━━━━━━━━━━━━━━",
+            "━━━━━━━━━━━━━━━━",
+            "📊 AQTS 일일 리포트",
+            "━━━━━━━━━━━━━━━━",
             f"📅 {report.report_date} | {mode_label}",
             "",
-            f"💰 수익 요약",
+            "💰 수익 요약",
             f"  시가 평가: {report.portfolio_value_start:>14,.0f}원",
             f"  종가 평가: {report.portfolio_value_end:>14,.0f}원",
             f"  {pnl_emoji} 일일 손익: {report.daily_pnl:>+14,.0f}원 ({report.daily_return_pct:+.2f}%)",
             f"  📊 누적 손익: {report.cumulative_pnl:>+14,.0f}원 ({report.cumulative_return_pct:+.2f}%)",
             "",
-            f"📋 거래 요약",
+            "📋 거래 요약",
             f"  총 {report.total_trades}건 (매수 {report.buy_trades} / 매도 {report.sell_trades})",
         ]
 
         if report.total_trades > 0:
-            win_rate = (
-                report.winning_trades / report.total_trades * 100
-                if report.total_trades > 0 else 0
-            )
+            win_rate = report.winning_trades / report.total_trades * 100 if report.total_trades > 0 else 0
             lines.append(f"  승률: {win_rate:.0f}% ({report.winning_trades}승 {report.losing_trades}패)")
 
         # 상위 거래 내역 (최대 5건)
@@ -286,10 +277,7 @@ class DailyReporter:
             for trade in report.trades[:5]:
                 side_mark = "🟢" if trade.side == "BUY" else "🔴"
                 pnl_str = f" ({trade.pnl:+,.0f})" if trade.pnl else ""
-                lines.append(
-                    f"  {side_mark} {trade.name} {trade.quantity}주 "
-                    f"@{trade.price:,.0f}{pnl_str}"
-                )
+                lines.append(f"  {side_mark} {trade.name} {trade.quantity}주 " f"@{trade.price:,.0f}{pnl_str}")
             if len(report.trades) > 5:
                 lines.append(f"  ... 외 {len(report.trades) - 5}건")
 
@@ -298,32 +286,23 @@ class DailyReporter:
             lines.append("")
             lines.append("🏆 Top 3 종목")
             for pos in report.top3_positions:
-                lines.append(
-                    f"  🟢 {pos.name}: {pos.pnl_percent:+.1f}% "
-                    f"({pos.pnl:+,.0f}원)"
-                )
+                lines.append(f"  🟢 {pos.name}: {pos.pnl_percent:+.1f}% " f"({pos.pnl:+,.0f}원)")
 
         if report.bottom3_positions:
             lines.append("")
             lines.append("💀 Bottom 3 종목")
             for pos in report.bottom3_positions:
-                lines.append(
-                    f"  🔴 {pos.name}: {pos.pnl_percent:+.1f}% "
-                    f"({pos.pnl:+,.0f}원)"
-                )
+                lines.append(f"  🔴 {pos.name}: {pos.pnl_percent:+.1f}% " f"({pos.pnl:+,.0f}원)")
 
         # 포지션 현황
         if report.positions:
             lines.append("")
             lines.append(f"📦 보유 종목 ({report.total_positions}종목)")
-            sorted_positions = sorted(
-                report.positions, key=lambda p: p.market_value, reverse=True
-            )
+            sorted_positions = sorted(report.positions, key=lambda p: p.market_value, reverse=True)
             for pos in sorted_positions[:5]:
                 pnl_mark = "+" if pos.pnl >= 0 else ""
                 lines.append(
-                    f"  {pos.name}: {pos.quantity}주 "
-                    f"({pnl_mark}{pos.pnl_percent:.1f}%, {pos.weight:.1f}%)"
+                    f"  {pos.name}: {pos.quantity}주 " f"({pnl_mark}{pos.pnl_percent:.1f}%, {pos.weight:.1f}%)"
                 )
             if len(report.positions) > 5:
                 lines.append(f"  ... 외 {len(report.positions) - 5}종목")
@@ -380,17 +359,19 @@ class DailyReporter:
                     if qty > 0:
                         cost = avg_price * qty
                         pnl_pct = (pnl / cost * 100) if cost > 0 else 0.0
-                        positions.append(PositionSnapshot(
-                            ticker=ticker,
-                            name=name,
-                            quantity=qty,
-                            avg_price=avg_price,
-                            current_price=curr_price,
-                            market_value=eval_amt,
-                            pnl=pnl,
-                            pnl_percent=round(pnl_pct, 2),
-                            weight=0.0,  # 아래에서 계산
-                        ))
+                        positions.append(
+                            PositionSnapshot(
+                                ticker=ticker,
+                                name=name,
+                                quantity=qty,
+                                avg_price=avg_price,
+                                current_price=curr_price,
+                                market_value=eval_amt,
+                                pnl=pnl,
+                                pnl_percent=round(pnl_pct, 2),
+                                weight=0.0,  # 아래에서 계산
+                            )
+                        )
 
                 if output2:
                     cash = int(output2[0].get("dnca_tot_amt", "0"))
@@ -398,9 +379,7 @@ class DailyReporter:
 
             # 비중 계산
             for pos in positions:
-                pos.weight = round(
-                    pos.market_value / total_eval * 100 if total_eval > 0 else 0.0, 1
-                )
+                pos.weight = round(pos.market_value / total_eval * 100 if total_eval > 0 else 0.0, 1)
 
             return {
                 "positions": positions,

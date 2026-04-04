@@ -1,18 +1,20 @@
 """Signal 계약 테스트 (Contract 5)."""
 
 import pytest
-from datetime import datetime
 from pydantic import ValidationError
 
-from contracts.signal import Signal
 from config.constants import Market, SignalDirection, StrategyType
+from contracts.signal import Signal
 
 
 def _valid_signal(**overrides):
     defaults = dict(
-        ticker="005930", market=Market.KRX,
-        direction=SignalDirection.BUY, confidence=0.8,
-        strategy_id=StrategyType.FACTOR, reason="가치 팩터 상위 10%",
+        ticker="005930",
+        market=Market.KRX,
+        direction=SignalDirection.BUY,
+        confidence=0.8,
+        strategy_id=StrategyType.FACTOR,
+        reason="가치 팩터 상위 10%",
     )
     defaults.update(overrides)
     return defaults

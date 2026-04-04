@@ -5,7 +5,6 @@ Contract Converters 테스트
 """
 
 import unittest
-from dataclasses import dataclass
 
 import pytest
 from pydantic import ValidationError
@@ -145,6 +144,7 @@ class TestOrderRequestToContract(unittest.TestCase):
     def _make_order_request(self, **overrides):
         """OrderRequest 팩토리"""
         from core.order_executor.executor import OrderRequest
+
         defaults = dict(
             ticker="005930",
             market=Market.KRX,
@@ -192,7 +192,9 @@ class TestOrderRequestToContract(unittest.TestCase):
     def test_strategy_id_and_decision_id(self):
         req = self._make_order_request()
         contract = order_request_to_contract(
-            req, strategy_id="TF", decision_id="dec-001",
+            req,
+            strategy_id="TF",
+            decision_id="dec-001",
         )
         assert contract.strategy_id == "TF"
         assert contract.decision_id == "dec-001"

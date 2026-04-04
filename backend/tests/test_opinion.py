@@ -12,12 +12,12 @@ import pytest
 
 from config.constants import OpinionAction, OpinionType
 from core.ai_analyzer.opinion import (
-    InvestmentOpinion,
-    OpinionGenerator,
     _MACRO_OPINION_TEMPLATE,
     _OPINION_SYSTEM_PROMPT,
     _SECTOR_OPINION_TEMPLATE,
     _STOCK_OPINION_TEMPLATE,
+    InvestmentOpinion,
+    OpinionGenerator,
 )
 
 
@@ -180,8 +180,10 @@ class TestOpinionGenerator:
     @pytest.fixture
     def _mock_env(self):
         """OpinionGenerator 생성에 필요한 Mock 환경"""
-        with patch("core.ai_analyzer.opinion.AsyncAnthropic") as mock_cls, \
-             patch("core.ai_analyzer.opinion.get_settings") as mock_settings:
+        with (
+            patch("core.ai_analyzer.opinion.AsyncAnthropic") as mock_cls,
+            patch("core.ai_analyzer.opinion.get_settings") as mock_settings,
+        ):
             mock_settings.return_value = MagicMock(
                 anthropic=MagicMock(
                     api_key="test-key",
@@ -236,25 +238,32 @@ class TestOpinionGenerator:
         """Claude API Mock 응답"""
         response = MagicMock()
         response.content = [
-            MagicMock(text=json.dumps({
-                "action": "BUY",
-                "conviction": 0.75,
-                "target_weight": 0.15,
-                "reasoning": "팩터 스코어 높고 감성 긍정적. 기술 지표 우수.",
-                "market_context": "약세 장에서 상대강세 유지 중",
-                "risk_factors": ["환율 변동성", "중국 경제 둔화", "반도체 수급 악화"],
-            }, ensure_ascii=False))
+            MagicMock(
+                text=json.dumps(
+                    {
+                        "action": "BUY",
+                        "conviction": 0.75,
+                        "target_weight": 0.15,
+                        "reasoning": "팩터 스코어 높고 감성 긍정적. 기술 지표 우수.",
+                        "market_context": "약세 장에서 상대강세 유지 중",
+                        "risk_factors": ["환율 변동성", "중국 경제 둔화", "반도체 수급 악화"],
+                    },
+                    ensure_ascii=False,
+                )
+            )
         ]
         return response
 
     @pytest.mark.asyncio
-    async def test_generate_stock_opinion_basic(self, _mock_env, mock_api_response,
-                                               sample_sentiment_result, sample_quant_signals,
-                                               sample_news):
+    async def test_generate_stock_opinion_basic(
+        self, _mock_env, mock_api_response, sample_sentiment_result, sample_quant_signals, sample_news
+    ):
         """개별 종목 의견 생성 - 정상 케이스"""
-        with patch.object(OpinionGenerator, "_get_cached", return_value=None), \
-             patch.object(OpinionGenerator, "_set_cache", new_callable=AsyncMock), \
-             patch.object(OpinionGenerator, "_store_to_db", new_callable=AsyncMock):
+        with (
+            patch.object(OpinionGenerator, "_get_cached", return_value=None),
+            patch.object(OpinionGenerator, "_set_cache", new_callable=AsyncMock),
+            patch.object(OpinionGenerator, "_store_to_db", new_callable=AsyncMock),
+        ):
 
             generator = OpinionGenerator()
             generator._client = AsyncMock()
@@ -275,9 +284,9 @@ class TestOpinionGenerator:
             assert "팩터 스코어" in opinion.reasoning
 
     @pytest.mark.asyncio
-    async def test_generate_stock_opinion_cache_hit(self, _mock_env,
-                                                    sample_sentiment_result,
-                                                    sample_quant_signals, sample_news):
+    async def test_generate_stock_opinion_cache_hit(
+        self, _mock_env, sample_sentiment_result, sample_quant_signals, sample_news
+    ):
         """개별 종목 의견 생성 - 캐시 히트"""
         cached_opinion = InvestmentOpinion(
             ticker="005930",
@@ -302,9 +311,9 @@ class TestOpinionGenerator:
             assert opinion.conviction == 0.9
 
     @pytest.mark.asyncio
-    async def test_generate_stock_opinion_force_refresh(self, _mock_env, mock_api_response,
-                                                        sample_sentiment_result,
-                                                        sample_quant_signals, sample_news):
+    async def test_generate_stock_opinion_force_refresh(
+        self, _mock_env, mock_api_response, sample_sentiment_result, sample_quant_signals, sample_news
+    ):
         """개별 종목 의견 생성 - 캐시 무시"""
         cached_opinion = InvestmentOpinion(
             ticker="005930",
@@ -315,9 +324,11 @@ class TestOpinionGenerator:
             generated_at=datetime.now(timezone.utc),
         )
 
-        with patch.object(OpinionGenerator, "_get_cached", return_value=cached_opinion), \
-             patch.object(OpinionGenerator, "_set_cache", new_callable=AsyncMock), \
-             patch.object(OpinionGenerator, "_store_to_db", new_callable=AsyncMock):
+        with (
+            patch.object(OpinionGenerator, "_get_cached", return_value=cached_opinion),
+            patch.object(OpinionGenerator, "_set_cache", new_callable=AsyncMock),
+            patch.object(OpinionGenerator, "_store_to_db", new_callable=AsyncMock),
+        ):
 
             generator = OpinionGenerator()
             generator._client = AsyncMock()
@@ -352,9 +363,11 @@ class TestOpinionGenerator:
         ]
         macro_context = "글로벌 금리 인상 추세 둔화, 기술주 매수세 강화"
 
-        with patch.object(OpinionGenerator, "_get_cached", return_value=None), \
-             patch.object(OpinionGenerator, "_set_cache", new_callable=AsyncMock), \
-             patch.object(OpinionGenerator, "_store_to_db", new_callable=AsyncMock):
+        with (
+            patch.object(OpinionGenerator, "_get_cached", return_value=None),
+            patch.object(OpinionGenerator, "_set_cache", new_callable=AsyncMock),
+            patch.object(OpinionGenerator, "_store_to_db", new_callable=AsyncMock),
+        ):
 
             generator = OpinionGenerator()
             generator._client = AsyncMock()
@@ -379,19 +392,26 @@ class TestOpinionGenerator:
         """섹터 의견 - target_weight 제한 (최대 0.20)"""
         response = MagicMock()
         response.content = [
-            MagicMock(text=json.dumps({
-                "action": "STRONG_BUY",
-                "conviction": 0.85,
-                "target_weight": 0.50,  # 0.20 초과
-                "reasoning": "섹터 강세",
-                "market_context": "금리 인하 기대",
-                "risk_factors": ["금리 변화"],
-            }, ensure_ascii=False))
+            MagicMock(
+                text=json.dumps(
+                    {
+                        "action": "STRONG_BUY",
+                        "conviction": 0.85,
+                        "target_weight": 0.50,  # 0.20 초과
+                        "reasoning": "섹터 강세",
+                        "market_context": "금리 인하 기대",
+                        "risk_factors": ["금리 변화"],
+                    },
+                    ensure_ascii=False,
+                )
+            )
         ]
 
-        with patch.object(OpinionGenerator, "_get_cached", return_value=None), \
-             patch.object(OpinionGenerator, "_set_cache", new_callable=AsyncMock), \
-             patch.object(OpinionGenerator, "_store_to_db", new_callable=AsyncMock):
+        with (
+            patch.object(OpinionGenerator, "_get_cached", return_value=None),
+            patch.object(OpinionGenerator, "_set_cache", new_callable=AsyncMock),
+            patch.object(OpinionGenerator, "_store_to_db", new_callable=AsyncMock),
+        ):
 
             generator = OpinionGenerator()
             generator._client = AsyncMock()
@@ -424,9 +444,11 @@ class TestOpinionGenerator:
             },
         ]
 
-        with patch.object(OpinionGenerator, "_get_cached", return_value=None), \
-             patch.object(OpinionGenerator, "_set_cache", new_callable=AsyncMock), \
-             patch.object(OpinionGenerator, "_store_to_db", new_callable=AsyncMock):
+        with (
+            patch.object(OpinionGenerator, "_get_cached", return_value=None),
+            patch.object(OpinionGenerator, "_set_cache", new_callable=AsyncMock),
+            patch.object(OpinionGenerator, "_store_to_db", new_callable=AsyncMock),
+        ):
 
             generator = OpinionGenerator()
             generator._client = AsyncMock()
@@ -462,14 +484,19 @@ class TestOpinionGenerator:
         """정상 JSON 응답 파싱"""
         response = MagicMock()
         response.content = [
-            MagicMock(text=json.dumps({
-                "action": "STRONG_BUY",
-                "conviction": 0.88,
-                "target_weight": 0.18,
-                "reasoning": "강한 매수 시그널",
-                "market_context": "긍정적 시장 환경",
-                "risk_factors": ["리스크1", "리스크2"],
-            }, ensure_ascii=False))
+            MagicMock(
+                text=json.dumps(
+                    {
+                        "action": "STRONG_BUY",
+                        "conviction": 0.88,
+                        "target_weight": 0.18,
+                        "reasoning": "강한 매수 시그널",
+                        "market_context": "긍정적 시장 환경",
+                        "risk_factors": ["리스크1", "리스크2"],
+                    },
+                    ensure_ascii=False,
+                )
+            )
         ]
 
         generator = OpinionGenerator()
@@ -485,14 +512,19 @@ class TestOpinionGenerator:
         """확신도 범위 검증 (0.0 ~ 1.0)"""
         response = MagicMock()
         response.content = [
-            MagicMock(text=json.dumps({
-                "action": "BUY",
-                "conviction": 1.5,  # 상한 초과
-                "target_weight": 0.15,
-                "reasoning": "테스트",
-                "market_context": "테스트",
-                "risk_factors": [],
-            }, ensure_ascii=False))
+            MagicMock(
+                text=json.dumps(
+                    {
+                        "action": "BUY",
+                        "conviction": 1.5,  # 상한 초과
+                        "target_weight": 0.15,
+                        "reasoning": "테스트",
+                        "market_context": "테스트",
+                        "risk_factors": [],
+                    },
+                    ensure_ascii=False,
+                )
+            )
         ]
 
         generator = OpinionGenerator()
@@ -504,14 +536,19 @@ class TestOpinionGenerator:
         """target_weight 범위 검증 (최소 0.0)"""
         response = MagicMock()
         response.content = [
-            MagicMock(text=json.dumps({
-                "action": "BUY",
-                "conviction": 0.7,
-                "target_weight": -0.1,  # 음수
-                "reasoning": "테스트",
-                "market_context": "테스트",
-                "risk_factors": [],
-            }, ensure_ascii=False))
+            MagicMock(
+                text=json.dumps(
+                    {
+                        "action": "BUY",
+                        "conviction": 0.7,
+                        "target_weight": -0.1,  # 음수
+                        "reasoning": "테스트",
+                        "market_context": "테스트",
+                        "risk_factors": [],
+                    },
+                    ensure_ascii=False,
+                )
+            )
         ]
 
         generator = OpinionGenerator()
@@ -523,14 +560,19 @@ class TestOpinionGenerator:
         """target_weight 범위 검증 (최대 0.20)"""
         response = MagicMock()
         response.content = [
-            MagicMock(text=json.dumps({
-                "action": "BUY",
-                "conviction": 0.7,
-                "target_weight": 0.30,  # 상한 초과
-                "reasoning": "테스트",
-                "market_context": "테스트",
-                "risk_factors": [],
-            }, ensure_ascii=False))
+            MagicMock(
+                text=json.dumps(
+                    {
+                        "action": "BUY",
+                        "conviction": 0.7,
+                        "target_weight": 0.30,  # 상한 초과
+                        "reasoning": "테스트",
+                        "market_context": "테스트",
+                        "risk_factors": [],
+                    },
+                    ensure_ascii=False,
+                )
+            )
         ]
 
         generator = OpinionGenerator()
@@ -542,14 +584,19 @@ class TestOpinionGenerator:
         """target_weight null 처리"""
         response = MagicMock()
         response.content = [
-            MagicMock(text=json.dumps({
-                "action": "HOLD",
-                "conviction": 0.5,
-                "target_weight": None,
-                "reasoning": "테스트",
-                "market_context": "테스트",
-                "risk_factors": [],
-            }, ensure_ascii=False))
+            MagicMock(
+                text=json.dumps(
+                    {
+                        "action": "HOLD",
+                        "conviction": 0.5,
+                        "target_weight": None,
+                        "reasoning": "테스트",
+                        "market_context": "테스트",
+                        "risk_factors": [],
+                    },
+                    ensure_ascii=False,
+                )
+            )
         ]
 
         generator = OpinionGenerator()
@@ -561,14 +608,19 @@ class TestOpinionGenerator:
         """잘못된 action 문자열 처리"""
         response = MagicMock()
         response.content = [
-            MagicMock(text=json.dumps({
-                "action": "INVALID_ACTION",
-                "conviction": 0.7,
-                "target_weight": 0.15,
-                "reasoning": "테스트",
-                "market_context": "테스트",
-                "risk_factors": [],
-            }, ensure_ascii=False))
+            MagicMock(
+                text=json.dumps(
+                    {
+                        "action": "INVALID_ACTION",
+                        "conviction": 0.7,
+                        "target_weight": 0.15,
+                        "reasoning": "테스트",
+                        "market_context": "테스트",
+                        "risk_factors": [],
+                    },
+                    ensure_ascii=False,
+                )
+            )
         ]
 
         generator = OpinionGenerator()
@@ -591,8 +643,7 @@ class TestOpinionGenerator:
     def test_parse_response_code_fence_handling(self, _mock_env):
         """마크다운 코드 펜스 제거"""
         response = MagicMock()
-        response.content = [
-            MagicMock(text="""```json
+        response.content = [MagicMock(text="""```json
 {
   "action": "BUY",
   "conviction": 0.75,
@@ -601,8 +652,7 @@ class TestOpinionGenerator:
   "market_context": "테스트",
   "risk_factors": []
 }
-```""")
-        ]
+```""")]
 
         generator = OpinionGenerator()
         opinion = generator._parse_response("005930", OpinionType.STOCK, response)

@@ -1,7 +1,8 @@
 """FeatureVector 계약 테스트 (Contract 4)."""
 
-import pytest
 from datetime import datetime
+
+import pytest
 from pydantic import ValidationError
 
 from contracts.feature_vector import FeatureVector
@@ -9,8 +10,10 @@ from contracts.feature_vector import FeatureVector
 
 def _valid_fv(**overrides):
     defaults = dict(
-        ticker="005930", as_of=datetime(2024, 6, 1, 9, 0),
-        factor_value=0.5, factor_momentum=0.3,
+        ticker="005930",
+        as_of=datetime(2024, 6, 1, 9, 0),
+        factor_value=0.5,
+        factor_momentum=0.3,
     )
     defaults.update(overrides)
     return defaults
@@ -23,29 +26,27 @@ class TestFeatureVectorValid:
         assert fv.factor_value == 0.5
 
     def test_all_factors(self):
-        fv = FeatureVector(**_valid_fv(
-            factor_quality=0.2, factor_low_vol=-0.1, factor_size=-0.5
-        ))
+        fv = FeatureVector(**_valid_fv(factor_quality=0.2, factor_low_vol=-0.1, factor_size=-0.5))
         assert fv.factor_size == -0.5
 
     def test_only_technical(self):
         fv = FeatureVector(
-            ticker="AAPL", as_of=datetime(2024, 6, 1),
+            ticker="AAPL",
+            as_of=datetime(2024, 6, 1),
             tech_rsi=65.0,
         )
         assert fv.tech_rsi == 65.0
 
     def test_only_sentiment(self):
         fv = FeatureVector(
-            ticker="005930", as_of=datetime(2024, 6, 1),
+            ticker="005930",
+            as_of=datetime(2024, 6, 1),
             sentiment=0.7,
         )
         assert fv.sentiment == 0.7
 
     def test_boundary_values(self):
-        fv = FeatureVector(**_valid_fv(
-            factor_value=-1.0, factor_momentum=1.0, sentiment=-1.0
-        ))
+        fv = FeatureVector(**_valid_fv(factor_value=-1.0, factor_momentum=1.0, sentiment=-1.0))
         assert fv.factor_value == -1.0
         assert fv.factor_momentum == 1.0
 
@@ -98,9 +99,15 @@ class TestFeatureVectorInvalid:
     def test_all_none_features_explicitly(self):
         with pytest.raises(ValidationError, match="최소 1개"):
             FeatureVector(
-                ticker="005930", as_of=datetime(2024, 6, 1),
-                factor_value=None, factor_momentum=None,
-                factor_quality=None, factor_low_vol=None, factor_size=None,
-                tech_rsi=None, tech_macd_signal=None, tech_bollinger_pctb=None,
+                ticker="005930",
+                as_of=datetime(2024, 6, 1),
+                factor_value=None,
+                factor_momentum=None,
+                factor_quality=None,
+                factor_low_vol=None,
+                factor_size=None,
+                tech_rsi=None,
+                tech_macd_signal=None,
+                tech_bollinger_pctb=None,
                 sentiment=None,
             )

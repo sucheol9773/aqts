@@ -1,6 +1,7 @@
 """EnsembleGate: 앙상블 결합 유효성 검증 (앙상블 → 포트폴리오 전이)."""
 
 from typing import Any
+
 from core.gates.base import BaseGate, GateResult, GateSeverity
 
 
@@ -49,8 +50,7 @@ class EnsembleGate(BaseGate):
         if max_weight > max_single_strategy_weight:
             max_strategy = max(weights, key=weights.get)
             return self._block(
-                f"전략 '{max_strategy}' 가중치 {max_weight:.2%} > "
-                f"한도 {max_single_strategy_weight:.2%}",
+                f"전략 '{max_strategy}' 가중치 {max_weight:.2%} > " f"한도 {max_single_strategy_weight:.2%}",
                 severity=GateSeverity.WARNING,
                 max_strategy=str(max_strategy),
                 max_weight=max_weight,

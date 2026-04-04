@@ -46,17 +46,11 @@ class PriceData(BaseModel):
     def validate_ohlc_consistency(self) -> "PriceData":
         """OHLC 관계: high >= low, high >= max(open, close), low <= min(open, close)."""
         if self.high < self.low:
-            raise ValueError(
-                f"high({self.high}) < low({self.low}): OHLC 관계 위반"
-            )
+            raise ValueError(f"high({self.high}) < low({self.low}): OHLC 관계 위반")
         if self.high < max(self.open, self.close):
-            raise ValueError(
-                f"high({self.high}) < max(open={self.open}, close={self.close})"
-            )
+            raise ValueError(f"high({self.high}) < max(open={self.open}, close={self.close})")
         if self.low > min(self.open, self.close):
-            raise ValueError(
-                f"low({self.low}) > min(open={self.open}, close={self.close})"
-            )
+            raise ValueError(f"low({self.low}) > min(open={self.open}, close={self.close})")
         return self
 
     model_config = {"frozen": True, "extra": "forbid"}

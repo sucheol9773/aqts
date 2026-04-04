@@ -7,34 +7,31 @@ Tests cover:
 3. API route integration tests
 """
 
-import pytest
-import asyncio
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch, MagicMock, AsyncMock
-from jose import jwt
+from unittest.mock import MagicMock, patch
 
+import pytest
 from fastapi import HTTPException, status
-
-# Schemas
-from api.schemas.common import APIResponse, PaginatedResponse, ErrorResponse
-from api.schemas.auth import LoginRequest, TokenResponse, RefreshTokenRequest
-from api.schemas.portfolio import PortfolioSummaryResponse, PositionResponse, PerformanceResponse
-from api.schemas.orders import (
-    OrderCreateRequest, OrderResponse, BatchOrderRequest, BatchOrderResponse
-)
-from api.schemas.profile import ProfileResponse, ProfileUpdateRequest
-from api.schemas.alerts import AlertResponse, AlertStatsResponse, AlertListResponse
+from jose import jwt
 
 # Auth and middleware
 from api.middleware.auth import AuthService
+from api.schemas.alerts import AlertResponse, AlertStatsResponse
+from api.schemas.auth import LoginRequest, RefreshTokenRequest, TokenResponse
+
+# Schemas
+from api.schemas.common import APIResponse, ErrorResponse, PaginatedResponse
+from api.schemas.orders import BatchOrderResponse, OrderCreateRequest, OrderResponse
+from api.schemas.portfolio import PerformanceResponse, PortfolioSummaryResponse, PositionResponse
+from api.schemas.profile import ProfileResponse
 
 # Settings
 from config.settings import get_settings
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # Schema Tests (12+ tests)
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class TestCommonSchemas:
     """Test common response schemas."""
@@ -86,20 +83,14 @@ class TestCommonSchemas:
 
     def test_error_response_creation(self):
         """Test ErrorResponse creation."""
-        response = ErrorResponse(
-            error_code="VALIDATION_ERROR",
-            detail="Invalid input provided"
-        )
+        response = ErrorResponse(error_code="VALIDATION_ERROR", detail="Invalid input provided")
 
         assert response.error_code == "VALIDATION_ERROR"
         assert response.detail == "Invalid input provided"
 
     def test_error_response_unauthorized(self):
         """Test ErrorResponse for unauthorized error."""
-        response = ErrorResponse(
-            error_code="UNAUTHORIZED",
-            detail="Invalid authentication credentials"
-        )
+        response = ErrorResponse(error_code="UNAUTHORIZED", detail="Invalid authentication credentials")
 
         assert response.error_code == "UNAUTHORIZED"
 
@@ -124,11 +115,7 @@ class TestAuthSchemas:
 
     def test_token_response_creation(self):
         """Test TokenResponse creation."""
-        response = TokenResponse(
-            access_token="access_token_123",
-            refresh_token="refresh_token_456",
-            expires_in=3600
-        )
+        response = TokenResponse(access_token="access_token_123", refresh_token="refresh_token_456", expires_in=3600)
 
         assert response.access_token == "access_token_123"
         assert response.refresh_token == "refresh_token_456"
@@ -137,11 +124,7 @@ class TestAuthSchemas:
 
     def test_token_response_default_token_type(self):
         """Test TokenResponse default token_type is 'bearer'."""
-        response = TokenResponse(
-            access_token="token",
-            refresh_token="refresh",
-            expires_in=3600
-        )
+        response = TokenResponse(access_token="token", refresh_token="refresh", expires_in=3600)
 
         assert response.token_type == "bearer"
 
@@ -163,7 +146,7 @@ class TestPortfolioSchemas:
             avg_price=70000.0,
             current_price=71400.0,
             unrealized_pnl=140000.0,
-            weight=0.25
+            weight=0.25,
         )
 
         assert position.ticker == "005930"
@@ -183,7 +166,7 @@ class TestPortfolioSchemas:
                 avg_price=150.0,
                 current_price=155.0,
                 unrealized_pnl=250.0,
-                weight=weight
+                weight=weight,
             )
             assert position.weight == weight
 
@@ -197,7 +180,7 @@ class TestPortfolioSchemas:
             unrealized_pnl=1_500_000,
             realized_pnl=500_000,
             position_count=5,
-            positions=[]
+            positions=[],
         )
 
         assert summary.total_value == 50_000_000
@@ -210,9 +193,13 @@ class TestPortfolioSchemas:
         """Test PortfolioSummaryResponse with positions list."""
         positions = [
             PositionResponse(
-                ticker="005930", market="KRX", quantity=100,
-                avg_price=70000.0, current_price=71400.0,
-                unrealized_pnl=140000.0, weight=0.5
+                ticker="005930",
+                market="KRX",
+                quantity=100,
+                avg_price=70000.0,
+                current_price=71400.0,
+                unrealized_pnl=140000.0,
+                weight=0.5,
             )
         ]
 
@@ -224,7 +211,7 @@ class TestPortfolioSchemas:
             unrealized_pnl=0,
             realized_pnl=0,
             position_count=1,
-            positions=positions
+            positions=positions,
         )
 
         assert len(summary.positions) == 1
@@ -233,12 +220,7 @@ class TestPortfolioSchemas:
     def test_performance_response_creation(self):
         """Test PerformanceResponse creation."""
         performance = PerformanceResponse(
-            period="1M",
-            return_pct=2.5,
-            mdd=-3.2,
-            sharpe=1.8,
-            volatility=1.2,
-            win_rate=0.65
+            period="1M", return_pct=2.5, mdd=-3.2, sharpe=1.8, volatility=1.2, win_rate=0.65
         )
 
         assert performance.period == "1M"
@@ -261,7 +243,7 @@ class TestOrderSchemas:
             quantity=100,
             order_type="LIMIT",
             limit_price=71000.0,
-            reason="Rebalancing"
+            reason="Rebalancing",
         )
 
         assert request.ticker == "005930"
@@ -275,24 +257,12 @@ class TestOrderSchemas:
     def test_order_create_request_quantity_validation(self):
         """Test OrderCreateRequest quantity > 0."""
         # Valid quantity
-        request = OrderCreateRequest(
-            ticker="AAPL",
-            market="NYSE",
-            side="BUY",
-            quantity=1,
-            order_type="MARKET"
-        )
+        request = OrderCreateRequest(ticker="AAPL", market="NYSE", side="BUY", quantity=1, order_type="MARKET")
         assert request.quantity == 1
 
         # Invalid quantity (0)
         with pytest.raises(ValueError):
-            OrderCreateRequest(
-                ticker="AAPL",
-                market="NYSE",
-                side="BUY",
-                quantity=0,
-                order_type="MARKET"
-            )
+            OrderCreateRequest(ticker="AAPL", market="NYSE", side="BUY", quantity=0, order_type="MARKET")
 
     def test_order_response_creation(self):
         """Test OrderResponse creation."""
@@ -306,7 +276,7 @@ class TestOrderSchemas:
             order_type="MARKET",
             status="PENDING",
             filled_price=71000.0,
-            filled_at=now
+            filled_at=now,
         )
 
         assert response.order_id == "ORD-001"
@@ -323,16 +293,11 @@ class TestOrderSchemas:
                 side="BUY",
                 quantity=100,
                 order_type="MARKET",
-                status="PENDING"
+                status="PENDING",
             )
         ]
 
-        response = BatchOrderResponse(
-            results=results,
-            total=1,
-            success_count=1,
-            fail_count=0
-        )
+        response = BatchOrderResponse(results=results, total=1, success_count=1, fail_count=0)
 
         assert response.total == 1
         assert response.success_count == 1
@@ -350,7 +315,7 @@ class TestProfileSchemas:
             investment_style="DISCRETIONARY",
             investment_goal="WEALTH_GROWTH",
             initial_capital=50_000_000,
-            max_loss_tolerance=0.10
+            max_loss_tolerance=0.10,
         )
 
         assert response.risk_profile == "BALANCED"
@@ -372,7 +337,7 @@ class TestAlertSchemas:
             title="Daily Report",
             message="Your daily portfolio report",
             status="UNREAD",
-            created_at=now
+            created_at=now,
         )
 
         assert response.id == "ALERT-001"
@@ -384,6 +349,7 @@ class TestAlertSchemas:
 # ══════════════════════════════════════════════════════════════════════════════
 # AuthService Tests (10+ tests)
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class TestAuthService:
     """Test AuthService password and token operations."""
@@ -435,11 +401,7 @@ class TestAuthService:
         token = AuthService.create_access_token(data)
 
         settings = get_settings()
-        decoded = jwt.decode(
-            token,
-            settings.dashboard.secret_key,
-            algorithms=["HS256"]
-        )
+        decoded = jwt.decode(token, settings.dashboard.secret_key, algorithms=["HS256"])
 
         assert decoded["sub"] == "admin"
         assert "exp" in decoded
@@ -459,16 +421,8 @@ class TestAuthService:
         refresh_token = AuthService.create_refresh_token(data)
 
         settings = get_settings()
-        access_decoded = jwt.decode(
-            access_token,
-            settings.dashboard.secret_key,
-            algorithms=["HS256"]
-        )
-        refresh_decoded = jwt.decode(
-            refresh_token,
-            settings.dashboard.secret_key,
-            algorithms=["HS256"]
-        )
+        access_decoded = jwt.decode(access_token, settings.dashboard.secret_key, algorithms=["HS256"])
+        refresh_decoded = jwt.decode(refresh_token, settings.dashboard.secret_key, algorithms=["HS256"])
 
         # Refresh token should expire later than access token
         assert refresh_decoded["exp"] > access_decoded["exp"]
@@ -498,15 +452,8 @@ class TestAuthService:
         settings = get_settings()
 
         # Create an expired token
-        expired_data = {
-            "sub": "admin",
-            "exp": datetime.now(timezone.utc) - timedelta(hours=1)
-        }
-        expired_token = jwt.encode(
-            expired_data,
-            settings.dashboard.secret_key,
-            algorithm="HS256"
-        )
+        expired_data = {"sub": "admin", "exp": datetime.now(timezone.utc) - timedelta(hours=1)}
+        expired_token = jwt.encode(expired_data, settings.dashboard.secret_key, algorithm="HS256")
 
         with pytest.raises(HTTPException) as exc_info:
             AuthService.verify_token(expired_token)
@@ -545,7 +492,7 @@ class TestAuthService:
         hashed = AuthService.hash_password(plain_password)
 
         # Mock the settings to use hashed password
-        with patch('api.middleware.auth.get_settings') as mock_get_settings:
+        with patch("api.middleware.auth.get_settings") as mock_get_settings:
             mock_settings = MagicMock()
             mock_settings.dashboard.password = hashed
             mock_settings.dashboard.secret_key = get_settings().dashboard.secret_key
@@ -564,21 +511,20 @@ class TestAuthService:
 # Route Integration Tests (10+ tests)
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 @pytest.mark.asyncio
 class TestAuthRoutes:
     """Test authentication API routes."""
 
     async def test_login_with_correct_password(self):
         """Test POST /api/auth/login with correct password."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from main import app
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post(
-                "/api/auth/login",
-                json={"password": "test-dashboard-password"}
-            )
+            response = await client.post("/api/auth/login", json={"password": "test-dashboard-password"})
 
             assert response.status_code == 200
             data = response.json()
@@ -590,15 +536,13 @@ class TestAuthRoutes:
 
     async def test_login_with_wrong_password(self):
         """Test POST /api/auth/login with wrong password."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from main import app
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post(
-                "/api/auth/login",
-                json={"password": "wrong-password"}
-            )
+            response = await client.post("/api/auth/login", json={"password": "wrong-password"})
 
             assert response.status_code == 401
             data = response.json()
@@ -606,39 +550,32 @@ class TestAuthRoutes:
 
     async def test_login_empty_password(self):
         """Test POST /api/auth/login with empty password."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from main import app
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post(
-                "/api/auth/login",
-                json={"password": ""}
-            )
+            response = await client.post("/api/auth/login", json={"password": ""})
 
             assert response.status_code == 422
 
     async def test_get_me_with_valid_token(self):
         """Test GET /api/auth/me with valid token."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from main import app
 
         # First login to get token
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            login_response = await client.post(
-                "/api/auth/login",
-                json={"password": "test-dashboard-password"}
-            )
+            login_response = await client.post("/api/auth/login", json={"password": "test-dashboard-password"})
 
             token = login_response.json()["data"]["access_token"]
 
             # Now test GET /api/auth/me
             headers = {"Authorization": f"Bearer {token}"}
-            response = await client.get(
-                "/api/auth/me",
-                headers=headers
-            )
+            response = await client.get("/api/auth/me", headers=headers)
 
             assert response.status_code == 200
             data = response.json()
@@ -647,7 +584,8 @@ class TestAuthRoutes:
 
     async def test_get_me_without_token(self):
         """Test GET /api/auth/me without authorization header."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from main import app
 
         transport = ASGITransport(app=app)
@@ -659,24 +597,19 @@ class TestAuthRoutes:
 
     async def test_refresh_token_with_valid_refresh_token(self):
         """Test POST /api/auth/refresh with valid refresh token."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from main import app
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             # Login first
-            login_response = await client.post(
-                "/api/auth/login",
-                json={"password": "test-dashboard-password"}
-            )
+            login_response = await client.post("/api/auth/login", json={"password": "test-dashboard-password"})
 
             refresh_token = login_response.json()["data"]["refresh_token"]
 
             # Refresh token
-            response = await client.post(
-                "/api/auth/refresh",
-                json={"refresh_token": refresh_token}
-            )
+            response = await client.post("/api/auth/refresh", json={"refresh_token": refresh_token})
 
             assert response.status_code == 200
             data = response.json()
@@ -686,15 +619,13 @@ class TestAuthRoutes:
 
     async def test_refresh_token_with_invalid_token(self):
         """Test POST /api/auth/refresh with invalid token."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from main import app
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post(
-                "/api/auth/refresh",
-                json={"refresh_token": "invalid.token.here"}
-            )
+            response = await client.post("/api/auth/refresh", json={"refresh_token": "invalid.token.here"})
 
             assert response.status_code == 401
 
@@ -705,24 +636,19 @@ class TestPortfolioRoutes:
 
     async def test_get_portfolio_summary_with_auth(self):
         """Test GET /api/portfolio/summary with authentication."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from main import app
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             # Login
-            login_response = await client.post(
-                "/api/auth/login",
-                json={"password": "test-dashboard-password"}
-            )
+            login_response = await client.post("/api/auth/login", json={"password": "test-dashboard-password"})
             token = login_response.json()["data"]["access_token"]
 
             # Get portfolio summary
             headers = {"Authorization": f"Bearer {token}"}
-            response = await client.get(
-                "/api/portfolio/summary",
-                headers=headers
-            )
+            response = await client.get("/api/portfolio/summary", headers=headers)
 
             assert response.status_code == 200
             data = response.json()
@@ -732,24 +658,19 @@ class TestPortfolioRoutes:
 
     async def test_get_portfolio_positions_with_auth(self):
         """Test GET /api/portfolio/positions with authentication."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from main import app
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             # Login
-            login_response = await client.post(
-                "/api/auth/login",
-                json={"password": "test-dashboard-password"}
-            )
+            login_response = await client.post("/api/auth/login", json={"password": "test-dashboard-password"})
             token = login_response.json()["data"]["access_token"]
 
             # Get positions
             headers = {"Authorization": f"Bearer {token}"}
-            response = await client.get(
-                "/api/portfolio/positions",
-                headers=headers
-            )
+            response = await client.get("/api/portfolio/positions", headers=headers)
 
             assert response.status_code == 200
             data = response.json()
@@ -763,32 +684,20 @@ class TestOrderRoutes:
 
     async def test_create_order_with_auth(self):
         """Test POST /api/orders/ with authentication."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from main import app
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             # Login
-            login_response = await client.post(
-                "/api/auth/login",
-                json={"password": "test-dashboard-password"}
-            )
+            login_response = await client.post("/api/auth/login", json={"password": "test-dashboard-password"})
             token = login_response.json()["data"]["access_token"]
 
             # Create order
             headers = {"Authorization": f"Bearer {token}"}
-            order_data = {
-                "ticker": "005930",
-                "market": "KRX",
-                "side": "BUY",
-                "quantity": 100,
-                "order_type": "MARKET"
-            }
-            response = await client.post(
-                "/api/orders/",
-                json=order_data,
-                headers=headers
-            )
+            order_data = {"ticker": "005930", "market": "KRX", "side": "BUY", "quantity": 100, "order_type": "MARKET"}
+            response = await client.post("/api/orders/", json=order_data, headers=headers)
 
             assert response.status_code == 200
             data = response.json()
@@ -797,46 +706,33 @@ class TestOrderRoutes:
 
     async def test_create_order_without_auth(self):
         """Test POST /api/orders/ without authentication."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from main import app
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            order_data = {
-                "ticker": "005930",
-                "market": "KRX",
-                "side": "BUY",
-                "quantity": 100,
-                "order_type": "MARKET"
-            }
-            response = await client.post(
-                "/api/orders/",
-                json=order_data
-            )
+            order_data = {"ticker": "005930", "market": "KRX", "side": "BUY", "quantity": 100, "order_type": "MARKET"}
+            response = await client.post("/api/orders/", json=order_data)
 
             # 인증 헤더 미제공 시 401 Unauthorized (RFC 7235)
             assert response.status_code == 401
 
     async def test_get_orders_with_auth(self):
         """Test GET /api/orders/ with authentication."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from main import app
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             # Login
-            login_response = await client.post(
-                "/api/auth/login",
-                json={"password": "test-dashboard-password"}
-            )
+            login_response = await client.post("/api/auth/login", json={"password": "test-dashboard-password"})
             token = login_response.json()["data"]["access_token"]
 
             # Get orders
             headers = {"Authorization": f"Bearer {token}"}
-            response = await client.get(
-                "/api/orders/",
-                headers=headers
-            )
+            response = await client.get("/api/orders/", headers=headers)
 
             assert response.status_code == 200
             data = response.json()
@@ -845,36 +741,24 @@ class TestOrderRoutes:
 
     async def test_create_batch_orders_with_auth(self):
         """Test POST /api/orders/batch with authentication."""
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from main import app
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             # Login
-            login_response = await client.post(
-                "/api/auth/login",
-                json={"password": "test-dashboard-password"}
-            )
+            login_response = await client.post("/api/auth/login", json={"password": "test-dashboard-password"})
             token = login_response.json()["data"]["access_token"]
 
             # Create batch orders
             headers = {"Authorization": f"Bearer {token}"}
             batch_data = {
                 "orders": [
-                    {
-                        "ticker": "005930",
-                        "market": "KRX",
-                        "side": "BUY",
-                        "quantity": 100,
-                        "order_type": "MARKET"
-                    }
+                    {"ticker": "005930", "market": "KRX", "side": "BUY", "quantity": 100, "order_type": "MARKET"}
                 ]
             }
-            response = await client.post(
-                "/api/orders/batch",
-                json=batch_data,
-                headers=headers
-            )
+            response = await client.post("/api/orders/batch", json=batch_data, headers=headers)
 
             assert response.status_code == 200
             data = response.json()
@@ -885,6 +769,7 @@ class TestOrderRoutes:
 # ══════════════════════════════════════════════════════════════════════════════
 # Edge Cases and Error Handling Tests
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class TestAuthServiceEdgeCases:
     """Test edge cases in AuthService."""
@@ -915,12 +800,7 @@ class TestSchemaValidation:
         """Test OrderCreateRequest rejects negative limit_price."""
         with pytest.raises(ValueError):
             OrderCreateRequest(
-                ticker="AAPL",
-                market="NYSE",
-                side="BUY",
-                quantity=100,
-                order_type="LIMIT",
-                limit_price=-1000.0
+                ticker="AAPL", market="NYSE", side="BUY", quantity=100, order_type="LIMIT", limit_price=-1000.0
             )
 
     def test_profile_response_with_positive_capital(self):
@@ -929,7 +809,7 @@ class TestSchemaValidation:
             risk_profile="BALANCED",
             investment_style="DISCRETIONARY",
             investment_goal="WEALTH_GROWTH",
-            initial_capital=1_000_000.0
+            initial_capital=1_000_000.0,
         )
 
         assert response.initial_capital == 1_000_000.0
@@ -944,18 +824,14 @@ class TestSchemaValidation:
             unrealized_pnl=0,
             realized_pnl=0,
             position_count=0,
-            positions=[]
+            positions=[],
         )
 
         assert summary.position_count == 0
 
     def test_alert_stats_by_level_dict(self):
         """Test AlertStatsResponse by_level dictionary."""
-        stats = AlertStatsResponse(
-            total=10,
-            unread=3,
-            by_level={"INFO": 5, "WARNING": 3, "ERROR": 2, "CRITICAL": 0}
-        )
+        stats = AlertStatsResponse(total=10, unread=3, by_level={"INFO": 5, "WARNING": 3, "ERROR": 2, "CRITICAL": 0})
 
         assert stats.total == 10
         assert stats.by_level["INFO"] == 5
@@ -966,6 +842,7 @@ class TestSchemaValidation:
 # Token Expiry Tests
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 class TestTokenExpiry:
     """Test token expiry handling."""
 
@@ -975,11 +852,7 @@ class TestTokenExpiry:
         data = {"sub": "admin"}
         token = AuthService.create_access_token(data)
 
-        decoded = jwt.decode(
-            token,
-            settings.dashboard.secret_key,
-            algorithms=["HS256"]
-        )
+        decoded = jwt.decode(token, settings.dashboard.secret_key, algorithms=["HS256"])
 
         # Calculate expiry seconds
         now_timestamp = datetime.now(timezone.utc).timestamp()
@@ -996,11 +869,7 @@ class TestTokenExpiry:
         data = {"sub": "admin"}
         token = AuthService.create_refresh_token(data)
 
-        decoded = jwt.decode(
-            token,
-            settings.dashboard.secret_key,
-            algorithms=["HS256"]
-        )
+        decoded = jwt.decode(token, settings.dashboard.secret_key, algorithms=["HS256"])
 
         # Calculate expiry seconds
         now_timestamp = datetime.now(timezone.utc).timestamp()

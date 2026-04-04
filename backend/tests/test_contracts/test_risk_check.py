@@ -4,7 +4,10 @@ import pytest
 from pydantic import ValidationError
 
 from contracts.risk_check import (
-    RiskCheckItem, RiskCheckResult, RiskCheckDecision, RiskCheckSeverity,
+    RiskCheckDecision,
+    RiskCheckItem,
+    RiskCheckResult,
+    RiskCheckSeverity,
 )
 
 
@@ -54,23 +57,27 @@ class TestRiskCheckResultValid:
         assert r.overall_decision == RiskCheckDecision.PASS
 
     def test_with_block_overall_block(self):
-        r = RiskCheckResult(**_valid_result(
-            checks=[
-                _item("env_check", RiskCheckDecision.PASS),
-                _item("capital_check", RiskCheckDecision.BLOCK),
-            ],
-            overall_decision=RiskCheckDecision.BLOCK,
-        ))
+        r = RiskCheckResult(
+            **_valid_result(
+                checks=[
+                    _item("env_check", RiskCheckDecision.PASS),
+                    _item("capital_check", RiskCheckDecision.BLOCK),
+                ],
+                overall_decision=RiskCheckDecision.BLOCK,
+            )
+        )
         assert r.overall_decision == RiskCheckDecision.BLOCK
 
     def test_warn_items_with_pass_overall(self):
-        r = RiskCheckResult(**_valid_result(
-            checks=[
-                _item("env_check", RiskCheckDecision.PASS),
-                _item("capital_check", RiskCheckDecision.WARN),
-            ],
-            overall_decision=RiskCheckDecision.PASS,
-        ))
+        r = RiskCheckResult(
+            **_valid_result(
+                checks=[
+                    _item("env_check", RiskCheckDecision.PASS),
+                    _item("capital_check", RiskCheckDecision.WARN),
+                ],
+                overall_decision=RiskCheckDecision.PASS,
+            )
+        )
         assert r.overall_decision == RiskCheckDecision.PASS
 
     def test_with_decision_id(self):
@@ -90,18 +97,21 @@ class TestRiskCheckResultValid:
 class TestRiskCheckResultInvalid:
     def test_block_item_but_pass_overall(self):
         with pytest.raises(ValidationError, match="BLOCK.*아닙니다"):
-            RiskCheckResult(**_valid_result(
-                checks=[
-                    _item("env", RiskCheckDecision.PASS),
-                    _item("capital", RiskCheckDecision.BLOCK),
-                ],
-                overall_decision=RiskCheckDecision.PASS,
-            ))
+            RiskCheckResult(
+                **_valid_result(
+                    checks=[
+                        _item("env", RiskCheckDecision.PASS),
+                        _item("capital", RiskCheckDecision.BLOCK),
+                    ],
+                    overall_decision=RiskCheckDecision.PASS,
+                )
+            )
 
     def test_empty_checks(self):
         with pytest.raises(ValidationError):
             RiskCheckResult(
-                ticker="005930", checks=[],
+                ticker="005930",
+                checks=[],
                 overall_decision=RiskCheckDecision.PASS,
             )
 

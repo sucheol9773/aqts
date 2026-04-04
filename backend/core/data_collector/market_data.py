@@ -8,15 +8,14 @@ F-01-01 명세 구현:
 - Rate Limit 준수
 """
 
-from datetime import datetime, date, timedelta
+from datetime import datetime
 from typing import Optional
 
-import numpy as np
 import pandas as pd
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config.constants import Country, Market, DATA_INTEGRITY
+from config.constants import DATA_INTEGRITY, Country, Market
 from config.logging import logger
 from core.data_collector.kis_client import KISClient
 
@@ -31,9 +30,7 @@ class MarketDataCollector:
     # ══════════════════════════════════════
     # 한국 시장 데이터 수집
     # ══════════════════════════════════════
-    async def collect_kr_daily(
-        self, ticker: str, start_date: str, end_date: str
-    ) -> int:
+    async def collect_kr_daily(self, ticker: str, start_date: str, end_date: str) -> int:
         """
         국내 주식 일봉 데이터 수집 및 저장
 
@@ -88,9 +85,7 @@ class MarketDataCollector:
     # ══════════════════════════════════════
     # 미국 시장 데이터 수집
     # ══════════════════════════════════════
-    async def collect_us_daily(
-        self, ticker: str, exchange: str = "NAS", count: int = 100
-    ) -> int:
+    async def collect_us_daily(self, ticker: str, exchange: str = "NAS", count: int = 100) -> int:
         """
         해외 주식 일봉 데이터 수집 및 저장
 

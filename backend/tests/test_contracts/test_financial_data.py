@@ -1,7 +1,8 @@
 """FinancialData 계약 테스트 (Contract 2)."""
 
-import pytest
 from datetime import date
+
+import pytest
 from pydantic import ValidationError
 
 from contracts.financial_data import FinancialData
@@ -9,9 +10,13 @@ from contracts.financial_data import FinancialData
 
 def _valid_fin(**overrides):
     defaults = dict(
-        ticker="005930", period_end=date(2024, 12, 31),
-        filing_date=date(2025, 3, 15), eps=5000.0, per=12.5,
-        pbr=1.2, roe=15.0,
+        ticker="005930",
+        period_end=date(2024, 12, 31),
+        filing_date=date(2025, 3, 15),
+        eps=5000.0,
+        per=12.5,
+        pbr=1.2,
+        roe=15.0,
     )
     defaults.update(overrides)
     return defaults
@@ -29,9 +34,7 @@ class TestFinancialDataValid:
         assert f.eps is None
 
     def test_filing_same_as_period_end(self):
-        f = FinancialData(**_valid_fin(
-            period_end=date(2024, 12, 31), filing_date=date(2024, 12, 31)
-        ))
+        f = FinancialData(**_valid_fin(period_end=date(2024, 12, 31), filing_date=date(2024, 12, 31)))
         assert f.filing_date == f.period_end
 
     def test_revenue_and_income(self):
@@ -47,9 +50,7 @@ class TestFinancialDataValid:
 class TestFinancialDataInvalid:
     def test_filing_before_period(self):
         with pytest.raises(ValidationError, match="look-ahead bias"):
-            FinancialData(**_valid_fin(
-                period_end=date(2024, 12, 31), filing_date=date(2024, 11, 1)
-            ))
+            FinancialData(**_valid_fin(period_end=date(2024, 12, 31), filing_date=date(2024, 11, 1)))
 
     def test_per_zero(self):
         with pytest.raises(ValidationError, match="PER 이상치"):

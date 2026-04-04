@@ -14,7 +14,6 @@ FactorAnalyzer.calculate_cross_market_scores()의 종합 단위 테스트
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from config.constants import RiskProfile
 from core.quant_engine.factor_analyzer import FactorAnalyzer
@@ -26,39 +25,43 @@ from core.quant_engine.factor_analyzer import FactorAnalyzer
 def _make_kr_data(n: int = 5) -> pd.DataFrame:
     """한국 시장 테스트 데이터"""
     np.random.seed(42)
-    return pd.DataFrame({
-        "ticker": [f"00{i:04d}" for i in range(n)],
-        "per": np.random.uniform(5, 30, n),
-        "pbr": np.random.uniform(0.5, 3.0, n),
-        "ev_ebitda": np.random.uniform(3, 15, n),
-        "return_12m": np.random.uniform(-0.2, 0.5, n),
-        "return_1m": np.random.uniform(-0.1, 0.1, n),
-        "roe": np.random.uniform(5, 30, n),
-        "roa": np.random.uniform(2, 15, n),
-        "debt_ratio": np.random.uniform(30, 200, n),
-        "volatility_60d": np.random.uniform(0.1, 0.5, n),
-        "beta": np.random.uniform(0.5, 1.5, n),
-        "market_cap": np.random.uniform(1e11, 1e13, n),
-    })
+    return pd.DataFrame(
+        {
+            "ticker": [f"00{i:04d}" for i in range(n)],
+            "per": np.random.uniform(5, 30, n),
+            "pbr": np.random.uniform(0.5, 3.0, n),
+            "ev_ebitda": np.random.uniform(3, 15, n),
+            "return_12m": np.random.uniform(-0.2, 0.5, n),
+            "return_1m": np.random.uniform(-0.1, 0.1, n),
+            "roe": np.random.uniform(5, 30, n),
+            "roa": np.random.uniform(2, 15, n),
+            "debt_ratio": np.random.uniform(30, 200, n),
+            "volatility_60d": np.random.uniform(0.1, 0.5, n),
+            "beta": np.random.uniform(0.5, 1.5, n),
+            "market_cap": np.random.uniform(1e11, 1e13, n),
+        }
+    )
 
 
 def _make_us_data(n: int = 5) -> pd.DataFrame:
     """미국 시장 테스트 데이터"""
     np.random.seed(123)
-    return pd.DataFrame({
-        "ticker": ["AAPL", "GOOGL", "MSFT", "AMZN", "TSLA"][:n],
-        "per": np.random.uniform(10, 50, n),
-        "pbr": np.random.uniform(2, 15, n),
-        "ev_ebitda": np.random.uniform(8, 30, n),
-        "return_12m": np.random.uniform(-0.1, 0.6, n),
-        "return_1m": np.random.uniform(-0.05, 0.15, n),
-        "roe": np.random.uniform(10, 50, n),
-        "roa": np.random.uniform(5, 25, n),
-        "debt_ratio": np.random.uniform(20, 150, n),
-        "volatility_60d": np.random.uniform(0.15, 0.6, n),
-        "beta": np.random.uniform(0.8, 1.8, n),
-        "market_cap": np.random.uniform(1e11, 3e12, n),
-    })
+    return pd.DataFrame(
+        {
+            "ticker": ["AAPL", "GOOGL", "MSFT", "AMZN", "TSLA"][:n],
+            "per": np.random.uniform(10, 50, n),
+            "pbr": np.random.uniform(2, 15, n),
+            "ev_ebitda": np.random.uniform(8, 30, n),
+            "return_12m": np.random.uniform(-0.1, 0.6, n),
+            "return_1m": np.random.uniform(-0.05, 0.15, n),
+            "roe": np.random.uniform(10, 50, n),
+            "roa": np.random.uniform(5, 25, n),
+            "debt_ratio": np.random.uniform(20, 150, n),
+            "volatility_60d": np.random.uniform(0.15, 0.6, n),
+            "beta": np.random.uniform(0.8, 1.8, n),
+            "market_cap": np.random.uniform(1e11, 3e12, n),
+        }
+    )
 
 
 # ══════════════════════════════════════
@@ -126,8 +129,7 @@ class TestCrossMarketScores:
         us = _make_us_data()
         result = analyzer.calculate_cross_market_scores(kr, us)
 
-        expected = {"ticker", "country", "value", "momentum",
-                    "quality", "low_vol", "size", "composite"}
+        expected = {"ticker", "country", "value", "momentum", "quality", "low_vol", "size", "composite"}
         assert expected.issubset(set(result.columns))
 
 
@@ -158,9 +160,7 @@ class TestSingleMarketFallback:
     def test_both_empty(self):
         """둘 다 빈 경우"""
         analyzer = FactorAnalyzer()
-        result = analyzer.calculate_cross_market_scores(
-            pd.DataFrame(), pd.DataFrame()
-        )
+        result = analyzer.calculate_cross_market_scores(pd.DataFrame(), pd.DataFrame())
         assert len(result) == 0
 
 

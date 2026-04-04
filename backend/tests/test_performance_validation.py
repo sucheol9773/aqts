@@ -10,17 +10,17 @@ Comprehensive tests for:
 - PerformanceJudge: PASS/REVIEW/FAIL decisions
 """
 
-import pytest
 import numpy as np
-from core.backtest_engine import (
-    MetricsCalculator,
-    BenchmarkManager,
-    RegimeAnalyzer,
-    AblationStudy,
-    SignificanceTest,
-    PerformanceJudge,
-)
+import pytest
 
+from core.backtest_engine import (
+    AblationStudy,
+    BenchmarkManager,
+    MetricsCalculator,
+    PerformanceJudge,
+    RegimeAnalyzer,
+    SignificanceTest,
+)
 
 # ═══════════════════════════════════════════════════════════════
 # MetricsCalculator Tests (9 metrics + edge cases)
@@ -290,30 +290,22 @@ class TestRegimeAnalyzer:
 
     def test_classify_bull(self):
         """Test bull market classification."""
-        regime = RegimeAnalyzer.classify_regime(
-            self.bull_returns, self.bull_vol, 0.0
-        )
+        regime = RegimeAnalyzer.classify_regime(self.bull_returns, self.bull_vol, 0.0)
         assert regime == RegimeAnalyzer.BULL
 
     def test_classify_bear(self):
         """Test bear market classification."""
-        regime = RegimeAnalyzer.classify_regime(
-            self.bear_returns, self.bear_vol, 0.0
-        )
+        regime = RegimeAnalyzer.classify_regime(self.bear_returns, self.bear_vol, 0.0)
         assert regime == RegimeAnalyzer.BEAR
 
     def test_classify_high_vol(self):
         """Test high volatility classification."""
-        regime = RegimeAnalyzer.classify_regime(
-            self.high_vol_returns, self.high_vol, 0.0
-        )
+        regime = RegimeAnalyzer.classify_regime(self.high_vol_returns, self.high_vol, 0.0)
         assert regime == RegimeAnalyzer.HIGH_VOL
 
     def test_classify_rising_rate(self):
         """Test rising rate classification."""
-        regime = RegimeAnalyzer.classify_regime(
-            self.bull_returns, 0.10, 0.001  # Small positive rate change
-        )
+        regime = RegimeAnalyzer.classify_regime(self.bull_returns, 0.10, 0.001)  # Small positive rate change
         # Even positive bull market, if rate rising → RISING_RATE (after other rules)
         assert regime in RegimeAnalyzer.VALID_REGIMES
 
@@ -444,9 +436,7 @@ class TestSignificanceTest:
 
     def test_bootstrap_ci_positive(self):
         """Test bootstrap CI with positive returns."""
-        lower, upper = SignificanceTest.bootstrap_ci(
-            self.positive_returns, n_bootstrap=100
-        )
+        lower, upper = SignificanceTest.bootstrap_ci(self.positive_returns, n_bootstrap=100)
 
         # CI should be valid: lower < upper
         assert upper > lower, f"Expected upper > lower, got {lower:.6f} > {upper:.6f}"
@@ -455,12 +445,10 @@ class TestSignificanceTest:
 
     def test_bootstrap_ci_negative(self):
         """Test bootstrap CI with negative returns."""
-        lower, upper = SignificanceTest.bootstrap_ci(
-            self.negative_returns, n_bootstrap=100
-        )
+        lower, upper = SignificanceTest.bootstrap_ci(self.negative_returns, n_bootstrap=100)
 
         # CI should be valid: lower < upper
-        assert upper > lower, f"Expected upper > lower"
+        assert upper > lower, "Expected upper > lower"
         # Mean should be negative overall
         assert (lower + upper) / 2 < 0.0001, f"Expected negative mean, got {(lower+upper)/2:.6f}"
 
@@ -472,9 +460,7 @@ class TestSignificanceTest:
 
     def test_t_test_vs_benchmark(self):
         """Test t-test comparison."""
-        result = SignificanceTest.t_test_vs_benchmark(
-            self.positive_returns, self.negative_returns
-        )
+        result = SignificanceTest.t_test_vs_benchmark(self.positive_returns, self.negative_returns)
 
         assert "t_statistic" in result
         assert "p_value" in result
@@ -487,9 +473,7 @@ class TestSignificanceTest:
 
     def test_t_test_same_returns(self):
         """Test t-test with same returns."""
-        result = SignificanceTest.t_test_vs_benchmark(
-            self.positive_returns, self.positive_returns
-        )
+        result = SignificanceTest.t_test_vs_benchmark(self.positive_returns, self.positive_returns)
 
         # When comparing identical samples, t-stat should be near 0
         assert abs(result["t_statistic"]) < 1e-5
@@ -497,25 +481,19 @@ class TestSignificanceTest:
     def test_is_significant(self):
         """Test significance check."""
         # Different distributions (one positive, one negative)
-        significant = SignificanceTest.is_significant(
-            self.positive_returns, self.negative_returns, confidence=0.95
-        )
+        significant = SignificanceTest.is_significant(self.positive_returns, self.negative_returns, confidence=0.95)
         assert isinstance(significant, (bool, np.bool_))
 
     def test_is_not_significant(self):
         """Test with same data."""
         # Same data → benchmark mean should be within CI
-        significant = SignificanceTest.is_significant(
-            self.positive_returns, self.positive_returns, confidence=0.95
-        )
+        significant = SignificanceTest.is_significant(self.positive_returns, self.positive_returns, confidence=0.95)
         # When data is identical, benchmark is definitely in the CI
         assert not significant
 
     def test_excess_return_ttest(self):
         """Test excess return t-test."""
-        result = SignificanceTest.excess_return_ttest(
-            self.positive_returns, self.zero_returns
-        )
+        result = SignificanceTest.excess_return_ttest(self.positive_returns, self.zero_returns)
 
         assert "t_statistic" in result
         assert "p_value" in result

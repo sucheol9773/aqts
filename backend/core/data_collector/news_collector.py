@@ -34,9 +34,17 @@ class NewsArticle:
     """수집된 뉴스/공시 아티클 데이터 컨테이너"""
 
     __slots__ = (
-        "url_hash", "title", "content", "url", "source",
-        "published_at", "collected_at", "tickers", "category",
-        "raw_html", "metadata",
+        "url_hash",
+        "title",
+        "content",
+        "url",
+        "source",
+        "published_at",
+        "collected_at",
+        "tickers",
+        "category",
+        "raw_html",
+        "metadata",
     )
 
     def __init__(
@@ -87,15 +95,33 @@ _KR_TICKER_PATTERN = re.compile(r"\b(\d{6})\b")
 
 # 주요 종목명 ↔ 코드 매핑 (빈번하게 등장하는 대형주)
 _KR_NAME_TO_TICKER = {
-    "삼성전자": "005930", "SK하이닉스": "000660", "LG에너지솔루션": "373220",
-    "삼성바이오로직스": "207940", "현대차": "005380", "현대자동차": "005380",
-    "기아": "000270", "셀트리온": "068270", "KB금융": "105560",
-    "POSCO홀딩스": "005490", "포스코홀딩스": "005490", "NAVER": "035420",
-    "네이버": "035420", "카카오": "035720", "LG화학": "051910",
-    "삼성SDI": "006400", "현대모비스": "012330", "신한지주": "055550",
-    "SK이노베이션": "096770", "하나금융지주": "086790", "삼성물산": "028260",
-    "LG전자": "066570", "SK텔레콤": "017670", "카카오뱅크": "323410",
-    "두산에너빌리티": "034020", "에코프로비엠": "247540", "에코프로": "086520",
+    "삼성전자": "005930",
+    "SK하이닉스": "000660",
+    "LG에너지솔루션": "373220",
+    "삼성바이오로직스": "207940",
+    "현대차": "005380",
+    "현대자동차": "005380",
+    "기아": "000270",
+    "셀트리온": "068270",
+    "KB금융": "105560",
+    "POSCO홀딩스": "005490",
+    "포스코홀딩스": "005490",
+    "NAVER": "035420",
+    "네이버": "035420",
+    "카카오": "035720",
+    "LG화학": "051910",
+    "삼성SDI": "006400",
+    "현대모비스": "012330",
+    "신한지주": "055550",
+    "SK이노베이션": "096770",
+    "하나금융지주": "086790",
+    "삼성물산": "028260",
+    "LG전자": "066570",
+    "SK텔레콤": "017670",
+    "카카오뱅크": "323410",
+    "두산에너빌리티": "034020",
+    "에코프로비엠": "247540",
+    "에코프로": "086520",
     "한화에어로스페이스": "012450",
 }
 
@@ -217,15 +243,17 @@ class RSSNewsCollector:
                 # 카테고리 분류
                 category = self._classify_category(combined_text)
 
-                articles.append(NewsArticle(
-                    title=title,
-                    content=content[:5000],  # 본문 최대 5000자
-                    url=link,
-                    source=source.value,
-                    published_at=published_at,
-                    tickers=tickers,
-                    category=category,
-                ))
+                articles.append(
+                    NewsArticle(
+                        title=title,
+                        content=content[:5000],  # 본문 최대 5000자
+                        url=link,
+                        source=source.value,
+                        published_at=published_at,
+                        tickers=tickers,
+                        category=category,
+                    )
+                )
             except Exception as e:
                 logger.debug(f"RSS entry parse error: {e}")
                 continue
@@ -359,23 +387,25 @@ class DARTCollector:
 
                 tickers = [stock_code] if stock_code else []
 
-                articles.append(NewsArticle(
-                    title=f"[{corp_name}] {title}",
-                    content=f"{corp_name} 전자공시: {title}",
-                    url=url,
-                    source=NewsSource.DART.value,
-                    published_at=published_at,
-                    tickers=tickers,
-                    category="disclosure",
-                    metadata={
-                        "corp_code": item.get("corp_code", ""),
-                        "corp_name": corp_name,
-                        "stock_code": stock_code,
-                        "pblntf_ty": pblntf_ty,
-                        "rcept_no": rcept_no,
-                        "flr_nm": item.get("flr_nm", ""),
-                    },
-                ))
+                articles.append(
+                    NewsArticle(
+                        title=f"[{corp_name}] {title}",
+                        content=f"{corp_name} 전자공시: {title}",
+                        url=url,
+                        source=NewsSource.DART.value,
+                        published_at=published_at,
+                        tickers=tickers,
+                        category="disclosure",
+                        metadata={
+                            "corp_code": item.get("corp_code", ""),
+                            "corp_name": corp_name,
+                            "stock_code": stock_code,
+                            "pblntf_ty": pblntf_ty,
+                            "rcept_no": rcept_no,
+                            "flr_nm": item.get("flr_nm", ""),
+                        },
+                    )
+                )
             except Exception as e:
                 logger.debug(f"DART item parse error: {e}")
                 continue
@@ -443,10 +473,7 @@ class NewsCollectorService:
             "duplicates_skipped": dup_count,
         }
 
-        logger.info(
-            f"News collection stored: {new_count} new, "
-            f"{dup_count} duplicates, {len(all_articles)} total"
-        )
+        logger.info(f"News collection stored: {new_count} new, " f"{dup_count} duplicates, {len(all_articles)} total")
         return result
 
     async def get_articles_for_ticker(
@@ -469,13 +496,17 @@ class NewsCollectorService:
         collection = MongoDBManager.get_collection(self.COLLECTION_NAME)
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
 
-        cursor = collection.find(
-            {
-                "tickers": ticker,
-                "published_at": {"$gte": cutoff},
-            },
-            {"_id": 0, "raw_html": 0},
-        ).sort("published_at", -1).limit(limit)
+        cursor = (
+            collection.find(
+                {
+                    "tickers": ticker,
+                    "published_at": {"$gte": cutoff},
+                },
+                {"_id": 0, "raw_html": 0},
+            )
+            .sort("published_at", -1)
+            .limit(limit)
+        )
 
         return await cursor.to_list(length=limit)
 
@@ -500,10 +531,14 @@ class NewsCollectorService:
         if category:
             query["category"] = category
 
-        cursor = collection.find(
-            query,
-            {"_id": 0, "raw_html": 0},
-        ).sort("published_at", -1).limit(limit)
+        cursor = (
+            collection.find(
+                query,
+                {"_id": 0, "raw_html": 0},
+            )
+            .sort("published_at", -1)
+            .limit(limit)
+        )
 
         return await cursor.to_list(length=limit)
 

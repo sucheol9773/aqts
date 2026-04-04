@@ -37,9 +37,7 @@ class PortfolioTarget(BaseModel):
     중복 ticker가 허용되지 않습니다.
     """
 
-    positions: List[PositionTarget] = Field(
-        ..., min_length=0, description="목표 포지션 목록"
-    )
+    positions: List[PositionTarget] = Field(..., min_length=0, description="목표 포지션 목록")
     cash_weight: float = Field(..., ge=0.0, le=1.0, description="현금 비중")
     rebalance_reason: str = Field("", max_length=500, description="리밸런싱 사유")
     generated_at: datetime = Field(

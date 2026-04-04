@@ -9,30 +9,21 @@ Phase 5: 알림 생성·관리·이력 조회 및 텔레그램 발송
   - TelegramNotifier: 메시지 발송, 포맷팅, 레벨 필터링
 """
 
-import os
-import asyncio
-from datetime import datetime, timezone, timedelta
-from typing import Optional
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
-import json
 
 import pytest
-import pytest_asyncio
-import httpx
 
 from config.constants import AlertType
 from core.notification.alert_manager import (
     Alert,
     AlertLevel,
-    AlertStatus,
     AlertManager,
-    ALERT_TEMPLATES,
+    AlertStatus,
 )
 from core.notification.telegram_notifier import (
-    TelegramNotifier,
-    ALERT_LEVEL_PRIORITY,
-    FILTER_LEVEL_MAP,
     TELEGRAM_MAX_LENGTH,
+    TelegramNotifier,
 )
 
 
@@ -402,12 +393,8 @@ class TestAlertManager:
     @pytest.mark.asyncio
     async def test_get_alerts_all(self, alert_manager):
         """모든 알림 조회"""
-        alert1 = alert_manager.create_alert(
-            AlertType.DAILY_REPORT, AlertLevel.INFO, "Alert 1", "Message 1"
-        )
-        alert2 = alert_manager.create_alert(
-            AlertType.WEEKLY_REPORT, AlertLevel.WARNING, "Alert 2", "Message 2"
-        )
+        alert1 = alert_manager.create_alert(AlertType.DAILY_REPORT, AlertLevel.INFO, "Alert 1", "Message 1")
+        alert2 = alert_manager.create_alert(AlertType.WEEKLY_REPORT, AlertLevel.WARNING, "Alert 2", "Message 2")
 
         alerts = await alert_manager.get_alerts()
 
@@ -434,19 +421,11 @@ class TestAlertManager:
     @pytest.mark.asyncio
     async def test_get_alerts_filter_by_type(self, alert_manager):
         """알림 유형으로 필터링"""
-        alert_manager.create_alert(
-            AlertType.DAILY_REPORT, AlertLevel.INFO, "Daily", "Message"
-        )
-        alert_manager.create_alert(
-            AlertType.WEEKLY_REPORT, AlertLevel.INFO, "Weekly", "Message"
-        )
-        alert_manager.create_alert(
-            AlertType.DAILY_REPORT, AlertLevel.INFO, "Daily 2", "Message"
-        )
+        alert_manager.create_alert(AlertType.DAILY_REPORT, AlertLevel.INFO, "Daily", "Message")
+        alert_manager.create_alert(AlertType.WEEKLY_REPORT, AlertLevel.INFO, "Weekly", "Message")
+        alert_manager.create_alert(AlertType.DAILY_REPORT, AlertLevel.INFO, "Daily 2", "Message")
 
-        daily_alerts = await alert_manager.get_alerts(
-            alert_type=AlertType.DAILY_REPORT
-        )
+        daily_alerts = await alert_manager.get_alerts(alert_type=AlertType.DAILY_REPORT)
 
         assert len(daily_alerts) == 2
         assert all(a["alert_type"] == "DAILY_REPORT" for a in daily_alerts)
@@ -454,15 +433,9 @@ class TestAlertManager:
     @pytest.mark.asyncio
     async def test_get_alerts_filter_by_level(self, alert_manager):
         """알림 레벨로 필터링"""
-        alert_manager.create_alert(
-            AlertType.DAILY_REPORT, AlertLevel.INFO, "Info", "Message"
-        )
-        alert_manager.create_alert(
-            AlertType.DAILY_REPORT, AlertLevel.ERROR, "Error", "Message"
-        )
-        alert_manager.create_alert(
-            AlertType.DAILY_REPORT, AlertLevel.CRITICAL, "Critical", "Message"
-        )
+        alert_manager.create_alert(AlertType.DAILY_REPORT, AlertLevel.INFO, "Info", "Message")
+        alert_manager.create_alert(AlertType.DAILY_REPORT, AlertLevel.ERROR, "Error", "Message")
+        alert_manager.create_alert(AlertType.DAILY_REPORT, AlertLevel.CRITICAL, "Critical", "Message")
 
         error_alerts = await alert_manager.get_alerts(level=AlertLevel.ERROR)
 
@@ -472,12 +445,8 @@ class TestAlertManager:
     @pytest.mark.asyncio
     async def test_get_alerts_filter_by_status(self, alert_manager):
         """알림 상태로 필터링"""
-        alert1 = alert_manager.create_alert(
-            AlertType.DAILY_REPORT, AlertLevel.INFO, "Alert 1", "Message"
-        )
-        alert2 = alert_manager.create_alert(
-            AlertType.DAILY_REPORT, AlertLevel.INFO, "Alert 2", "Message"
-        )
+        alert1 = alert_manager.create_alert(AlertType.DAILY_REPORT, AlertLevel.INFO, "Alert 1", "Message")
+        alert2 = alert_manager.create_alert(AlertType.DAILY_REPORT, AlertLevel.INFO, "Alert 2", "Message")
 
         alert1.mark_sent()
         alert2.mark_read()
@@ -493,15 +462,9 @@ class TestAlertManager:
     @pytest.mark.asyncio
     async def test_get_alerts_multiple_filters(self, alert_manager):
         """여러 필터 조합"""
-        alert_manager.create_alert(
-            AlertType.DAILY_REPORT, AlertLevel.INFO, "Alert 1", "Message"
-        )
-        alert_manager.create_alert(
-            AlertType.DAILY_REPORT, AlertLevel.ERROR, "Alert 2", "Message"
-        )
-        alert_manager.create_alert(
-            AlertType.WEEKLY_REPORT, AlertLevel.ERROR, "Alert 3", "Message"
-        )
+        alert_manager.create_alert(AlertType.DAILY_REPORT, AlertLevel.INFO, "Alert 1", "Message")
+        alert_manager.create_alert(AlertType.DAILY_REPORT, AlertLevel.ERROR, "Alert 2", "Message")
+        alert_manager.create_alert(AlertType.WEEKLY_REPORT, AlertLevel.ERROR, "Alert 3", "Message")
 
         result = await alert_manager.get_alerts(
             alert_type=AlertType.DAILY_REPORT,
@@ -515,9 +478,7 @@ class TestAlertManager:
     @pytest.mark.asyncio
     async def test_get_alert_by_id(self, alert_manager):
         """ID로 특정 알림 조회"""
-        alert = alert_manager.create_alert(
-            AlertType.DAILY_REPORT, AlertLevel.INFO, "Test", "Message"
-        )
+        alert = alert_manager.create_alert(AlertType.DAILY_REPORT, AlertLevel.INFO, "Test", "Message")
 
         result = await alert_manager.get_alert_by_id(alert.id)
 
@@ -542,15 +503,9 @@ class TestAlertManager:
     @pytest.mark.asyncio
     async def test_get_unread_count(self, alert_manager):
         """미확인 알림 수"""
-        alert1 = alert_manager.create_alert(
-            AlertType.DAILY_REPORT, AlertLevel.INFO, "Alert 1", "Message"
-        )
-        alert2 = alert_manager.create_alert(
-            AlertType.DAILY_REPORT, AlertLevel.INFO, "Alert 2", "Message"
-        )
-        alert3 = alert_manager.create_alert(
-            AlertType.DAILY_REPORT, AlertLevel.INFO, "Alert 3", "Message"
-        )
+        alert1 = alert_manager.create_alert(AlertType.DAILY_REPORT, AlertLevel.INFO, "Alert 1", "Message")
+        alert2 = alert_manager.create_alert(AlertType.DAILY_REPORT, AlertLevel.INFO, "Alert 2", "Message")
+        alert3 = alert_manager.create_alert(AlertType.DAILY_REPORT, AlertLevel.INFO, "Alert 3", "Message")
 
         alert1.mark_read()
         alert2.mark_failed()
@@ -563,9 +518,7 @@ class TestAlertManager:
     @pytest.mark.asyncio
     async def test_mark_alert_read(self, alert_manager):
         """특정 알림을 읽음으로 표시"""
-        alert = alert_manager.create_alert(
-            AlertType.DAILY_REPORT, AlertLevel.INFO, "Test", "Message"
-        )
+        alert = alert_manager.create_alert(AlertType.DAILY_REPORT, AlertLevel.INFO, "Test", "Message")
 
         result = await alert_manager.mark_alert_read(alert.id)
 
@@ -582,15 +535,9 @@ class TestAlertManager:
     @pytest.mark.asyncio
     async def test_mark_all_read(self, alert_manager):
         """모든 알림을 읽음으로 표시"""
-        alert1 = alert_manager.create_alert(
-            AlertType.DAILY_REPORT, AlertLevel.INFO, "Alert 1", "Message"
-        )
-        alert2 = alert_manager.create_alert(
-            AlertType.DAILY_REPORT, AlertLevel.INFO, "Alert 2", "Message"
-        )
-        alert3 = alert_manager.create_alert(
-            AlertType.DAILY_REPORT, AlertLevel.INFO, "Alert 3", "Message"
-        )
+        alert1 = alert_manager.create_alert(AlertType.DAILY_REPORT, AlertLevel.INFO, "Alert 1", "Message")
+        alert2 = alert_manager.create_alert(AlertType.DAILY_REPORT, AlertLevel.INFO, "Alert 2", "Message")
+        alert3 = alert_manager.create_alert(AlertType.DAILY_REPORT, AlertLevel.INFO, "Alert 3", "Message")
 
         alert1.mark_sent()  # SENT는 미확인 상태
 
@@ -605,9 +552,7 @@ class TestAlertManager:
     @pytest.mark.asyncio
     async def test_mark_all_read_none_unread(self, alert_manager):
         """모든 알림이 이미 읽음 상태"""
-        alert1 = alert_manager.create_alert(
-            AlertType.DAILY_REPORT, AlertLevel.INFO, "Alert 1", "Message"
-        )
+        alert1 = alert_manager.create_alert(AlertType.DAILY_REPORT, AlertLevel.INFO, "Alert 1", "Message")
         alert1.mark_read()
 
         count = await alert_manager.mark_all_read()
@@ -617,9 +562,7 @@ class TestAlertManager:
     @pytest.mark.asyncio
     async def test_save_alert_memory_mode(self, alert_manager):
         """메모리 모드에서 알림 저장 (noop)"""
-        alert = alert_manager.create_alert(
-            AlertType.DAILY_REPORT, AlertLevel.INFO, "Test", "Message"
-        )
+        alert = alert_manager.create_alert(AlertType.DAILY_REPORT, AlertLevel.INFO, "Test", "Message")
 
         # 메모리 모드에서는 이미 저장됨
         await alert_manager.save_alert(alert)
@@ -640,18 +583,10 @@ class TestAlertManager:
     @pytest.mark.asyncio
     async def test_get_alert_stats(self, alert_manager):
         """알림 통계"""
-        alert1 = alert_manager.create_alert(
-            AlertType.DAILY_REPORT, AlertLevel.INFO, "Alert 1", "Message"
-        )
-        alert2 = alert_manager.create_alert(
-            AlertType.DAILY_REPORT, AlertLevel.WARNING, "Alert 2", "Message"
-        )
-        alert3 = alert_manager.create_alert(
-            AlertType.DAILY_REPORT, AlertLevel.ERROR, "Alert 3", "Message"
-        )
-        alert4 = alert_manager.create_alert(
-            AlertType.DAILY_REPORT, AlertLevel.CRITICAL, "Alert 4", "Message"
-        )
+        alert1 = alert_manager.create_alert(AlertType.DAILY_REPORT, AlertLevel.INFO, "Alert 1", "Message")
+        alert2 = alert_manager.create_alert(AlertType.DAILY_REPORT, AlertLevel.WARNING, "Alert 2", "Message")
+        alert3 = alert_manager.create_alert(AlertType.DAILY_REPORT, AlertLevel.ERROR, "Alert 3", "Message")
+        alert4 = alert_manager.create_alert(AlertType.DAILY_REPORT, AlertLevel.CRITICAL, "Alert 4", "Message")
 
         alert1.mark_read()  # 1개 읽음
 
@@ -870,9 +805,7 @@ class TestTelegramNotifier:
         """메시지 발송 성공"""
         text = "Test message"
 
-        with patch.object(
-            telegram_notifier, "_send_single_message", new_callable=AsyncMock
-        ) as mock_send:
+        with patch.object(telegram_notifier, "_send_single_message", new_callable=AsyncMock) as mock_send:
             mock_send.return_value = True
             result = await telegram_notifier.send_message(text)
 
@@ -884,9 +817,7 @@ class TestTelegramNotifier:
         """메시지 발송 실패"""
         text = "Test message"
 
-        with patch.object(
-            telegram_notifier, "_send_single_message", new_callable=AsyncMock
-        ) as mock_send:
+        with patch.object(telegram_notifier, "_send_single_message", new_callable=AsyncMock) as mock_send:
             mock_send.return_value = False
             result = await telegram_notifier.send_message(text)
 
@@ -897,9 +828,7 @@ class TestTelegramNotifier:
         """긴 메시지 분할 발송"""
         text = "x" * (TELEGRAM_MAX_LENGTH + 1000)
 
-        with patch.object(
-            telegram_notifier, "_send_single_message", new_callable=AsyncMock
-        ) as mock_send:
+        with patch.object(telegram_notifier, "_send_single_message", new_callable=AsyncMock) as mock_send:
             mock_send.return_value = True
             result = await telegram_notifier.send_message(text)
 
@@ -977,9 +906,7 @@ class TestTelegramNotifier:
             "Portfolio update",
         )
 
-        with patch.object(
-            telegram_notifier, "send_message", new_callable=AsyncMock
-        ) as mock_send:
+        with patch.object(telegram_notifier, "send_message", new_callable=AsyncMock) as mock_send:
             mock_send.return_value = True
             result = await telegram_notifier.dispatch_alert(alert)
 
@@ -997,9 +924,7 @@ class TestTelegramNotifier:
             "Portfolio update",
         )
 
-        with patch.object(
-            telegram_notifier, "send_message", new_callable=AsyncMock
-        ) as mock_send:
+        with patch.object(telegram_notifier, "send_message", new_callable=AsyncMock) as mock_send:
             mock_send.return_value = False
             result = await telegram_notifier.dispatch_alert(alert)
 
@@ -1018,9 +943,7 @@ class TestTelegramNotifier:
             "Portfolio update",
         )
 
-        with patch.object(
-            telegram_notifier, "send_message", new_callable=AsyncMock
-        ) as mock_send:
+        with patch.object(telegram_notifier, "send_message", new_callable=AsyncMock) as mock_send:
             result = await telegram_notifier.dispatch_alert(alert)
 
         # 필터링되어도 True 반환 (처리됨)
@@ -1045,9 +968,7 @@ class TestTelegramNotifier:
             "sell_count": 1,
         }
 
-        with patch.object(
-            telegram_notifier, "dispatch_alert", new_callable=AsyncMock
-        ) as mock_dispatch:
+        with patch.object(telegram_notifier, "dispatch_alert", new_callable=AsyncMock) as mock_dispatch:
             mock_dispatch.return_value = True
             result = await telegram_notifier.send_daily_report(report_data)
 
@@ -1070,9 +991,7 @@ class TestTelegramNotifier:
             "executed_at": "2026-04-03 14:30:00",
         }
 
-        with patch.object(
-            telegram_notifier, "dispatch_alert", new_callable=AsyncMock
-        ) as mock_dispatch:
+        with patch.object(telegram_notifier, "dispatch_alert", new_callable=AsyncMock) as mock_dispatch:
             mock_dispatch.return_value = True
             result = await telegram_notifier.send_emergency_alert(reason, details)
 
@@ -1089,13 +1008,9 @@ class TestTelegramNotifier:
         error_message = "Connection timeout"
         details = "Failed to connect to KIS API"
 
-        with patch.object(
-            telegram_notifier, "dispatch_alert", new_callable=AsyncMock
-        ) as mock_dispatch:
+        with patch.object(telegram_notifier, "dispatch_alert", new_callable=AsyncMock) as mock_dispatch:
             mock_dispatch.return_value = True
-            result = await telegram_notifier.send_error_alert(
-                module, error_message, details
-            )
+            result = await telegram_notifier.send_error_alert(module, error_message, details)
 
         assert result is True
         mock_dispatch.assert_called_once()
@@ -1148,9 +1063,7 @@ class TestNotificationIntegration:
         assert alert.status == AlertStatus.PENDING
 
         # 2. 알림 발송
-        with patch.object(
-            telegram_notifier, "send_message", new_callable=AsyncMock
-        ) as mock_send:
+        with patch.object(telegram_notifier, "send_message", new_callable=AsyncMock) as mock_send:
             mock_send.return_value = True
             await telegram_notifier.dispatch_alert(alert)
 
@@ -1191,9 +1104,7 @@ class TestNotificationIntegration:
         telegram_notifier._alert_level = "IMPORTANT"
 
         # 일괄 발송
-        with patch.object(
-            telegram_notifier, "send_message", new_callable=AsyncMock
-        ) as mock_send:
+        with patch.object(telegram_notifier, "send_message", new_callable=AsyncMock) as mock_send:
             mock_send.return_value = True
             for alert in alerts:
                 await telegram_notifier.dispatch_alert(alert)
@@ -1223,9 +1134,7 @@ class TestNotificationIntegration:
         )
 
         # 발송
-        with patch.object(
-            telegram_notifier, "send_message", new_callable=AsyncMock
-        ) as mock_send:
+        with patch.object(telegram_notifier, "send_message", new_callable=AsyncMock) as mock_send:
             mock_send.return_value = True
             await telegram_notifier.dispatch_alert(alert)
 

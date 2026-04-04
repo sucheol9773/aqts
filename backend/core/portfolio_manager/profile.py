@@ -9,18 +9,18 @@ InvestorProfileManager: 비동기 프로필 생성/조회/갱신 엔진
 """
 
 import json
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Optional, Any
+from typing import Any, Optional
 
 from sqlalchemy import text
 
 from config.constants import (
-    RiskProfile,
+    ENSEMBLE_DEFAULT_WEIGHTS,
+    HOLDING_PERIOD_MAP,
     InvestmentStyle,
     RebalancingFrequency,
-    HOLDING_PERIOD_MAP,
-    ENSEMBLE_DEFAULT_WEIGHTS,
+    RiskProfile,
     StrategyType,
 )
 from config.logging import logger
@@ -164,8 +164,7 @@ class InvestorProfileManager:
                 await session.commit()
 
             logger.info(
-                f"Profile created for user {user_id}: "
-                f"risk={risk_profile.value}, style={investment_style.value}"
+                f"Profile created for user {user_id}: " f"risk={risk_profile.value}, style={investment_style.value}"
             )
             return profile
 
@@ -298,15 +297,11 @@ class InvestorProfileManager:
             }
         """
         # HOLDING_PERIOD_MAP에서 거래 빈도 정보 추출
-        holding_info = HOLDING_PERIOD_MAP.get(
-            profile.risk_profile,
-            HOLDING_PERIOD_MAP[RiskProfile.BALANCED]
-        )
+        holding_info = HOLDING_PERIOD_MAP.get(profile.risk_profile, HOLDING_PERIOD_MAP[RiskProfile.BALANCED])
 
         # ENSEMBLE_DEFAULT_WEIGHTS에서 전략 가중치 추출
         ensemble_weights = ENSEMBLE_DEFAULT_WEIGHTS.get(
-            profile.risk_profile,
-            ENSEMBLE_DEFAULT_WEIGHTS[RiskProfile.BALANCED]
+            profile.risk_profile, ENSEMBLE_DEFAULT_WEIGHTS[RiskProfile.BALANCED]
         )
 
         # 문자열 키 처리 (StrategyType enum → string)

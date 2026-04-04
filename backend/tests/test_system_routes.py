@@ -11,9 +11,9 @@ System Routes API 종합 단위 테스트
 모든 외부 의존성 (auth, DB, engines) 은 mock으로 처리됩니다.
 """
 
-import pytest
-from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 
 @pytest.mark.asyncio
@@ -78,10 +78,12 @@ class TestSystemRoutes:
         """POST /backtest 응답 구조 검증"""
         from api.routes.system import run_backtest
 
-        with patch("api.routes.system.BacktestConfig"), \
-             patch("api.routes.system.BacktestEngine") as mock_engine, \
-             patch("api.routes.system.AuditLogger") as mock_audit, \
-             patch("api.routes.system.logger"):
+        with (
+            patch("api.routes.system.BacktestConfig"),
+            patch("api.routes.system.BacktestEngine") as mock_engine,
+            patch("api.routes.system.AuditLogger") as mock_audit,
+            patch("api.routes.system.logger"),
+        ):
 
             # BacktestEngine과 실제 데이터로 진행
             # 실제 실행은 executor를 통해 동기식으로 실행됨
@@ -104,13 +106,12 @@ class TestSystemRoutes:
             )
 
             # Assert: 구조만 검증 (성공/실패 여부)
-            assert hasattr(response, 'success')
-            assert hasattr(response, 'data')
-            assert hasattr(response, 'message')
+            assert hasattr(response, "success")
+            assert hasattr(response, "data")
+            assert hasattr(response, "message")
 
     async def test_run_backtest_default_strategy(self):
         """POST /backtest strategy 파라미터 생략"""
-        from api.routes.system import run_backtest
 
         # 실제 구현에서 strategy None은 "ENSEMBLE"로 설정됨 (line 82)
         # 이는 구현 코드의 기본값 설정을 검증함
@@ -126,8 +127,10 @@ class TestSystemRoutes:
         """POST /backtest 예외 처리"""
         from api.routes.system import run_backtest
 
-        with patch("api.routes.system.get_db_session") as mock_db_session, \
-             patch("api.routes.system.BacktestEngine") as mock_engine:
+        with (
+            patch("api.routes.system.get_db_session") as mock_db_session,
+            patch("api.routes.system.BacktestEngine") as mock_engine,
+        ):
 
             mock_db = AsyncMock()
             mock_db_session.return_value = mock_db
@@ -155,8 +158,10 @@ class TestSystemRoutes:
         """POST /rebalancing 정상 트리거"""
         from api.routes.system import trigger_rebalancing
 
-        with patch("api.routes.system.get_db_session") as mock_db_session, \
-             patch("api.routes.system.AuditLogger") as mock_audit:
+        with (
+            patch("api.routes.system.get_db_session") as mock_db_session,
+            patch("api.routes.system.AuditLogger") as mock_audit,
+        ):
 
             mock_db = AsyncMock()
             mock_db_session.return_value = mock_db
@@ -189,8 +194,10 @@ class TestSystemRoutes:
         """POST /rebalancing 기본 타입 MANUAL"""
         from api.routes.system import trigger_rebalancing
 
-        with patch("api.routes.system.get_db_session") as mock_db_session, \
-             patch("api.routes.system.AuditLogger") as mock_audit:
+        with (
+            patch("api.routes.system.get_db_session") as mock_db_session,
+            patch("api.routes.system.AuditLogger") as mock_audit,
+        ):
 
             mock_db = AsyncMock()
             mock_db_session.return_value = mock_db
@@ -213,8 +220,10 @@ class TestSystemRoutes:
         """POST /rebalancing 예외 처리"""
         from api.routes.system import trigger_rebalancing
 
-        with patch("api.routes.system.get_db_session") as mock_db_session, \
-             patch("api.routes.system.AuditLogger") as mock_audit:
+        with (
+            patch("api.routes.system.get_db_session") as mock_db_session,
+            patch("api.routes.system.AuditLogger") as mock_audit,
+        ):
 
             mock_db = AsyncMock()
             mock_db_session.return_value = mock_db
@@ -241,9 +250,11 @@ class TestSystemRoutes:
         """POST /pipeline 정상 실행"""
         from api.routes.system import run_analysis_pipeline
 
-        with patch("api.routes.system.get_db_session") as mock_db_session, \
-             patch("api.routes.system.InvestmentDecisionPipeline") as mock_pipeline, \
-             patch("api.routes.system.AuditLogger") as mock_audit:
+        with (
+            patch("api.routes.system.get_db_session") as mock_db_session,
+            patch("api.routes.system.InvestmentDecisionPipeline") as mock_pipeline,
+            patch("api.routes.system.AuditLogger") as mock_audit,
+        ):
 
             mock_db = AsyncMock()
             mock_db_session.return_value = mock_db
@@ -308,9 +319,11 @@ class TestSystemRoutes:
         """POST /pipeline 띄어쓰기 처리"""
         from api.routes.system import run_analysis_pipeline
 
-        with patch("api.routes.system.get_db_session") as mock_db_session, \
-             patch("api.routes.system.InvestmentDecisionPipeline") as mock_pipeline, \
-             patch("api.routes.system.AuditLogger") as mock_audit:
+        with (
+            patch("api.routes.system.get_db_session") as mock_db_session,
+            patch("api.routes.system.InvestmentDecisionPipeline") as mock_pipeline,
+            patch("api.routes.system.AuditLogger") as mock_audit,
+        ):
 
             mock_db = AsyncMock()
             mock_db_session.return_value = mock_db
@@ -367,8 +380,10 @@ class TestSystemRoutes:
         """POST /pipeline 예외 처리"""
         from api.routes.system import run_analysis_pipeline
 
-        with patch("api.routes.system.get_db_session") as mock_db_session, \
-             patch("api.routes.system.InvestmentDecisionPipeline") as mock_pipeline:
+        with (
+            patch("api.routes.system.get_db_session") as mock_db_session,
+            patch("api.routes.system.InvestmentDecisionPipeline") as mock_pipeline,
+        ):
 
             mock_db = AsyncMock()
             mock_db_session.return_value = mock_db

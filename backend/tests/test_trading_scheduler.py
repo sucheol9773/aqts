@@ -20,32 +20,32 @@ AQTS TradingScheduler 종합 테스트
 
 import asyncio
 import unittest
-from datetime import datetime, date, time, timezone, timedelta
-from unittest.mock import patch, MagicMock, AsyncMock, call
-import pytest
-import pytest_asyncio
+from datetime import date, datetime, time, timedelta
+from unittest.mock import MagicMock, patch
 
+import pytest
+
+from config.settings import TradingMode
 from core.trading_scheduler import (
-    is_trading_day,
-    next_trading_day,
-    now_kst,
+    ALL_HOLIDAYS,
+    DEFAULT_SCHEDULE,
+    KR_HOLIDAYS_2025,
+    KR_HOLIDAYS_2026,
     KST,
-    ScheduleEventType,
     ScheduleEvent,
+    ScheduleEventType,
     SchedulerState,
     SchedulerStatus,
     TradingScheduler,
-    DEFAULT_SCHEDULE,
-    KR_HOLIDAYS_2026,
-    KR_HOLIDAYS_2025,
-    ALL_HOLIDAYS,
+    is_trading_day,
+    next_trading_day,
+    now_kst,
 )
-from config.settings import TradingMode
-
 
 # ══════════════════════════════════════
 # 1. is_trading_day 함수 테스트
 # ══════════════════════════════════════
+
 
 class TestIsTradingDay:
     """is_trading_day 함수 테스트"""
@@ -107,6 +107,7 @@ class TestIsTradingDay:
 # 2. next_trading_day 함수 테스트
 # ══════════════════════════════════════
 
+
 class TestNextTradingDay:
     """next_trading_day 함수 테스트"""
 
@@ -154,6 +155,7 @@ class TestNextTradingDay:
 # 3. now_kst 함수 테스트
 # ══════════════════════════════════════
 
+
 class TestNowKst:
     """now_kst 함수 테스트"""
 
@@ -179,6 +181,7 @@ class TestNowKst:
 # 4. ScheduleEventType 열거형 테스트
 # ══════════════════════════════════════
 
+
 class TestScheduleEventType:
     """ScheduleEventType 열거형 테스트"""
 
@@ -198,6 +201,7 @@ class TestScheduleEventType:
 # ══════════════════════════════════════
 # 5. ScheduleEvent 데이터클래스 테스트
 # ══════════════════════════════════════
+
 
 class TestScheduleEvent:
     """ScheduleEvent 데이터클래스 테스트"""
@@ -228,6 +232,7 @@ class TestScheduleEvent:
 # ══════════════════════════════════════
 # 6. SchedulerState 테스트
 # ══════════════════════════════════════
+
 
 class TestSchedulerState:
     """SchedulerState 데이터클래스 테스트"""
@@ -284,6 +289,7 @@ class TestSchedulerState:
 # 7. TradingScheduler 초기화 테스트
 # ══════════════════════════════════════
 
+
 class TestTradingSchedulerInit:
     """TradingScheduler 초기화 테스트"""
 
@@ -339,6 +345,7 @@ class TestTradingSchedulerInit:
 # ══════════════════════════════════════
 # 8. TradingScheduler.start 테스트
 # ══════════════════════════════════════
+
 
 class TestTradingSchedulerStart(unittest.IsolatedAsyncioTestCase):
     """TradingScheduler.start 테스트"""
@@ -428,6 +435,7 @@ class TestTradingSchedulerStart(unittest.IsolatedAsyncioTestCase):
 # 9. TradingScheduler.stop 테스트
 # ══════════════════════════════════════
 
+
 class TestTradingSchedulerStop(unittest.IsolatedAsyncioTestCase):
     """TradingScheduler.stop 테스트"""
 
@@ -492,6 +500,7 @@ class TestTradingSchedulerStop(unittest.IsolatedAsyncioTestCase):
 # 10. TradingScheduler.pause / resume 테스트
 # ══════════════════════════════════════
 
+
 class TestTradingSchedulerPauseResume(unittest.IsolatedAsyncioTestCase):
     """TradingScheduler.pause / resume 테스트"""
 
@@ -549,6 +558,7 @@ class TestTradingSchedulerPauseResume(unittest.IsolatedAsyncioTestCase):
 # 11. TradingScheduler.register_handler 테스트
 # ══════════════════════════════════════
 
+
 class TestTradingSchedulerRegisterHandler:
     """TradingScheduler.register_handler 테스트"""
 
@@ -591,6 +601,7 @@ class TestTradingSchedulerRegisterHandler:
 # ══════════════════════════════════════
 # 12. TradingScheduler.run_event_now 테스트
 # ══════════════════════════════════════
+
 
 class TestTradingSchedulerRunEventNow(unittest.IsolatedAsyncioTestCase):
     """TradingScheduler.run_event_now 테스트"""
@@ -648,6 +659,7 @@ class TestTradingSchedulerRunEventNow(unittest.IsolatedAsyncioTestCase):
 # ══════════════════════════════════════
 # 13. TradingScheduler._find_next_event 테스트
 # ══════════════════════════════════════
+
 
 class TestTradingSchedulerFindNextEvent:
     """TradingScheduler._find_next_event 테스트"""
@@ -748,6 +760,7 @@ class TestTradingSchedulerFindNextEvent:
 # ══════════════════════════════════════
 # 14. TradingScheduler._execute_event 테스트
 # ══════════════════════════════════════
+
 
 class TestTradingSchedulerExecuteEvent(unittest.IsolatedAsyncioTestCase):
     """TradingScheduler._execute_event 테스트"""
@@ -873,6 +886,7 @@ class TestTradingSchedulerExecuteEvent(unittest.IsolatedAsyncioTestCase):
 # 15. 기본 핸들러 테스트
 # ══════════════════════════════════════
 
+
 class TestDefaultHandlers(unittest.IsolatedAsyncioTestCase):
     """기본 내장 핸들러 테스트"""
 
@@ -950,6 +964,7 @@ class TestDefaultHandlers(unittest.IsolatedAsyncioTestCase):
 # 16. 오류 처리 테스트
 # ══════════════════════════════════════
 
+
 class TestErrorHandling(unittest.IsolatedAsyncioTestCase):
     """오류 처리 및 안정성 테스트"""
 
@@ -1016,6 +1031,7 @@ class TestErrorHandling(unittest.IsolatedAsyncioTestCase):
 # ══════════════════════════════════════
 # 17. 통합 시나리오 테스트
 # ══════════════════════════════════════
+
 
 class TestIntegrationScenarios(unittest.IsolatedAsyncioTestCase):
     """통합 시나리오 테스트"""
@@ -1098,6 +1114,7 @@ class TestIntegrationScenarios(unittest.IsolatedAsyncioTestCase):
 # ══════════════════════════════════════
 # 18. 추가 엣지 케이스
 # ══════════════════════════════════════
+
 
 class TestEdgeCases(unittest.IsolatedAsyncioTestCase):
     """엣지 케이스 및 특수 상황 테스트"""
@@ -1199,6 +1216,7 @@ class TestEdgeCases(unittest.IsolatedAsyncioTestCase):
 # 19. 일시정지 중 이벤트 실행 테스트
 # ══════════════════════════════════════
 
+
 class TestPausedStateHandling(unittest.IsolatedAsyncioTestCase):
     """일시정지 상태에서의 동작 테스트"""
 
@@ -1224,6 +1242,7 @@ class TestPausedStateHandling(unittest.IsolatedAsyncioTestCase):
 # ══════════════════════════════════════
 # 20. 핸들러 등록 및 실행 순서
 # ══════════════════════════════════════
+
 
 class TestHandlerExecutionOrder(unittest.IsolatedAsyncioTestCase):
     """핸들러 실행 순서 및 시점 테스트"""

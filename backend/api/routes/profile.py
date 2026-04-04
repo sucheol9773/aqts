@@ -5,8 +5,6 @@
 InvestorProfileManager와 직접 연동하여 DB 기반 프로필을 관리합니다.
 """
 
-from datetime import datetime, timezone
-
 from fastapi import APIRouter, Depends
 
 from api.middleware.auth import get_current_user
@@ -55,7 +53,8 @@ async def get_profile(current_user: str = Depends(get_current_user)):
                 max_loss_tolerance=0.10,
             )
             return APIResponse(
-                success=True, data=default_profile,
+                success=True,
+                data=default_profile,
                 message="기본 프로필입니다. 프로필을 설정해 주세요.",
             )
 
@@ -109,7 +108,8 @@ async def update_profile(
 
         logger.info(f"Profile updated: {request.model_dump(exclude_none=True)}")
         return APIResponse(
-            success=True, data=_profile_to_response(profile),
+            success=True,
+            data=_profile_to_response(profile),
             message="프로필이 수정되었습니다.",
         )
     except Exception as e:

@@ -9,10 +9,10 @@ Stage 3-A: Minimum Realism (편향 제거)
 - BUY/SELL별 슬리피지 적용
 """
 
-from typing import Optional, Dict
 from math import sqrt
+from typing import Dict, Optional
 
-from config.constants import Market, OrderSide, Country, TRANSACTION_COSTS
+from config.constants import Country, Market, OrderSide
 
 
 class SlippageModel:
@@ -21,16 +21,16 @@ class SlippageModel:
     # 기본 스프레드 (bps: basis points, 0.01% = 1 bp)
     DEFAULT_SPREADS = {
         Country.KR: {
-            "large_cap": 1.0,      # KOSPI 대형주: ~1 bp (0.01%)
-            "mid_cap": 2.0,        # KOSPI 중형주: ~2 bp
-            "small_cap": 5.0,      # KOSPI 소형주: ~5 bp
-            "kosdaq": 3.0,         # KOSDAQ: ~3 bp
+            "large_cap": 1.0,  # KOSPI 대형주: ~1 bp (0.01%)
+            "mid_cap": 2.0,  # KOSPI 중형주: ~2 bp
+            "small_cap": 5.0,  # KOSPI 소형주: ~5 bp
+            "kosdaq": 3.0,  # KOSDAQ: ~3 bp
         },
         Country.US: {
-            "large_cap": 0.5,      # NYSE large-cap: ~0.5 bp
-            "mid_cap": 1.0,        # NYSE mid-cap: ~1 bp
-            "small_cap": 2.0,      # NYSE small-cap: ~2 bp
-            "nasdaq": 1.0,         # NASDAQ: ~1 bp
+            "large_cap": 0.5,  # NYSE large-cap: ~0.5 bp
+            "mid_cap": 1.0,  # NYSE mid-cap: ~1 bp
+            "small_cap": 2.0,  # NYSE small-cap: ~2 bp
+            "nasdaq": 1.0,  # NASDAQ: ~1 bp
         },
     }
 

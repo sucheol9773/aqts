@@ -9,13 +9,12 @@ F-01-06 명세 구현:
 """
 
 import asyncio
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List
+from typing import List, Optional
 
 import httpx
-import numpy as np
 import pandas as pd
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,19 +31,19 @@ from config.settings import get_settings
 class FinancialStatement:
     """재무제표 데이터 컨테이너"""
 
-    corp_code: str                              # DART 고유번호 (8자리)
-    ticker: str                                 # 종목코드
-    corp_name: str                              # 회사명
-    bsns_year: int                              # 사업연도
-    reprt_code: str                             # 보고서코드
-    fs_div: str                                 # 재무제표구분 (OFS=개별, CFS=연결)
-    revenue: Optional[float] = None             # 매출액
-    operating_income: Optional[float] = None    # 영업이익
-    net_income: Optional[float] = None          # 당기순이익
-    total_assets: Optional[float] = None        # 총자산
-    total_liabilities: Optional[float] = None   # 총부채
-    total_equity: Optional[float] = None        # 자본총계
-    eps: Optional[float] = None                 # 주당순이익
+    corp_code: str  # DART 고유번호 (8자리)
+    ticker: str  # 종목코드
+    corp_name: str  # 회사명
+    bsns_year: int  # 사업연도
+    reprt_code: str  # 보고서코드
+    fs_div: str  # 재무제표구분 (OFS=개별, CFS=연결)
+    revenue: Optional[float] = None  # 매출액
+    operating_income: Optional[float] = None  # 영업이익
+    net_income: Optional[float] = None  # 당기순이익
+    total_assets: Optional[float] = None  # 총자산
+    total_liabilities: Optional[float] = None  # 총부채
+    total_equity: Optional[float] = None  # 자본총계
+    eps: Optional[float] = None  # 주당순이익
     collected_at: datetime = field(default_factory=datetime.utcnow)
 
     def to_dict(self) -> dict:
@@ -65,12 +64,12 @@ class DerivedMetrics:
     """파생 지표 컨테이너"""
 
     ticker: str
-    per: Optional[float] = None                 # Price-to-Earnings Ratio
-    pbr: Optional[float] = None                 # Price-to-Book Ratio
-    roe: Optional[float] = None                 # Return on Equity
-    roa: Optional[float] = None                 # Return on Assets
-    debt_ratio: Optional[float] = None          # 부채비율
-    ev_ebitda: Optional[float] = None           # EV/EBITDA
+    per: Optional[float] = None  # Price-to-Earnings Ratio
+    pbr: Optional[float] = None  # Price-to-Book Ratio
+    roe: Optional[float] = None  # Return on Equity
+    roa: Optional[float] = None  # Return on Assets
+    debt_ratio: Optional[float] = None  # 부채비율
+    ev_ebitda: Optional[float] = None  # EV/EBITDA
     calculated_at: datetime = field(default_factory=datetime.utcnow)
 
     def to_dict(self) -> dict:
@@ -82,14 +81,16 @@ class DerivedMetrics:
     @property
     def is_available(self) -> bool:
         """최소 하나 이상의 지표 보유 여부"""
-        return any([
-            self.per is not None,
-            self.pbr is not None,
-            self.roe is not None,
-            self.roa is not None,
-            self.debt_ratio is not None,
-            self.ev_ebitda is not None,
-        ])
+        return any(
+            [
+                self.per is not None,
+                self.pbr is not None,
+                self.roe is not None,
+                self.roa is not None,
+                self.debt_ratio is not None,
+                self.ev_ebitda is not None,
+            ]
+        )
 
 
 # ══════════════════════════════════════
@@ -189,14 +190,10 @@ class FinancialCollectorService:
         corp_name = corp_info.get("corp_name")
 
         # 재무제표 조회
-        financial_data = await self._fetch_financial_data(
-            corp_code, bsns_year, reprt_code, fs_div
-        )
+        financial_data = await self._fetch_financial_data(corp_code, bsns_year, reprt_code, fs_div)
 
         if not financial_data:
-            logger.warning(
-                f"No financial data found for {corp_code} ({bsns_year}, {reprt_code})"
-            )
+            logger.warning(f"No financial data found for {corp_code} ({bsns_year}, {reprt_code})")
             return None
 
         # 결과 조합
@@ -279,8 +276,7 @@ class FinancialCollectorService:
 
                 if data.get("status") != "000":
                     logger.warning(
-                        f"DART API returned status {data.get('status')}: "
-                        f"{data.get('message', 'Unknown error')}"
+                        f"DART API returned status {data.get('status')}: " f"{data.get('message', 'Unknown error')}"
                     )
                     return None
 
@@ -294,8 +290,7 @@ class FinancialCollectorService:
 
             except httpx.HTTPStatusError as e:
                 logger.warning(
-                    f"DART API HTTP error (attempt {attempt + 1}/{self._api_retry_count}): "
-                    f"{e.response.status_code}"
+                    f"DART API HTTP error (attempt {attempt + 1}/{self._api_retry_count}): " f"{e.response.status_code}"
                 )
                 if attempt < self._api_retry_count - 1:
                     await asyncio.sleep(1)
@@ -303,9 +298,7 @@ class FinancialCollectorService:
                     return None
 
             except Exception as e:
-                logger.error(
-                    f"Error fetching DART data (attempt {attempt + 1}/{self._api_retry_count}): {e}"
-                )
+                logger.error(f"Error fetching DART data (attempt {attempt + 1}/{self._api_retry_count}): {e}")
                 if attempt < self._api_retry_count - 1:
                     await asyncio.sleep(1)
                 else:
@@ -522,12 +515,7 @@ class FinancialCollectorService:
             metrics.per = current_price / financial_data.eps
 
         # PBR = 주가 / BPS (BPS = 자본총계 / 발행주식수)
-        if (
-            current_price
-            and shares_outstanding
-            and financial_data.total_equity
-            and financial_data.total_equity > 0
-        ):
+        if current_price and shares_outstanding and financial_data.total_equity and financial_data.total_equity > 0:
             bps = financial_data.total_equity / shares_outstanding
             if bps > 0:
                 metrics.pbr = current_price / bps
@@ -545,9 +533,7 @@ class FinancialCollectorService:
         # 부채비율 = 총부채 / 자본총계
         if financial_data.total_liabilities and financial_data.total_equity:
             if financial_data.total_equity != 0:
-                metrics.debt_ratio = (
-                    financial_data.total_liabilities / financial_data.total_equity
-                )
+                metrics.debt_ratio = financial_data.total_liabilities / financial_data.total_equity
 
         # EV/EBITDA = (시가총액 + 순차입금) / EBITDA
         if current_price and shares_outstanding and ebitda and ebitda > 0:
@@ -585,10 +571,7 @@ class FinancialCollectorService:
             [ticker, per, pbr, ev_ebitda, roe, roa, debt_ratio, market_cap,
              return_12m, return_1m, volatility_60d, beta]
         """
-        logger.info(
-            f"Building factor data for {len(tickers)} tickers "
-            f"(include_market_data={include_market_data})"
-        )
+        logger.info(f"Building factor data for {len(tickers)} tickers " f"(include_market_data={include_market_data})")
 
         result_rows = []
 
@@ -656,9 +639,7 @@ class FinancialCollectorService:
 
                 if total_equity and total_equity > 0:
                     liabilities = stmt_row[5]
-                    row_data["debt_ratio"] = (
-                        liabilities / total_equity if liabilities else None
-                    )
+                    row_data["debt_ratio"] = liabilities / total_equity if liabilities else None
 
                 # 시가총액 (shares_outstanding은 별도 조회 필요)
                 # 여기서는 None으로 두며, 호출처에서 보충
@@ -687,9 +668,7 @@ class FinancialCollectorService:
                         LIMIT 1
                     """)
 
-                    market_result = await self._db.execute(
-                        market_query, {"ticker": ticker}
-                    )
+                    market_result = await self._db.execute(market_query, {"ticker": ticker})
                     market_row = market_result.fetchone()
 
                     if market_row:
@@ -734,9 +713,6 @@ class FinancialCollectorService:
         available_cols.extend([c for c in optional_cols if c in df.columns])
         df = df[available_cols]
 
-        logger.info(
-            f"Built factor data for {len(df)} tickers: "
-            f"columns={list(df.columns)}"
-        )
+        logger.info(f"Built factor data for {len(df)} tickers: " f"columns={list(df.columns)}")
 
         return df

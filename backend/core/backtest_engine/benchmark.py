@@ -10,7 +10,8 @@ Manages benchmark definitions and provides default benchmarks:
 """
 
 from dataclasses import dataclass
-from typing import List, Optional, Dict
+from typing import Dict, List, Optional
+
 import numpy as np
 
 
@@ -131,9 +132,7 @@ class BenchmarkManager:
         returns = np.random.normal(daily_return, daily_vol, n_days)
         return returns.tolist()
 
-    def create_benchmark(
-        self, name: str, returns: List[float], ticker: Optional[str] = None
-    ) -> Benchmark:
+    def create_benchmark(self, name: str, returns: List[float], ticker: Optional[str] = None) -> Benchmark:
         """
         Create and register a new benchmark.
 

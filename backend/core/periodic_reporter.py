@@ -25,7 +25,7 @@ DailyReporter를 확장하여 주간(금요일) 및 월간(말일) 리포트를 
 """
 
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from enum import Enum
 from typing import Optional
 
@@ -38,6 +38,7 @@ from core.market_calendar import KST, Market, MarketCalendar
 # ══════════════════════════════════════
 class ReportPeriod(str, Enum):
     """리포트 기간 유형"""
+
     DAILY = "DAILY"
     WEEKLY = "WEEKLY"
     MONTHLY = "MONTHLY"
@@ -49,6 +50,7 @@ class ReportPeriod(str, Enum):
 @dataclass
 class DailySummary:
     """일별 요약 (주간/월간 리포트 내 항목)"""
+
     date: date
     portfolio_value: float
     daily_pnl: float
@@ -59,6 +61,7 @@ class DailySummary:
 @dataclass
 class PeriodicReport:
     """주간/월간 리포트"""
+
     period: ReportPeriod
     start_date: date
     end_date: date
@@ -101,9 +104,7 @@ class PeriodicReport:
     trading_days: int = 0
 
     # 메타
-    generated_at: datetime = field(
-        default_factory=lambda: datetime.now(KST)
-    )
+    generated_at: datetime = field(default_factory=lambda: datetime.now(KST))
 
     def to_dict(self) -> dict:
         return {
@@ -174,10 +175,7 @@ class PeriodicReporter:
             PeriodicReport
         """
         # 해당 주간 데이터 필터
-        week_data = [
-            d for d in daily_data
-            if week_start <= d.date <= week_end
-        ]
+        week_data = [d for d in daily_data if week_start <= d.date <= week_end]
 
         report = self._build_report(
             period=ReportPeriod.WEEKLY,
@@ -230,10 +228,7 @@ class PeriodicReporter:
             month_end = date(year, month + 1, 1) - timedelta(days=1)
 
         # 해당 월 데이터 필터
-        month_data = [
-            d for d in daily_data
-            if month_start <= d.date <= month_end
-        ]
+        month_data = [d for d in daily_data if month_start <= d.date <= month_end]
 
         report = self._build_report(
             period=ReportPeriod.MONTHLY,
@@ -246,9 +241,7 @@ class PeriodicReporter:
 
         # 월간 전용 필드
         report.benchmark_return_pct = benchmark_return_pct
-        report.excess_return_pct = round(
-            report.period_return_pct - benchmark_return_pct, 2
-        )
+        report.excess_return_pct = round(report.period_return_pct - benchmark_return_pct, 2)
         report.strategy_contributions = strategy_contributions or {}
 
         logger.info(
@@ -287,14 +280,8 @@ class PeriodicReporter:
         start_value = daily_data[0].portfolio_value - daily_data[0].daily_pnl
         end_value = daily_data[-1].portfolio_value
         period_pnl = end_value - start_value
-        period_return = (
-            (period_pnl / start_value * 100) if start_value > 0 else 0.0
-        )
-        cumulative_return = (
-            ((end_value - initial_capital) / initial_capital * 100)
-            if initial_capital > 0
-            else 0.0
-        )
+        period_return = (period_pnl / start_value * 100) if start_value > 0 else 0.0
+        cumulative_return = ((end_value - initial_capital) / initial_capital * 100) if initial_capital > 0 else 0.0
 
         # Best/Worst day
         best = max(daily_data, key=lambda d: d.daily_return_pct)
@@ -360,6 +347,7 @@ class PeriodicReporter:
             return 0.0
 
         import numpy as np
+
         return float(np.std(daily_returns, ddof=1) * np.sqrt(252))
 
     def _calculate_sharpe(
@@ -372,6 +360,7 @@ class PeriodicReporter:
             return 0.0
 
         import numpy as np
+
         rf_daily = self.RISK_FREE_RATE / 252
         excess = [r - rf_daily for r in daily_returns]
 
@@ -397,9 +386,7 @@ class PeriodicReporter:
         # 금요일이 공휴일이면 그 전 거래일 (목요일 등)
         next_day = d + timedelta(days=1)
         # 다음 날이 토요일이면 이번 주 마지막 거래일
-        if next_day.weekday() == 5 and self._calendar.is_trading_day(
-            d, Market.KRX
-        ):
+        if next_day.weekday() == 5 and self._calendar.is_trading_day(d, Market.KRX):
             return True
 
         return False
@@ -438,16 +425,16 @@ class PeriodicReporter:
             "━━━━━━━━━━━━━━━━",
             f"📅 {report.start_date} ~ {report.end_date} | {mode}",
             "",
-            f"💰 주간 성과",
+            "💰 주간 성과",
             f"  {pnl_emoji} 손익: {report.period_pnl:>+14,.0f}원",
             f"  📊 수익률: {report.period_return_pct:>+10.2f}%",
             f"  📊 누적 수익률: {report.cumulative_return_pct:>+8.2f}%",
             "",
-            f"📋 거래 요약",
+            "📋 거래 요약",
             f"  거래일: {report.trading_days}일",
             f"  총 거래: {report.total_trades}건",
             "",
-            f"📉 리스크",
+            "📉 리스크",
             f"  MDD: {report.max_drawdown_pct:.2f}%",
             f"  변동성: {report.volatility_pct:.2f}%",
             f"  Sharpe: {report.sharpe_ratio:.2f}",
@@ -455,15 +442,9 @@ class PeriodicReporter:
 
         if report.best_day:
             lines.append("")
-            lines.append(
-                f"🏆 Best: {report.best_day.date} "
-                f"({report.best_day.daily_return_pct:+.2f}%)"
-            )
+            lines.append(f"🏆 Best: {report.best_day.date} " f"({report.best_day.daily_return_pct:+.2f}%)")
         if report.worst_day:
-            lines.append(
-                f"💀 Worst: {report.worst_day.date} "
-                f"({report.worst_day.daily_return_pct:+.2f}%)"
-            )
+            lines.append(f"💀 Worst: {report.worst_day.date} " f"({report.worst_day.daily_return_pct:+.2f}%)")
 
         lines.append("")
         lines.append("━━━━━━━━━━━━━━━━")
@@ -481,12 +462,12 @@ class PeriodicReporter:
             "━━━━━━━━━━━━━━━━",
             f"📅 {report.start_date} ~ {report.end_date} | {mode}",
             "",
-            f"💰 월간 성과",
+            "💰 월간 성과",
             f"  {pnl_emoji} 손익: {report.period_pnl:>+14,.0f}원",
             f"  📊 수익률: {report.period_return_pct:>+10.2f}%",
             f"  📊 누적 수익률: {report.cumulative_return_pct:>+8.2f}%",
             "",
-            f"📊 벤치마크 대비",
+            "📊 벤치마크 대비",
             f"  벤치마크 수익률: {report.benchmark_return_pct:>+8.2f}%",
             f"  {excess_emoji} 초과 수익률: {report.excess_return_pct:>+8.2f}%",
         ]
@@ -501,29 +482,25 @@ class PeriodicReporter:
             ):
                 lines.append(f"  {name}: {contrib:+.2f}%")
 
-        lines.extend([
-            "",
-            f"📋 거래 요약",
-            f"  거래일: {report.trading_days}일",
-            f"  총 거래: {report.total_trades}건",
-            "",
-            f"📉 리스크",
-            f"  MDD: {report.max_drawdown_pct:.2f}%",
-            f"  변동성: {report.volatility_pct:.2f}%",
-            f"  Sharpe: {report.sharpe_ratio:.2f}",
-        ])
+        lines.extend(
+            [
+                "",
+                "📋 거래 요약",
+                f"  거래일: {report.trading_days}일",
+                f"  총 거래: {report.total_trades}건",
+                "",
+                "📉 리스크",
+                f"  MDD: {report.max_drawdown_pct:.2f}%",
+                f"  변동성: {report.volatility_pct:.2f}%",
+                f"  Sharpe: {report.sharpe_ratio:.2f}",
+            ]
+        )
 
         if report.best_day:
             lines.append("")
-            lines.append(
-                f"🏆 Best: {report.best_day.date} "
-                f"({report.best_day.daily_return_pct:+.2f}%)"
-            )
+            lines.append(f"🏆 Best: {report.best_day.date} " f"({report.best_day.daily_return_pct:+.2f}%)")
         if report.worst_day:
-            lines.append(
-                f"💀 Worst: {report.worst_day.date} "
-                f"({report.worst_day.daily_return_pct:+.2f}%)"
-            )
+            lines.append(f"💀 Worst: {report.worst_day.date} " f"({report.worst_day.daily_return_pct:+.2f}%)")
 
         lines.append("")
         lines.append("━━━━━━━━━━━━━━━━")

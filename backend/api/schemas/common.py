@@ -21,22 +21,10 @@ class APIResponse(BaseModel, Generic[T]):
     모든 API 엔드포인트의 기본 응답 구조입니다.
     """
 
-    success: bool = Field(
-        ...,
-        description="요청 성공 여부"
-    )
-    data: Optional[T] = Field(
-        default=None,
-        description="응답 데이터"
-    )
-    message: Optional[str] = Field(
-        default=None,
-        description="추가 메시지"
-    )
-    timestamp: datetime = Field(
-        default_factory=datetime.utcnow,
-        description="응답 생성 시간 (UTC)"
-    )
+    success: bool = Field(..., description="요청 성공 여부")
+    data: Optional[T] = Field(default=None, description="응답 데이터")
+    message: Optional[str] = Field(default=None, description="추가 메시지")
+    timestamp: datetime = Field(default_factory=datetime.utcnow, description="응답 생성 시간 (UTC)")
 
 
 class PaginatedResponse(BaseModel, Generic[T]):
@@ -46,22 +34,10 @@ class PaginatedResponse(BaseModel, Generic[T]):
     리스트 형태의 데이터를 페이지 단위로 반환할 때 사용합니다.
     """
 
-    items: list[T] = Field(
-        ...,
-        description="현재 페이지의 아이템 목록"
-    )
-    total: int = Field(
-        ...,
-        description="전체 아이템 수"
-    )
-    page: int = Field(
-        ...,
-        description="현재 페이지 번호 (1부터 시작)"
-    )
-    page_size: int = Field(
-        ...,
-        description="페이지당 아이템 수"
-    )
+    items: list[T] = Field(..., description="현재 페이지의 아이템 목록")
+    total: int = Field(..., description="전체 아이템 수")
+    page: int = Field(..., description="현재 페이지 번호 (1부터 시작)")
+    page_size: int = Field(..., description="페이지당 아이템 수")
 
 
 class ErrorResponse(BaseModel):
@@ -71,11 +47,5 @@ class ErrorResponse(BaseModel):
     API 오류 상황에서 반환됩니다.
     """
 
-    error_code: str = Field(
-        ...,
-        description="오류 코드 (e.g., 'VALIDATION_ERROR', 'UNAUTHORIZED')"
-    )
-    detail: str = Field(
-        ...,
-        description="오류 상세 메시지"
-    )
+    error_code: str = Field(..., description="오류 코드 (e.g., 'VALIDATION_ERROR', 'UNAUTHORIZED')")
+    detail: str = Field(..., description="오류 상세 메시지")

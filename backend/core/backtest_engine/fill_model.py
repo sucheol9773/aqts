@@ -10,24 +10,25 @@ Stage 3-A: Minimum Realism (편향 제거)
 """
 
 from dataclasses import dataclass
-from typing import List, Dict, Optional
+from typing import Dict, List
 
 
 @dataclass
 class FillResult:
     """체결 결과"""
-    filled_quantity: float      # 체결된 수량
-    unfilled_quantity: float    # 미체결된 수량
-    fill_ratio: float           # 체결률 (0.0 ~ 1.0)
+
+    filled_quantity: float  # 체결된 수량
+    unfilled_quantity: float  # 미체결된 수량
+    fill_ratio: float  # 체결률 (0.0 ~ 1.0)
 
 
 class FillModel:
     """부분 체결 시뮬레이션 모델"""
 
     # ADV 대비 주문량 임계값
-    LIGHT_ADV_PCT = 0.10        # 10% ADV 이하: 전량 체결
-    MEDIUM_ADV_PCT = 0.30       # 10-30% ADV: 부분 체결
-    HEAVY_ADV_PCT = 1.0         # 30% ADV 초과: 상당 부분 미체결
+    LIGHT_ADV_PCT = 0.10  # 10% ADV 이하: 전량 체결
+    MEDIUM_ADV_PCT = 0.30  # 10-30% ADV: 부분 체결
+    HEAVY_ADV_PCT = 1.0  # 30% ADV 초과: 상당 부분 미체결
 
     def __init__(self):
         """FillModel 초기화"""
@@ -211,8 +212,8 @@ class FillModel:
         cost_pct = ((avg_fill_price - base_price) / base_price) * 100
 
         return {
-            'fill_result': fill_result,
-            'avg_fill_price': avg_fill_price,
-            'total_cost': total_cost,
-            'cost_pct': cost_pct,
+            "fill_result": fill_result,
+            "avg_fill_price": avg_fill_price,
+            "total_cost": total_cost,
+            "cost_pct": cost_pct,
         }

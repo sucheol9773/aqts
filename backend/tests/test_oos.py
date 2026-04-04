@@ -14,10 +14,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from core.oos.gate_evaluator import GateEvaluator
+from core.oos.job_manager import OOSJobManager
 from core.oos.models import (
-    GateLevel,
-    GateResult,
-    JobStatus,
     OOSMetric,
     OOSRun,
     OOSRunRequest,
@@ -26,10 +25,8 @@ from core.oos.models import (
     OOSStatus,
     OOSWindowResult,
 )
-from core.oos.gate_evaluator import GateEvaluator
 from core.oos.regime_mapping import RegimeMapper
 from core.oos.walk_forward import WalkForwardEngine
-from core.oos.job_manager import OOSJobManager
 
 
 # ══════════════════════════════════════
@@ -95,39 +92,67 @@ def window_results_pass():
     return [
         OOSWindowResult(
             window_index=0,
-            train_start="2023-01-01", train_end="2024-12-31",
-            test_start="2025-01-01", test_end="2025-03-31",
-            cagr=0.12, mdd=-0.08, sharpe_ratio=1.2,
-            sortino_ratio=1.8, calmar_ratio=1.5,
-            total_return=0.03, total_trades=15,
-            win_rate=0.6, profit_factor=1.5,
+            train_start="2023-01-01",
+            train_end="2024-12-31",
+            test_start="2025-01-01",
+            test_end="2025-03-31",
+            cagr=0.12,
+            mdd=-0.08,
+            sharpe_ratio=1.2,
+            sortino_ratio=1.8,
+            calmar_ratio=1.5,
+            total_return=0.03,
+            total_trades=15,
+            win_rate=0.6,
+            profit_factor=1.5,
         ),
         OOSWindowResult(
             window_index=1,
-            train_start="2023-04-01", train_end="2025-03-31",
-            test_start="2025-04-01", test_end="2025-06-30",
-            cagr=0.10, mdd=-0.06, sharpe_ratio=0.9,
-            sortino_ratio=1.3, calmar_ratio=1.7,
-            total_return=0.025, total_trades=12,
-            win_rate=0.58, profit_factor=1.3,
+            train_start="2023-04-01",
+            train_end="2025-03-31",
+            test_start="2025-04-01",
+            test_end="2025-06-30",
+            cagr=0.10,
+            mdd=-0.06,
+            sharpe_ratio=0.9,
+            sortino_ratio=1.3,
+            calmar_ratio=1.7,
+            total_return=0.025,
+            total_trades=12,
+            win_rate=0.58,
+            profit_factor=1.3,
         ),
         OOSWindowResult(
             window_index=2,
-            train_start="2023-07-01", train_end="2025-06-30",
-            test_start="2025-07-01", test_end="2025-09-30",
-            cagr=0.08, mdd=-0.10, sharpe_ratio=0.7,
-            sortino_ratio=1.0, calmar_ratio=0.8,
-            total_return=0.02, total_trades=10,
-            win_rate=0.55, profit_factor=1.2,
+            train_start="2023-07-01",
+            train_end="2025-06-30",
+            test_start="2025-07-01",
+            test_end="2025-09-30",
+            cagr=0.08,
+            mdd=-0.10,
+            sharpe_ratio=0.7,
+            sortino_ratio=1.0,
+            calmar_ratio=0.8,
+            total_return=0.02,
+            total_trades=10,
+            win_rate=0.55,
+            profit_factor=1.2,
         ),
         OOSWindowResult(
             window_index=3,
-            train_start="2023-10-01", train_end="2025-09-30",
-            test_start="2025-10-01", test_end="2025-12-31",
-            cagr=0.15, mdd=-0.07, sharpe_ratio=1.5,
-            sortino_ratio=2.0, calmar_ratio=2.1,
-            total_return=0.04, total_trades=18,
-            win_rate=0.65, profit_factor=1.8,
+            train_start="2023-10-01",
+            train_end="2025-09-30",
+            test_start="2025-10-01",
+            test_end="2025-12-31",
+            cagr=0.15,
+            mdd=-0.07,
+            sharpe_ratio=1.5,
+            sortino_ratio=2.0,
+            calmar_ratio=2.1,
+            total_return=0.04,
+            total_trades=18,
+            win_rate=0.65,
+            profit_factor=1.8,
         ),
     ]
 
@@ -138,21 +163,35 @@ def window_results_fail():
     return [
         OOSWindowResult(
             window_index=0,
-            train_start="2023-01-01", train_end="2024-12-31",
-            test_start="2025-01-01", test_end="2025-03-31",
-            cagr=-0.05, mdd=-0.35, sharpe_ratio=-0.3,
-            sortino_ratio=-0.5, calmar_ratio=-0.14,
-            total_return=-0.01, total_trades=20,
-            win_rate=0.35, profit_factor=0.7,
+            train_start="2023-01-01",
+            train_end="2024-12-31",
+            test_start="2025-01-01",
+            test_end="2025-03-31",
+            cagr=-0.05,
+            mdd=-0.35,
+            sharpe_ratio=-0.3,
+            sortino_ratio=-0.5,
+            calmar_ratio=-0.14,
+            total_return=-0.01,
+            total_trades=20,
+            win_rate=0.35,
+            profit_factor=0.7,
         ),
         OOSWindowResult(
             window_index=1,
-            train_start="2023-04-01", train_end="2025-03-31",
-            test_start="2025-04-01", test_end="2025-06-30",
-            cagr=-0.10, mdd=-0.40, sharpe_ratio=-0.5,
-            sortino_ratio=-0.8, calmar_ratio=-0.25,
-            total_return=-0.025, total_trades=18,
-            win_rate=0.30, profit_factor=0.5,
+            train_start="2023-04-01",
+            train_end="2025-03-31",
+            test_start="2025-04-01",
+            test_end="2025-06-30",
+            cagr=-0.10,
+            mdd=-0.40,
+            sharpe_ratio=-0.5,
+            sortino_ratio=-0.8,
+            calmar_ratio=-0.25,
+            total_return=-0.025,
+            total_trades=18,
+            win_rate=0.30,
+            profit_factor=0.5,
         ),
     ]
 
@@ -279,8 +318,10 @@ class TestGateEvaluator:
         windows = [
             OOSWindowResult(
                 window_index=i,
-                train_start="2023-01-01", train_end="2024-12-31",
-                test_start="2025-01-01", test_end="2025-03-31",
+                train_start="2023-01-01",
+                train_end="2024-12-31",
+                test_start="2025-01-01",
+                test_end="2025-03-31",
                 total_return=-0.01 if i < 3 else 0.02,  # 3/4 negative
             )
             for i in range(4)
@@ -295,26 +336,35 @@ class TestGateEvaluator:
         assert result["gate_c"]["result"] == "REVIEW"
 
     def test_custom_thresholds(self):
-        evaluator = GateEvaluator(thresholds={
-            "mdd_hard_limit": 0.50,
-            "max_turnover": 10.0,
-            "min_sharpe_ratio": 0.1,
-            "min_calmar_ratio": 0.1,
-            "regime_worst_mdd": 0.50,
-            "max_window_variance": 1.0,
-            "min_positive_windows_ratio": 0.3,
-        })
+        evaluator = GateEvaluator(
+            thresholds={
+                "mdd_hard_limit": 0.50,
+                "max_turnover": 10.0,
+                "min_sharpe_ratio": 0.1,
+                "min_calmar_ratio": 0.1,
+                "regime_worst_mdd": 0.50,
+                "max_window_variance": 1.0,
+                "min_positive_windows_ratio": 0.3,
+            }
+        )
         windows = [
             OOSWindowResult(
                 window_index=0,
-                train_start="2023-01-01", train_end="2024-12-31",
-                test_start="2025-01-01", test_end="2025-03-31",
-                mdd=-0.35, sharpe_ratio=0.5, total_return=0.02,
+                train_start="2023-01-01",
+                train_end="2024-12-31",
+                test_start="2025-01-01",
+                test_end="2025-03-31",
+                mdd=-0.35,
+                sharpe_ratio=0.5,
+                total_return=0.02,
             ),
         ]
         result = evaluator.evaluate_all(
-            windows=windows, avg_sharpe=0.5, avg_calmar=0.5,
-            worst_mdd=-0.35, sharpe_variance=0.1,
+            windows=windows,
+            avg_sharpe=0.5,
+            avg_calmar=0.5,
+            worst_mdd=-0.35,
+            sharpe_variance=0.1,
         )
         # MDD -35% < 50% limit → Gate A PASS
         assert result["gate_a"]["result"] == "PASS"
@@ -324,17 +374,23 @@ class TestGateEvaluator:
         windows = [
             OOSWindowResult(
                 window_index=0,
-                train_start="2023-01-01", train_end="2024-12-31",
-                test_start="2025-01-01", test_end="2025-03-31",
-                sharpe_ratio=0.8, total_return=0.02,
+                train_start="2023-01-01",
+                train_end="2024-12-31",
+                test_start="2025-01-01",
+                test_end="2025-03-31",
+                sharpe_ratio=0.8,
+                total_return=0.02,
                 regime_metrics={
                     "BULL": {"max_drawdown": -0.35},  # > 0.30 limit
                 },
             ),
         ]
         result = gate_evaluator.evaluate_all(
-            windows=windows, avg_sharpe=0.8, avg_calmar=0.5,
-            worst_mdd=-0.10, sharpe_variance=0.1,
+            windows=windows,
+            avg_sharpe=0.8,
+            avg_calmar=0.5,
+            worst_mdd=-0.10,
+            sharpe_variance=0.1,
         )
         assert result["gate_b"]["result"] in ("REVIEW", "FAIL")
 
@@ -366,14 +422,18 @@ class TestWalkForwardEngine:
         """데이터 부족 시 빈 리스트 반환"""
         dates = pd.bdate_range(end="2025-12-31", periods=100)
         windows = walk_forward_engine._split_windows(
-            date_index=dates, train_months=24, test_months=3,
+            date_index=dates,
+            train_months=24,
+            test_months=3,
         )
         assert windows == []
 
     def test_window_splitting_empty_index(self, walk_forward_engine):
         dates = pd.DatetimeIndex([])
         windows = walk_forward_engine._split_windows(
-            date_index=dates, train_months=12, test_months=3,
+            date_index=dates,
+            train_months=12,
+            test_months=3,
         )
         assert windows == []
 
@@ -671,8 +731,10 @@ class TestOOSModels:
     def test_oos_run_request_forbids_extra(self):
         with pytest.raises(Exception):
             OOSRunRequest(
-                train_months=12, test_months=3,
-                tickers=["005930"], unknown_field="bad",
+                train_months=12,
+                test_months=3,
+                tickers=["005930"],
+                unknown_field="bad",
             )
 
     def test_oos_status_enum(self):
@@ -708,8 +770,10 @@ class TestOOSModels:
     def test_window_result_defaults(self):
         w = OOSWindowResult(
             window_index=0,
-            train_start="2023-01-01", train_end="2024-12-31",
-            test_start="2025-01-01", test_end="2025-03-31",
+            train_start="2023-01-01",
+            train_end="2024-12-31",
+            test_start="2025-01-01",
+            test_end="2025-03-31",
         )
         assert w.cagr == 0.0
         assert w.regime_metrics == {}
@@ -795,17 +859,23 @@ class TestOOSIntegration:
         windows = [
             OOSWindowResult(
                 window_index=0,
-                train_start="2023-01-01", train_end="2024-12-31",
-                test_start="2025-01-01", test_end="2025-03-31",
-                sharpe_ratio=0.8, total_return=0.02,
+                train_start="2023-01-01",
+                train_end="2024-12-31",
+                test_start="2025-01-01",
+                test_end="2025-03-31",
+                sharpe_ratio=0.8,
+                total_return=0.02,
                 regime_metrics={
                     backtest_regime: {"max_drawdown": -0.15},
                 },
             ),
         ]
         result = evaluator.evaluate_all(
-            windows=windows, avg_sharpe=0.8, avg_calmar=0.5,
-            worst_mdd=-0.10, sharpe_variance=0.1,
+            windows=windows,
+            avg_sharpe=0.8,
+            avg_calmar=0.5,
+            worst_mdd=-0.10,
+            sharpe_variance=0.1,
         )
         assert result["overall"] in ("PASS", "REVIEW", "FAIL")
 

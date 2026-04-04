@@ -1,18 +1,25 @@
 """PriceData 계약 테스트 (Contract 1)."""
 
+from datetime import date
+
 import pytest
-from datetime import date, datetime
 from pydantic import ValidationError
 
-from contracts.price_data import PriceData
 from config.constants import Market
+from contracts.price_data import PriceData
 
 
 def _valid_price(**overrides):
     """유효한 PriceData kwargs."""
     defaults = dict(
-        ticker="005930", market=Market.KRX, trade_date=date(2024, 6, 1),
-        open=70000, high=72000, low=69000, close=71000, volume=1_000_000,
+        ticker="005930",
+        market=Market.KRX,
+        trade_date=date(2024, 6, 1),
+        open=70000,
+        high=72000,
+        low=69000,
+        close=71000,
+        volume=1_000_000,
     )
     defaults.update(overrides)
     return defaults

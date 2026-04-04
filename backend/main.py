@@ -7,27 +7,25 @@ Lifecycle:
   shutdown → 그레이스풀 셧다운, DB 연결 해제
 """
 
-import signal
 import asyncio
+import signal
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 
-from config.logging import logger, setup_logging
-from config.settings import get_settings
-from db.database import MongoDBManager, RedisManager, engine
-from core.graceful_shutdown import GracefulShutdownManager
-from core.trading_scheduler import TradingScheduler
-from core.data_collector.kis_client import KISClient
+from api.middleware.rate_limiter import limiter, rate_limit_exceeded_handler
+from api.middleware.request_logger import RequestLoggingMiddleware
 
 # Phase 5: API 라우터 & 미들웨어
-from api.routes import auth, portfolio, orders, profile, market, alerts, system, audit, oos
-from api.middleware.request_logger import RequestLoggingMiddleware
-from api.middleware.rate_limiter import limiter, rate_limit_exceeded_handler
-
+from api.routes import alerts, audit, auth, market, oos, orders, portfolio, profile, system
+from config.logging import logger, setup_logging
+from config.settings import get_settings
+from core.data_collector.kis_client import KISClient
+from core.graceful_shutdown import GracefulShutdownManager
+from core.trading_scheduler import TradingScheduler
+from db.database import MongoDBManager, RedisManager, engine
 
 # ══════════════════════════════════════
 # 그레이스풀 셧다운 매니저 (NFR-06)
@@ -152,11 +150,7 @@ app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 # ── 미들웨어 등록 ──
 # CORS 설정: 환경변수 CORS_ALLOWED_ORIGINS에서 허용 Origin 목록 로드
 _settings = get_settings()
-_cors_origins = [
-    origin.strip()
-    for origin in _settings.cors_allowed_origins.split(",")
-    if origin.strip()
-]
+_cors_origins = [origin.strip() for origin in _settings.cors_allowed_origins.split(",") if origin.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
@@ -183,6 +177,7 @@ async def health_check():
     # PostgreSQL 체크
     try:
         from sqlalchemy import text
+
         from db.database import async_session_factory
 
         async with async_session_factory() as session:
@@ -249,11 +244,10 @@ async def api_info():
 async def dashboard():
     """웹 대시보드 (Frontend SPA)"""
     import os
+
     from fastapi.responses import FileResponse
 
-    frontend_path = os.path.join(
-        os.path.dirname(os.path.dirname(__file__)), "frontend", "index.html"
-    )
+    frontend_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "index.html")
     if os.path.exists(frontend_path):
         return FileResponse(frontend_path, media_type="text/html")
     return {"message": "AQTS Dashboard - frontend/index.html not found"}

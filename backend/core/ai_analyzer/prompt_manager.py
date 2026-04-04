@@ -25,7 +25,6 @@ from typing import Optional
 from config.logging import logger
 from db.database import MongoDBManager, RedisManager
 
-
 # ══════════════════════════════════════
 # 프롬프트 유형 정의
 # ══════════════════════════════════════
@@ -43,13 +42,13 @@ PROMPT_TYPES = {
 class PromptVersion:
     """프롬프트 버전 데이터 컨테이너"""
 
-    prompt_type: str              # PROMPT_TYPES 키
-    version: int                  # 자동 증가 버전 번호
-    content: str                  # 프롬프트 내용 전문
-    content_hash: str = ""        # SHA-256 해시 (중복 방지)
-    is_active: bool = True        # 현재 활성 버전 여부
-    author: str = "system"        # 변경 주체 (system, user, auto-optimizer)
-    change_note: str = ""         # 변경 사유
+    prompt_type: str  # PROMPT_TYPES 키
+    version: int  # 자동 증가 버전 번호
+    content: str  # 프롬프트 내용 전문
+    content_hash: str = ""  # SHA-256 해시 (중복 방지)
+    is_active: bool = True  # 현재 활성 버전 여부
+    author: str = "system"  # 변경 주체 (system, user, auto-optimizer)
+    change_note: str = ""  # 변경 사유
     created_at: Optional[datetime] = None
 
     # 성능 메트릭 (A/B 테스트용)
@@ -58,9 +57,7 @@ class PromptVersion:
 
     def __post_init__(self):
         if not self.content_hash:
-            self.content_hash = hashlib.sha256(
-                self.content.encode("utf-8")
-            ).hexdigest()[:16]
+            self.content_hash = hashlib.sha256(self.content.encode("utf-8")).hexdigest()[:16]
         if not self.created_at:
             self.created_at = datetime.now(timezone.utc)
 
@@ -161,23 +158,15 @@ class PromptManager:
             ValueError: prompt_type이 유효하지 않을 때
         """
         if prompt_type not in PROMPT_TYPES:
-            raise ValueError(
-                f"Invalid prompt_type: {prompt_type}. "
-                f"Valid types: {list(PROMPT_TYPES.keys())}"
-            )
+            raise ValueError(f"Invalid prompt_type: {prompt_type}. " f"Valid types: {list(PROMPT_TYPES.keys())}")
 
         collection = MongoDBManager.get_collection(self.COLLECTION_NAME)
 
         # content 해시 중복 확인
         content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()[:16]
-        existing = await collection.find_one(
-            {"prompt_type": prompt_type, "content_hash": content_hash}
-        )
+        existing = await collection.find_one({"prompt_type": prompt_type, "content_hash": content_hash})
         if existing:
-            logger.info(
-                f"Prompt version duplicate skipped: {prompt_type} "
-                f"hash={content_hash}"
-            )
+            logger.info(f"Prompt version duplicate skipped: {prompt_type} " f"hash={content_hash}")
             return self._doc_to_version(existing)
 
         # 현재 최고 버전 번호 조회
@@ -210,17 +199,10 @@ class PromptManager:
         await self._set_cached(prompt_type, new_version)
 
         # 인덱스 확보 (최초 1회)
-        await collection.create_index(
-            [("prompt_type", 1), ("is_active", 1)], background=True
-        )
-        await collection.create_index(
-            [("prompt_type", 1), ("version", -1)], background=True
-        )
+        await collection.create_index([("prompt_type", 1), ("is_active", 1)], background=True)
+        await collection.create_index([("prompt_type", 1), ("version", -1)], background=True)
 
-        logger.info(
-            f"Prompt version created: {prompt_type} v{next_version} "
-            f"by {author} (hash={content_hash})"
-        )
+        logger.info(f"Prompt version created: {prompt_type} v{next_version} " f"by {author} (hash={content_hash})")
         return new_version
 
     async def rollback(self, prompt_type: str, target_version: int) -> PromptVersion:
@@ -239,13 +221,9 @@ class PromptManager:
         """
         collection = MongoDBManager.get_collection(self.COLLECTION_NAME)
 
-        target = await collection.find_one(
-            {"prompt_type": prompt_type, "version": target_version}
-        )
+        target = await collection.find_one({"prompt_type": prompt_type, "version": target_version})
         if not target:
-            raise ValueError(
-                f"Version {target_version} not found for {prompt_type}"
-            )
+            raise ValueError(f"Version {target_version} not found for {prompt_type}")
 
         # 현재 활성 버전 비활성화
         await collection.update_many(
@@ -283,10 +261,14 @@ class PromptManager:
             PromptVersion 리스트 (최신순)
         """
         collection = MongoDBManager.get_collection(self.COLLECTION_NAME)
-        cursor = collection.find(
-            {"prompt_type": prompt_type},
-            {"_id": 0},
-        ).sort("version", -1).limit(limit)
+        cursor = (
+            collection.find(
+                {"prompt_type": prompt_type},
+                {"_id": 0},
+            )
+            .sort("version", -1)
+            .limit(limit)
+        )
 
         docs = await cursor.to_list(length=limit)
         return [self._doc_to_version(doc) for doc in docs]
@@ -311,9 +293,7 @@ class PromptManager:
             {"prompt_type": prompt_type, "version": version},
             {"$set": {f"metrics.{k}": v for k, v in metrics.items()}},
         )
-        logger.debug(
-            f"Prompt metrics updated: {prompt_type} v{version} → {metrics}"
-        )
+        logger.debug(f"Prompt metrics updated: {prompt_type} v{version} → {metrics}")
 
     async def initialize_defaults(self) -> int:
         """
@@ -325,15 +305,15 @@ class PromptManager:
         Returns:
             신규 등록된 프롬프트 수
         """
+        from core.ai_analyzer.opinion import (
+            _MACRO_OPINION_TEMPLATE,
+            _OPINION_SYSTEM_PROMPT,
+            _SECTOR_OPINION_TEMPLATE,
+            _STOCK_OPINION_TEMPLATE,
+        )
         from core.ai_analyzer.sentiment import (
             _SENTIMENT_SYSTEM_PROMPT,
             _SENTIMENT_USER_TEMPLATE,
-        )
-        from core.ai_analyzer.opinion import (
-            _OPINION_SYSTEM_PROMPT,
-            _STOCK_OPINION_TEMPLATE,
-            _SECTOR_OPINION_TEMPLATE,
-            _MACRO_OPINION_TEMPLATE,
         )
 
         defaults = {
@@ -384,7 +364,8 @@ class PromptManager:
             cache_data = version.to_dict()
             cache_data["created_at"] = cache_data["created_at"].isoformat()
             await redis.setex(
-                key, self.CACHE_TTL,
+                key,
+                self.CACHE_TTL,
                 json.dumps(cache_data, ensure_ascii=False),
             )
         except Exception as e:

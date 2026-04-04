@@ -2,8 +2,8 @@
 Step collectors for capturing data at each stage of the 7-step decision chain
 """
 
-from typing import Any, Dict, List
 from datetime import datetime
+from typing import Any, Dict, List
 
 
 class InputSnapshotCollector:

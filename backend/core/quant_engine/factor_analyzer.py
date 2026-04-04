@@ -11,14 +11,13 @@ F-02-01 명세 구현:
 (ta-lib, vectorbt 등 빌드 이슈가 있는 패키지 미사용)
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
 import pandas as pd
-from scipy import stats
 
-from config.constants import Country, RiskProfile
+from config.constants import RiskProfile
 from config.logging import logger
 
 
@@ -43,20 +42,32 @@ class FactorScore:
 # ══════════════════════════════════════
 DEFAULT_FACTOR_WEIGHTS = {
     RiskProfile.CONSERVATIVE: {
-        "value": 0.15, "momentum": 0.10, "quality": 0.25,
-        "low_vol": 0.35, "size": 0.15,
+        "value": 0.15,
+        "momentum": 0.10,
+        "quality": 0.25,
+        "low_vol": 0.35,
+        "size": 0.15,
     },
     RiskProfile.BALANCED: {
-        "value": 0.25, "momentum": 0.20, "quality": 0.20,
-        "low_vol": 0.20, "size": 0.15,
+        "value": 0.25,
+        "momentum": 0.20,
+        "quality": 0.20,
+        "low_vol": 0.20,
+        "size": 0.15,
     },
     RiskProfile.AGGRESSIVE: {
-        "value": 0.15, "momentum": 0.35, "quality": 0.15,
-        "low_vol": 0.10, "size": 0.25,
+        "value": 0.15,
+        "momentum": 0.35,
+        "quality": 0.15,
+        "low_vol": 0.10,
+        "size": 0.25,
     },
     RiskProfile.DIVIDEND: {
-        "value": 0.30, "momentum": 0.05, "quality": 0.35,
-        "low_vol": 0.20, "size": 0.10,
+        "value": 0.30,
+        "momentum": 0.05,
+        "quality": 0.35,
+        "low_vol": 0.20,
+        "size": 0.10,
     },
 }
 
@@ -268,9 +279,7 @@ class FactorAnalyzer:
         # Step 2: 결합
         combined = pd.concat([kr_scores, us_scores], ignore_index=True)
         if combined.empty:
-            return pd.DataFrame(
-                columns=["ticker", "country"] + factor_cols + ["composite"]
-            )
+            return pd.DataFrame(columns=["ticker", "country"] + factor_cols + ["composite"])
 
         # Step 3: Cross-Market Z-Score 재정규화
         for col in factor_cols:
@@ -325,15 +334,17 @@ class FactorAnalyzer:
         low_vol = self.calc_low_volatility_factor(df)
         size = self.calc_size_factor(df)
 
-        result = pd.DataFrame({
-            "ticker": tickers,
-            "country": country,
-            "value": value.values if len(value) == len(tickers) else np.zeros(len(tickers)),
-            "momentum": momentum.values if len(momentum) == len(tickers) else np.zeros(len(tickers)),
-            "quality": quality.values if len(quality) == len(tickers) else np.zeros(len(tickers)),
-            "low_vol": low_vol.values if len(low_vol) == len(tickers) else np.zeros(len(tickers)),
-            "size": size.values if len(size) == len(tickers) else np.zeros(len(tickers)),
-        })
+        result = pd.DataFrame(
+            {
+                "ticker": tickers,
+                "country": country,
+                "value": value.values if len(value) == len(tickers) else np.zeros(len(tickers)),
+                "momentum": momentum.values if len(momentum) == len(tickers) else np.zeros(len(tickers)),
+                "quality": quality.values if len(quality) == len(tickers) else np.zeros(len(tickers)),
+                "low_vol": low_vol.values if len(low_vol) == len(tickers) else np.zeros(len(tickers)),
+                "size": size.values if len(size) == len(tickers) else np.zeros(len(tickers)),
+            }
+        )
 
         return result.fillna(0.0)
 
@@ -356,10 +367,17 @@ class FactorAnalyzer:
         """
         if df.empty:
             logger.warning("Empty DataFrame received for factor calculation")
-            return pd.DataFrame(columns=[
-                "ticker", "value", "momentum", "quality",
-                "low_vol", "size", "composite",
-            ])
+            return pd.DataFrame(
+                columns=[
+                    "ticker",
+                    "value",
+                    "momentum",
+                    "quality",
+                    "low_vol",
+                    "size",
+                    "composite",
+                ]
+            )
 
         tickers = df["ticker"].values
 
@@ -371,14 +389,16 @@ class FactorAnalyzer:
         size = self.calc_size_factor(df)
 
         # 결과 조합
-        result = pd.DataFrame({
-            "ticker": tickers,
-            "value": value.values if len(value) == len(tickers) else np.zeros(len(tickers)),
-            "momentum": momentum.values if len(momentum) == len(tickers) else np.zeros(len(tickers)),
-            "quality": quality.values if len(quality) == len(tickers) else np.zeros(len(tickers)),
-            "low_vol": low_vol.values if len(low_vol) == len(tickers) else np.zeros(len(tickers)),
-            "size": size.values if len(size) == len(tickers) else np.zeros(len(tickers)),
-        })
+        result = pd.DataFrame(
+            {
+                "ticker": tickers,
+                "value": value.values if len(value) == len(tickers) else np.zeros(len(tickers)),
+                "momentum": momentum.values if len(momentum) == len(tickers) else np.zeros(len(tickers)),
+                "quality": quality.values if len(quality) == len(tickers) else np.zeros(len(tickers)),
+                "low_vol": low_vol.values if len(low_vol) == len(tickers) else np.zeros(len(tickers)),
+                "size": size.values if len(size) == len(tickers) else np.zeros(len(tickers)),
+            }
+        )
 
         # NaN을 0으로 채움
         result = result.fillna(0.0)

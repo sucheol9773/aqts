@@ -14,15 +14,13 @@ NFR-07 명세:
 3. OrderExecutor: 주문 검증, 시장가/지정가/TWAP/VWAP 실행, 배치 처리, 미체결 처리
 """
 
-import asyncio
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-import pytest_asyncio
 
-from config.constants import Market, OrderSide, OrderType, OrderStatus
-from core.order_executor.executor import OrderRequest, OrderResult, OrderExecutor
+from config.constants import Market, OrderSide, OrderStatus, OrderType
+from core.order_executor.executor import OrderExecutor, OrderRequest, OrderResult
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -298,14 +296,14 @@ class TestOrderExecutor:
         return logger
 
     @pytest.fixture
-    async def executor_with_mocks(
-        self, mock_settings, mock_kis_client, mock_async_session_factory, mock_audit_logger
-    ):
+    async def executor_with_mocks(self, mock_settings, mock_kis_client, mock_async_session_factory, mock_audit_logger):
         """OrderExecutor 인스턴스 (모든 외부 의존성 Mock)"""
-        with patch("core.order_executor.executor.get_settings") as mock_get_settings, \
-             patch("core.order_executor.executor.KISClient") as mock_kis_class, \
-             patch("core.order_executor.executor.async_session_factory") as mock_session_factory, \
-             patch("core.order_executor.executor.AuditLogger") as mock_audit_class:
+        with (
+            patch("core.order_executor.executor.get_settings") as mock_get_settings,
+            patch("core.order_executor.executor.KISClient") as mock_kis_class,
+            patch("core.order_executor.executor.async_session_factory") as mock_session_factory,
+            patch("core.order_executor.executor.AuditLogger") as mock_audit_class,
+        ):
 
             # Setup mocks
             mock_get_settings.return_value = mock_settings
@@ -890,10 +888,12 @@ class TestOrderExecutorIntegration:
     @pytest.fixture
     async def executor_with_mocks(self, mock_kis_client):
         """OrderExecutor 인스턴스 (모든 외부 의존성 Mock)"""
-        with patch("core.order_executor.executor.get_settings") as mock_get_settings, \
-             patch("core.order_executor.executor.KISClient") as mock_kis_class, \
-             patch("core.order_executor.executor.async_session_factory") as mock_session_factory, \
-             patch("core.order_executor.executor.AuditLogger") as mock_audit_class:
+        with (
+            patch("core.order_executor.executor.get_settings") as mock_get_settings,
+            patch("core.order_executor.executor.KISClient") as mock_kis_class,
+            patch("core.order_executor.executor.async_session_factory") as mock_session_factory,
+            patch("core.order_executor.executor.AuditLogger") as mock_audit_class,
+        ):
 
             # Setup mocks
             mock_get_settings.return_value = MagicMock()

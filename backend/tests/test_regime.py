@@ -10,7 +10,6 @@
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from core.strategy_ensemble.regime import (
     ConfidenceCalibrator,
@@ -51,13 +50,15 @@ def _make_ohlcv(
     low = prices * (1 - np.abs(np.random.normal(0, 0.005, n)))
     volume = np.random.randint(1_000_000, 20_000_000, n)
 
-    return pd.DataFrame({
-        "open": prices * (1 + np.random.normal(0, 0.002, n)),
-        "high": high,
-        "low": low,
-        "close": prices,
-        "volume": volume,
-    })
+    return pd.DataFrame(
+        {
+            "open": prices * (1 + np.random.normal(0, 0.002, n)),
+            "high": high,
+            "low": low,
+            "close": prices,
+            "volume": volume,
+        }
+    )
 
 
 # ══════════════════════════════════════
@@ -108,13 +109,15 @@ class TestMarketRegimeDetector:
             ret = np.random.normal(0, vol)
             prices.append(prices[-1] * (1 + ret))
         prices = np.array(prices[1:])
-        ohlcv = pd.DataFrame({
-            "open": prices,
-            "high": prices * 1.005,
-            "low": prices * 0.995,
-            "close": prices,
-            "volume": np.random.randint(1_000_000, 20_000_000, n),
-        })
+        ohlcv = pd.DataFrame(
+            {
+                "open": prices,
+                "high": prices * 1.005,
+                "low": prices * 0.995,
+                "close": prices,
+                "volume": np.random.randint(1_000_000, 20_000_000, n),
+            }
+        )
         result = self.detector.detect(ohlcv)
         # 후반부 변동성 급등 → 변동성 백분위 높아야 함
         assert result.volatility_percentile > 0.5
@@ -145,9 +148,7 @@ class TestMarketRegimeDetector:
     def test_adx_insufficient_data(self):
         """ADX 데이터 부족 시 0 반환"""
         short = _make_ohlcv(n=10)
-        adx = self.detector._compute_adx(
-            short["high"], short["low"], short["close"]
-        )
+        adx = self.detector._compute_adx(short["high"], short["low"], short["close"])
         assert adx == 0.0
 
 
@@ -304,9 +305,7 @@ class TestConfidenceCalibrator:
     def test_calibrated_always_in_range(self):
         """보정 결과는 항상 0~1 범위"""
         for raw in [0.0, 0.3, 0.5, 0.8, 1.0]:
-            result = self.calibrator.calibrate(
-                raw, {"A": 0.5, "B": -0.3, "C": 0.1}
-            )
+            result = self.calibrator.calibrate(raw, {"A": 0.5, "B": -0.3, "C": 0.1})
             assert 0.0 <= result <= 1.0
 
     def test_disagreement_computation(self):

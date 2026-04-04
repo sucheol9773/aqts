@@ -5,8 +5,7 @@ Handles stock splits, dividends, and other corporate actions that affect price s
 Stage 3-B: Backtest integrity advanced realism modules (market microstructure realism).
 """
 
-from typing import List, Dict, Tuple, Optional
-from datetime import datetime
+from typing import Dict, List
 
 
 class CorporateActionProcessor:
@@ -103,33 +102,25 @@ class CorporateActionProcessor:
         adjusted = prices.copy()
 
         # Sort actions by index/date in descending order
-        sorted_actions = sorted(
-            actions,
-            key=lambda x: x.get('index', x.get('date', 0)),
-            reverse=True
-        )
+        sorted_actions = sorted(actions, key=lambda x: x.get("index", x.get("date", 0)), reverse=True)
 
         for action in sorted_actions:
-            action_index = action.get('index', action.get('date'))
+            action_index = action.get("index", action.get("date"))
             if not isinstance(action_index, int) or action_index < 0 or action_index >= len(adjusted):
                 continue
 
-            action_type = action.get('type', '').lower()
+            action_type = action.get("type", "").lower()
 
-            if action_type == 'split':
-                split_ratio = action.get('ratio', 1.0)
+            if action_type == "split":
+                split_ratio = action.get("ratio", 1.0)
                 # Adjust all prices before the split
                 for i in range(action_index + 1):
-                    adjusted[i] = CorporateActionProcessor.adjust_for_split(
-                        adjusted[i], split_ratio
-                    )
-            elif action_type == 'dividend':
-                dividend_amount = action.get('amount', 0.0)
+                    adjusted[i] = CorporateActionProcessor.adjust_for_split(adjusted[i], split_ratio)
+            elif action_type == "dividend":
+                dividend_amount = action.get("amount", 0.0)
                 # Adjust all prices before the dividend (ex-dividend date)
                 for i in range(action_index + 1):
-                    adjusted[i] = CorporateActionProcessor.adjust_for_dividend(
-                        adjusted[i], dividend_amount
-                    )
+                    adjusted[i] = CorporateActionProcessor.adjust_for_dividend(adjusted[i], dividend_amount)
 
         return adjusted
 

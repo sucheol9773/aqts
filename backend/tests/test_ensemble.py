@@ -4,7 +4,6 @@ Phase 3 테스트: 전략 앙상블 엔진 (StrategyEnsembleEngine)
 모든 외부 의존성 (DB, Redis)은 Mock으로 대체합니다.
 """
 
-import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -21,9 +20,7 @@ class TestStrategySignalInput:
     """StrategySignalInput 데이터 구조 테스트"""
 
     def test_creation(self):
-        sig = StrategySignalInput(
-            strategy="FACTOR", value=0.6, confidence=0.8, reason="test"
-        )
+        sig = StrategySignalInput(strategy="FACTOR", value=0.6, confidence=0.8, reason="test")
         assert sig.strategy == "FACTOR"
         assert sig.value == 0.6
 
@@ -66,23 +63,33 @@ class TestStrategyEnsembleEngine:
         return [
             StrategySignalInput(
                 strategy=StrategyType.FACTOR.value,
-                value=0.7, confidence=0.85, reason="Factor composite=78",
+                value=0.7,
+                confidence=0.85,
+                reason="Factor composite=78",
             ),
             StrategySignalInput(
                 strategy=StrategyType.MEAN_REVERSION.value,
-                value=-0.2, confidence=0.6, reason="RSI=55",
+                value=-0.2,
+                confidence=0.6,
+                reason="RSI=55",
             ),
             StrategySignalInput(
                 strategy=StrategyType.TREND_FOLLOWING.value,
-                value=0.5, confidence=0.75, reason="MA bullish",
+                value=0.5,
+                confidence=0.75,
+                reason="MA bullish",
             ),
             StrategySignalInput(
                 strategy=StrategyType.RISK_PARITY.value,
-                value=0.3, confidence=0.7, reason="Low vol",
+                value=0.3,
+                confidence=0.7,
+                reason="Low vol",
             ),
             StrategySignalInput(
                 strategy="SENTIMENT",
-                value=0.45, confidence=0.8, reason="Positive news",
+                value=0.45,
+                confidence=0.8,
+                reason="Positive news",
             ),
         ]
 
@@ -103,7 +110,7 @@ class TestStrategyEnsembleEngine:
         engine = StrategyEnsembleEngine(RiskProfile.BALANCED)
         engine._weights = balanced_weights
 
-        with patch.object(engine, '_store_signal', new_callable=AsyncMock):
+        with patch.object(engine, "_store_signal", new_callable=AsyncMock):
             result = await engine.generate_ensemble_signal("005930", sample_signals)
 
         assert isinstance(result, EnsembleSignal)
@@ -131,13 +138,9 @@ class TestStrategyEnsembleEngine:
         engine = StrategyEnsembleEngine(RiskProfile.BALANCED)
         engine._weights = balanced_weights
 
-        signals = [
-            StrategySignalInput(
-                strategy="SENTIMENT", value=0.8, confidence=0.9, reason="Strong positive"
-            )
-        ]
+        signals = [StrategySignalInput(strategy="SENTIMENT", value=0.8, confidence=0.9, reason="Strong positive")]
 
-        with patch.object(engine, '_store_signal', new_callable=AsyncMock):
+        with patch.object(engine, "_store_signal", new_callable=AsyncMock):
             result = await engine.generate_ensemble_signal("005930", signals)
 
         # SENTIMENT만 있으므로 해당 시그널 * confidence가 결과
@@ -156,7 +159,7 @@ class TestStrategyEnsembleEngine:
             StrategySignalInput(strategy="SENTIMENT", value=-0.8, confidence=0.9, reason="Bad news"),
         ]
 
-        with patch.object(engine, '_store_signal', new_callable=AsyncMock):
+        with patch.object(engine, "_store_signal", new_callable=AsyncMock):
             result = await engine.generate_ensemble_signal("005930", signals)
 
         # 상충 시그널이므로 절대값이 작아야 함
@@ -176,9 +179,11 @@ class TestStrategyEnsembleEngine:
             "SENTIMENT": 1.0,
         }
 
-        with patch.object(engine, '_save_weights_to_db', new_callable=AsyncMock), \
-             patch.object(engine, '_cache_weights', new_callable=AsyncMock), \
-             patch.object(engine, '_log_weight_update', new_callable=AsyncMock):
+        with (
+            patch.object(engine, "_save_weights_to_db", new_callable=AsyncMock),
+            patch.object(engine, "_cache_weights", new_callable=AsyncMock),
+            patch.object(engine, "_log_weight_update", new_callable=AsyncMock),
+        ):
 
             new_weights = await engine.recalibrate_weights(performances, method="sharpe")
 
@@ -197,9 +202,11 @@ class TestStrategyEnsembleEngine:
         engine = StrategyEnsembleEngine(RiskProfile.BALANCED)
         engine._weights = balanced_weights
 
-        with patch.object(engine, '_save_weights_to_db', new_callable=AsyncMock), \
-             patch.object(engine, '_cache_weights', new_callable=AsyncMock), \
-             patch.object(engine, '_log_weight_update', new_callable=AsyncMock):
+        with (
+            patch.object(engine, "_save_weights_to_db", new_callable=AsyncMock),
+            patch.object(engine, "_cache_weights", new_callable=AsyncMock),
+            patch.object(engine, "_log_weight_update", new_callable=AsyncMock),
+        ):
 
             new_weights = await engine.recalibrate_weights({}, method="equal")
 
@@ -213,8 +220,10 @@ class TestStrategyEnsembleEngine:
         """기본 가중치 로드 테스트"""
         engine = StrategyEnsembleEngine(RiskProfile.BALANCED)
 
-        with patch.object(engine, '_get_cached_weights', return_value=None), \
-             patch.object(engine, '_load_weights_from_db', return_value=None):
+        with (
+            patch.object(engine, "_get_cached_weights", return_value=None),
+            patch.object(engine, "_load_weights_from_db", return_value=None),
+        ):
 
             weights = await engine.get_weights()
 
@@ -233,7 +242,7 @@ class TestStrategyEnsembleEngine:
             "000660": sample_signals[:3],
         }
 
-        with patch.object(engine, '_store_signal', new_callable=AsyncMock):
+        with patch.object(engine, "_store_signal", new_callable=AsyncMock):
             results = await engine.generate_batch_signals(ticker_signals)
 
         assert len(results) == 2

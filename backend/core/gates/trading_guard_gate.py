@@ -1,6 +1,7 @@
 """TradingGuardGate: 7-layer TradingGuard 어댑터 (포트폴리오 → 주문 전이)."""
 
 from typing import Any
+
 from core.gates.base import BaseGate, GateResult, GateSeverity
 
 
@@ -35,9 +36,9 @@ class TradingGuardGate(BaseGate):
                 )
         else:
             # 실제 TradingGuard 호출
-            guard_result = await self._guard.validate(data) if hasattr(
-                self._guard, "validate"
-            ) else kwargs.get("guard_result")
+            guard_result = (
+                await self._guard.validate(data) if hasattr(self._guard, "validate") else kwargs.get("guard_result")
+            )
 
         if guard_result is None:
             return self._block(

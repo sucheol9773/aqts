@@ -14,14 +14,14 @@ UniverseItem과 UniverseManager의 포괄적 단위 테스트입니다.
 2. TestUniverseManager: 필터 로직 및 비동기 파이프라인
 """
 
-import pytest
 from datetime import datetime, timezone
-from unittest.mock import patch, AsyncMock, MagicMock
-from typing import Optional
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from config.constants import Market, AssetType, RiskProfile, InvestmentStyle
-from core.portfolio_manager.universe import UniverseItem, UniverseManager
+import pytest
+
+from config.constants import AssetType, InvestmentStyle, Market, RiskProfile
 from core.portfolio_manager.profile import InvestorProfile
+from core.portfolio_manager.universe import UniverseItem, UniverseManager
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -54,7 +54,6 @@ def sample_universe_items():
             avg_daily_volume=2_000_000,
             is_active=True,
         ),
-
         # IT 섹터 (3개)
         UniverseItem(
             ticker="000660",
@@ -83,7 +82,6 @@ def sample_universe_items():
             avg_daily_volume=1_500_000,
             is_active=True,
         ),
-
         # 금융 섹터 (2개)
         UniverseItem(
             ticker="055550",
@@ -103,7 +101,6 @@ def sample_universe_items():
             avg_daily_volume=800_000,
             is_active=True,
         ),
-
         # 헬스케어 섹터 (2개)
         UniverseItem(
             ticker="051910",
@@ -123,7 +120,6 @@ def sample_universe_items():
             avg_daily_volume=600_000,
             is_active=False,  # 비활성
         ),
-
         # NYSE 미국 주식 (1개)
         UniverseItem(
             ticker="AAPL",
@@ -313,7 +309,7 @@ class TestUniverseItem:
 class TestUniverseManager:
     """UniverseManager 필터 로직 테스트"""
 
-    @patch('core.portfolio_manager.universe.get_settings')
+    @patch("core.portfolio_manager.universe.get_settings")
     def test_init_with_settings(self, mock_get_settings, sample_investor_profile):
         """
         UniverseManager 초기화 시 get_settings() 호출 확인
@@ -330,7 +326,7 @@ class TestUniverseManager:
     # ──────────────────────────────────────────────────────────────────────────
     # 섹터 필터 테스트
     # ──────────────────────────────────────────────────────────────────────────
-    @patch('core.portfolio_manager.universe.get_settings')
+    @patch("core.portfolio_manager.universe.get_settings")
     def test_apply_sector_filter_removes_excluded_sectors(
         self, mock_get_settings, sample_universe_items, sample_investor_profile
     ):
@@ -340,9 +336,7 @@ class TestUniverseManager:
         mock_get_settings.return_value = MagicMock()
         manager = UniverseManager(sample_investor_profile)
 
-        filtered = manager._apply_sector_filter(
-            sample_universe_items, ["Energy"]
-        )
+        filtered = manager._apply_sector_filter(sample_universe_items, ["Energy"])
 
         # Energy 섹터 2개 제외되어야 함
         assert len(filtered) == 8
@@ -350,7 +344,7 @@ class TestUniverseManager:
         for item in filtered:
             assert item.sector != "Energy"
 
-    @patch('core.portfolio_manager.universe.get_settings')
+    @patch("core.portfolio_manager.universe.get_settings")
     def test_apply_sector_filter_empty_sectors_list(
         self, mock_get_settings, sample_universe_items, sample_investor_profile
     ):
@@ -364,7 +358,7 @@ class TestUniverseManager:
 
         assert len(filtered) == len(sample_universe_items)
 
-    @patch('core.portfolio_manager.universe.get_settings')
+    @patch("core.portfolio_manager.universe.get_settings")
     def test_apply_sector_filter_multiple_sectors(
         self, mock_get_settings, sample_universe_items, sample_investor_profile
     ):
@@ -374,16 +368,14 @@ class TestUniverseManager:
         mock_get_settings.return_value = MagicMock()
         manager = UniverseManager(sample_investor_profile)
 
-        filtered = manager._apply_sector_filter(
-            sample_universe_items, ["Energy", "Finance"]
-        )
+        filtered = manager._apply_sector_filter(sample_universe_items, ["Energy", "Finance"])
 
         assert len(filtered) == 6
         excluded_sectors = {"Energy", "Finance"}
         for item in filtered:
             assert item.sector not in excluded_sectors
 
-    @patch('core.portfolio_manager.universe.get_settings')
+    @patch("core.portfolio_manager.universe.get_settings")
     def test_apply_sector_filter_nonexistent_sector(
         self, mock_get_settings, sample_universe_items, sample_investor_profile
     ):
@@ -393,16 +385,14 @@ class TestUniverseManager:
         mock_get_settings.return_value = MagicMock()
         manager = UniverseManager(sample_investor_profile)
 
-        filtered = manager._apply_sector_filter(
-            sample_universe_items, ["NonExistent"]
-        )
+        filtered = manager._apply_sector_filter(sample_universe_items, ["NonExistent"])
 
         assert len(filtered) == len(sample_universe_items)
 
     # ──────────────────────────────────────────────────────────────────────────
     # 지정 종목 강제 포함 테스트
     # ──────────────────────────────────────────────────────────────────────────
-    @patch('core.portfolio_manager.universe.get_settings')
+    @patch("core.portfolio_manager.universe.get_settings")
     def test_apply_designated_tickers_existing_ticker(
         self, mock_get_settings, sample_universe_items, sample_investor_profile
     ):
@@ -420,7 +410,7 @@ class TestUniverseManager:
         count_005930 = sum(1 for item in result if item.ticker == "005930")
         assert count_005930 == 1
 
-    @patch('core.portfolio_manager.universe.get_settings')
+    @patch("core.portfolio_manager.universe.get_settings")
     def test_apply_designated_tickers_missing_ticker(
         self, mock_get_settings, sample_universe_items, sample_investor_profile
     ):
@@ -430,9 +420,7 @@ class TestUniverseManager:
         mock_get_settings.return_value = MagicMock()
         manager = UniverseManager(sample_investor_profile)
 
-        result = manager._apply_designated_tickers(
-            sample_universe_items, ["999999"]
-        )
+        result = manager._apply_designated_tickers(sample_universe_items, ["999999"])
 
         # 1개 추가됨
         assert len(result) == len(sample_universe_items) + 1
@@ -446,7 +434,7 @@ class TestUniverseManager:
         assert dummy.asset_type == AssetType.STOCK
         assert dummy.is_active is True
 
-    @patch('core.portfolio_manager.universe.get_settings')
+    @patch("core.portfolio_manager.universe.get_settings")
     def test_apply_designated_tickers_multiple_tickers(
         self, mock_get_settings, sample_universe_items, sample_investor_profile
     ):
@@ -456,9 +444,7 @@ class TestUniverseManager:
         mock_get_settings.return_value = MagicMock()
         manager = UniverseManager(sample_investor_profile)
 
-        result = manager._apply_designated_tickers(
-            sample_universe_items, ["005930", "111111", "222222"]
-        )
+        result = manager._apply_designated_tickers(sample_universe_items, ["005930", "111111", "222222"])
 
         # 기존 10개 + 신규 2개 = 12개
         assert len(result) == 12
@@ -467,7 +453,7 @@ class TestUniverseManager:
         assert "111111" in tickers
         assert "222222" in tickers
 
-    @patch('core.portfolio_manager.universe.get_settings')
+    @patch("core.portfolio_manager.universe.get_settings")
     def test_apply_designated_tickers_empty_list(
         self, mock_get_settings, sample_universe_items, sample_investor_profile
     ):
@@ -482,10 +468,8 @@ class TestUniverseManager:
         assert len(result) == len(sample_universe_items)
         assert result == sample_universe_items
 
-    @patch('core.portfolio_manager.universe.get_settings')
-    def test_apply_designated_tickers_no_duplicates_after_adding(
-        self, mock_get_settings, sample_investor_profile
-    ):
+    @patch("core.portfolio_manager.universe.get_settings")
+    def test_apply_designated_tickers_no_duplicates_after_adding(self, mock_get_settings, sample_investor_profile):
         """
         지정 종목: 이미 존재하는 종목을 다시 추가해도 중복 없음
         """
@@ -516,10 +500,8 @@ class TestUniverseManager:
     # ──────────────────────────────────────────────────────────────────────────
     # 자동 필터 테스트
     # ──────────────────────────────────────────────────────────────────────────
-    @patch('core.portfolio_manager.universe.get_settings')
-    def test_apply_auto_filter_removes_bottom_20_percent_volume(
-        self, mock_get_settings, sample_investor_profile
-    ):
+    @patch("core.portfolio_manager.universe.get_settings")
+    def test_apply_auto_filter_removes_bottom_20_percent_volume(self, mock_get_settings, sample_investor_profile):
         """
         자동 필터: 거래량 하위 20% 제외
 
@@ -622,10 +604,8 @@ class TestUniverseManager:
         assert "T9" not in tickers  # 600K - 하위 20%
         assert "T7" not in tickers  # 800K - 하위 20%
 
-    @patch('core.portfolio_manager.universe.get_settings')
-    def test_apply_auto_filter_removes_inactive_items(
-        self, mock_get_settings, sample_investor_profile
-    ):
+    @patch("core.portfolio_manager.universe.get_settings")
+    def test_apply_auto_filter_removes_inactive_items(self, mock_get_settings, sample_investor_profile):
         """
         자동 필터: 비활성 종목 제외
         """
@@ -674,10 +654,8 @@ class TestUniverseManager:
         for item in filtered:
             assert item.is_active is True
 
-    @patch('core.portfolio_manager.universe.get_settings')
-    def test_apply_auto_filter_with_none_volumes(
-        self, mock_get_settings, sample_investor_profile
-    ):
+    @patch("core.portfolio_manager.universe.get_settings")
+    def test_apply_auto_filter_with_none_volumes(self, mock_get_settings, sample_investor_profile):
         """
         자동 필터: None 거래량 항목 처리
 
@@ -718,10 +696,8 @@ class TestUniverseManager:
         # 모두 유지 (None은 필터링 제외)
         assert len(filtered) == 3
 
-    @patch('core.portfolio_manager.universe.get_settings')
-    def test_apply_auto_filter_empty_list(
-        self, mock_get_settings, sample_investor_profile
-    ):
+    @patch("core.portfolio_manager.universe.get_settings")
+    def test_apply_auto_filter_empty_list(self, mock_get_settings, sample_investor_profile):
         """
         자동 필터: 빈 리스트 입력
         """
@@ -732,10 +708,8 @@ class TestUniverseManager:
 
         assert len(filtered) == 0
 
-    @patch('core.portfolio_manager.universe.get_settings')
-    def test_apply_auto_filter_all_inactive(
-        self, mock_get_settings, sample_investor_profile
-    ):
+    @patch("core.portfolio_manager.universe.get_settings")
+    def test_apply_auto_filter_all_inactive(self, mock_get_settings, sample_investor_profile):
         """
         자동 필터: 모든 항목이 비활성 → 빈 결과
         """
@@ -767,8 +741,8 @@ class TestUniverseManager:
     # 비동기 파이프라인 테스트
     # ──────────────────────────────────────────────────────────────────────────
     @pytest.mark.asyncio
-    @patch('core.portfolio_manager.universe.async_session_factory')
-    @patch('core.portfolio_manager.universe.get_settings')
+    @patch("core.portfolio_manager.universe.async_session_factory")
+    @patch("core.portfolio_manager.universe.get_settings")
     async def test_build_universe_complete_pipeline(
         self, mock_get_settings, mock_async_session, sample_universe_items, sample_investor_profile
     ):
@@ -785,9 +759,7 @@ class TestUniverseManager:
         manager = UniverseManager(sample_investor_profile)
 
         # _load_all_active_stocks 모킹
-        manager._load_all_active_stocks = AsyncMock(
-            return_value=sample_universe_items
-        )
+        manager._load_all_active_stocks = AsyncMock(return_value=sample_universe_items)
         # _store_universe 모킹
         manager._store_universe = AsyncMock()
 
@@ -807,8 +779,8 @@ class TestUniverseManager:
         manager._store_universe.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch('core.portfolio_manager.universe.async_session_factory')
-    @patch('core.portfolio_manager.universe.get_settings')
+    @patch("core.portfolio_manager.universe.async_session_factory")
+    @patch("core.portfolio_manager.universe.get_settings")
     async def test_refresh_universe_calls_same_pipeline(
         self,
         mock_get_settings,
@@ -824,9 +796,7 @@ class TestUniverseManager:
         mock_async_session.return_value.__aenter__.return_value = mock_session
 
         manager = UniverseManager(sample_investor_profile)
-        manager._load_all_active_stocks = AsyncMock(
-            return_value=sample_universe_items
-        )
+        manager._load_all_active_stocks = AsyncMock(return_value=sample_universe_items)
         manager._store_universe = AsyncMock()
 
         result = await manager.refresh_universe()
@@ -839,11 +809,9 @@ class TestUniverseManager:
         assert "005930" in tickers
 
     @pytest.mark.asyncio
-    @patch('core.portfolio_manager.universe.async_session_factory')
-    @patch('core.portfolio_manager.universe.get_settings')
-    async def test_build_universe_empty_db(
-        self, mock_get_settings, mock_async_session, sample_investor_profile
-    ):
+    @patch("core.portfolio_manager.universe.async_session_factory")
+    @patch("core.portfolio_manager.universe.get_settings")
+    async def test_build_universe_empty_db(self, mock_get_settings, mock_async_session, sample_investor_profile):
         """
         build_universe: DB가 빈 경우 → 지정 종목만 추가
         """
@@ -862,8 +830,8 @@ class TestUniverseManager:
         assert result[0].ticker == "005930"
 
     @pytest.mark.asyncio
-    @patch('core.portfolio_manager.universe.async_session_factory')
-    @patch('core.portfolio_manager.universe.get_settings')
+    @patch("core.portfolio_manager.universe.async_session_factory")
+    @patch("core.portfolio_manager.universe.get_settings")
     async def test_build_universe_no_filters_no_designated_tickers(
         self,
         mock_get_settings,
@@ -879,9 +847,7 @@ class TestUniverseManager:
         mock_async_session.return_value.__aenter__.return_value = mock_session
 
         manager = UniverseManager(sample_investor_profile_no_filters)
-        manager._load_all_active_stocks = AsyncMock(
-            return_value=sample_universe_items
-        )
+        manager._load_all_active_stocks = AsyncMock(return_value=sample_universe_items)
         manager._store_universe = AsyncMock()
 
         result = await manager.build_universe()
@@ -892,11 +858,9 @@ class TestUniverseManager:
             assert item.is_active is True
 
     @pytest.mark.asyncio
-    @patch('core.portfolio_manager.universe.async_session_factory')
-    @patch('core.portfolio_manager.universe.get_settings')
-    async def test_build_universe_with_exception(
-        self, mock_get_settings, mock_async_session, sample_investor_profile
-    ):
+    @patch("core.portfolio_manager.universe.async_session_factory")
+    @patch("core.portfolio_manager.universe.get_settings")
+    async def test_build_universe_with_exception(self, mock_get_settings, mock_async_session, sample_investor_profile):
         """
         build_universe: _load_all_active_stocks 실패 시 예외 전파
         """
@@ -905,19 +869,15 @@ class TestUniverseManager:
         mock_async_session.return_value.__aenter__.return_value = mock_session
 
         manager = UniverseManager(sample_investor_profile)
-        manager._load_all_active_stocks = AsyncMock(
-            side_effect=Exception("DB 연결 실패")
-        )
+        manager._load_all_active_stocks = AsyncMock(side_effect=Exception("DB 연결 실패"))
 
         with pytest.raises(Exception, match="DB 연결 실패"):
             await manager.build_universe()
 
     @pytest.mark.asyncio
-    @patch('core.portfolio_manager.universe.async_session_factory')
-    @patch('core.portfolio_manager.universe.get_settings')
-    async def test_load_all_active_stocks_returns_empty(
-        self, mock_get_settings, mock_async_session
-    ):
+    @patch("core.portfolio_manager.universe.async_session_factory")
+    @patch("core.portfolio_manager.universe.get_settings")
+    async def test_load_all_active_stocks_returns_empty(self, mock_get_settings, mock_async_session):
         """
         _load_all_active_stocks: DB 조회 실패 시 빈 리스트 반환
         """
@@ -926,25 +886,25 @@ class TestUniverseManager:
         mock_session.execute.side_effect = Exception("DB 오류")
         mock_async_session.return_value.__aenter__.return_value = mock_session
 
-        manager = UniverseManager(InvestorProfile(
-            user_id="test",
-            risk_profile=RiskProfile.BALANCED,
-            seed_capital=50_000_000,
-            investment_purpose="WEALTH_GROWTH",
-            investment_style=InvestmentStyle.DISCRETIONARY,
-            loss_tolerance=-0.10,
-        ))
+        manager = UniverseManager(
+            InvestorProfile(
+                user_id="test",
+                risk_profile=RiskProfile.BALANCED,
+                seed_capital=50_000_000,
+                investment_purpose="WEALTH_GROWTH",
+                investment_style=InvestmentStyle.DISCRETIONARY,
+                loss_tolerance=-0.10,
+            )
+        )
 
         result = await manager._load_all_active_stocks()
 
         assert result == []
 
     @pytest.mark.asyncio
-    @patch('core.portfolio_manager.universe.async_session_factory')
-    @patch('core.portfolio_manager.universe.get_settings')
-    async def test_store_universe_inserts_items(
-        self, mock_get_settings, mock_async_session, sample_universe_items
-    ):
+    @patch("core.portfolio_manager.universe.async_session_factory")
+    @patch("core.portfolio_manager.universe.get_settings")
+    async def test_store_universe_inserts_items(self, mock_get_settings, mock_async_session, sample_universe_items):
         """
         _store_universe: 모든 항목이 DB에 삽입됨
         """
@@ -952,14 +912,16 @@ class TestUniverseManager:
         mock_session = AsyncMock()
         mock_async_session.return_value.__aenter__.return_value = mock_session
 
-        manager = UniverseManager(InvestorProfile(
-            user_id="test",
-            risk_profile=RiskProfile.BALANCED,
-            seed_capital=50_000_000,
-            investment_purpose="WEALTH_GROWTH",
-            investment_style=InvestmentStyle.DISCRETIONARY,
-            loss_tolerance=-0.10,
-        ))
+        manager = UniverseManager(
+            InvestorProfile(
+                user_id="test",
+                risk_profile=RiskProfile.BALANCED,
+                seed_capital=50_000_000,
+                investment_purpose="WEALTH_GROWTH",
+                investment_style=InvestmentStyle.DISCRETIONARY,
+                loss_tolerance=-0.10,
+            )
+        )
 
         await manager._store_universe(sample_universe_items)
 
@@ -975,11 +937,9 @@ class TestUniverseIntegration:
     """UniverseManager 통합 테스트"""
 
     @pytest.mark.asyncio
-    @patch('core.portfolio_manager.universe.async_session_factory')
-    @patch('core.portfolio_manager.universe.get_settings')
-    async def test_end_to_end_universe_building(
-        self, mock_get_settings, mock_async_session
-    ):
+    @patch("core.portfolio_manager.universe.async_session_factory")
+    @patch("core.portfolio_manager.universe.get_settings")
+    async def test_end_to_end_universe_building(self, mock_get_settings, mock_async_session):
         """
         엔드-투-엔드: 프로필 생성 → 유니버스 구축
         """

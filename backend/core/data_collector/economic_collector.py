@@ -12,9 +12,9 @@ Phase 3 - F-01-04 구현:
 """
 
 import asyncio
-from dataclasses import dataclass, asdict
-from datetime import datetime, timezone, timedelta
-from typing import Optional, Any
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from typing import Any, Optional
 
 import httpx
 
@@ -23,20 +23,19 @@ from config.logging import logger
 from config.settings import get_settings
 from db.database import RedisManager
 
-
 # ══════════════════════════════════════
 # FRED ↔ 지표명 매핑
 # ══════════════════════════════════════
 FRED_SERIES_MAP = {
-    EconomicIndicatorType.GDP: "A191RL1Q225SBEA",           # Real Gross Domestic Product
-    EconomicIndicatorType.CPI: "CPIAUCSL",                  # Consumer Price Index for All Urban Consumers
-    EconomicIndicatorType.FED_FUNDS_RATE: "FEDFUNDS",       # Effective Federal Funds Rate
-    EconomicIndicatorType.TREASURY_2Y: "DGS2",              # 2-Year Treasury Constant Maturity Rate
-    EconomicIndicatorType.TREASURY_10Y: "DGS10",            # 10-Year Treasury Constant Maturity Rate
-    EconomicIndicatorType.UNEMPLOYMENT: "UNRATE",           # Unemployment Rate
-    EconomicIndicatorType.PMI: "MMNRNJ",                    # ISM Manufacturing: PMI
-    EconomicIndicatorType.VIX: "VIXCLS",                    # VIX Closing Price
-    EconomicIndicatorType.USD_KRW: "DEXKOUS",               # Korean Won to U.S. Dollar Spot Exchange Rate
+    EconomicIndicatorType.GDP: "A191RL1Q225SBEA",  # Real Gross Domestic Product
+    EconomicIndicatorType.CPI: "CPIAUCSL",  # Consumer Price Index for All Urban Consumers
+    EconomicIndicatorType.FED_FUNDS_RATE: "FEDFUNDS",  # Effective Federal Funds Rate
+    EconomicIndicatorType.TREASURY_2Y: "DGS2",  # 2-Year Treasury Constant Maturity Rate
+    EconomicIndicatorType.TREASURY_10Y: "DGS10",  # 10-Year Treasury Constant Maturity Rate
+    EconomicIndicatorType.UNEMPLOYMENT: "UNRATE",  # Unemployment Rate
+    EconomicIndicatorType.PMI: "MMNRNJ",  # ISM Manufacturing: PMI
+    EconomicIndicatorType.VIX: "VIXCLS",  # VIX Closing Price
+    EconomicIndicatorType.USD_KRW: "DEXKOUS",  # Korean Won to U.S. Dollar Spot Exchange Rate
 }
 
 # ══════════════════════════════════════
@@ -44,24 +43,24 @@ FRED_SERIES_MAP = {
 # ══════════════════════════════════════
 ECOS_SERIES_MAP = {
     EconomicIndicatorType.BOK_BASE_RATE: {
-        "stat_code": "722Y001",    # 한국은행 기준금리
-        "item_code": "0101000",    # 기준금리
+        "stat_code": "722Y001",  # 한국은행 기준금리
+        "item_code": "0101000",  # 기준금리
     },
     EconomicIndicatorType.KR_CPI: {
-        "stat_code": "901Y009",    # 소비자물가지수
-        "item_code": "0",          # 지수
+        "stat_code": "901Y009",  # 소비자물가지수
+        "item_code": "0",  # 지수
     },
     EconomicIndicatorType.KR_UNEMPLOYMENT: {
-        "stat_code": "902Y014",    # 경제활동별 인구 (실업률)
-        "item_code": "0",          # 실업률
+        "stat_code": "902Y014",  # 경제활동별 인구 (실업률)
+        "item_code": "0",  # 실업률
     },
     EconomicIndicatorType.KR_GDP: {
-        "stat_code": "111Y002",    # 국민소득(GDP)
-        "item_code": "10101",      # 국내총생산 (실질, 계절조정)
+        "stat_code": "111Y002",  # 국민소득(GDP)
+        "item_code": "10101",  # 국내총생산 (실질, 계절조정)
     },
     EconomicIndicatorType.KR_CURRENT_ACCOUNT: {
-        "stat_code": "721Y017",    # 국제수지 (경상수지)
-        "item_code": "0",          # 경상수지
+        "stat_code": "721Y017",  # 국제수지 (경상수지)
+        "item_code": "0",  # 경상수지
     },
 }
 
@@ -73,13 +72,13 @@ ECOS_SERIES_MAP = {
 class EconomicIndicator:
     """경제지표 데이터 컨테이너"""
 
-    indicator_name: str                    # 지표명 (예: "GDP", "CPI")
-    value: float                           # 지표값
-    date: datetime                         # 데이터 기준 날짜
-    source: str                            # 데이터 출처 (FRED, ECOS)
-    country: str                           # 국가 코드 (US, KR)
-    unit: str = ""                         # 단위 (예: %, %, index)
-    change_pct: Optional[float] = None     # 변화율 (%)
+    indicator_name: str  # 지표명 (예: "GDP", "CPI")
+    value: float  # 지표값
+    date: datetime  # 데이터 기준 날짜
+    source: str  # 데이터 출처 (FRED, ECOS)
+    country: str  # 국가 코드 (US, KR)
+    unit: str = ""  # 단위 (예: %, %, index)
+    change_pct: Optional[float] = None  # 변화율 (%)
     collected_at: Optional[datetime] = None  # 수집 시간
 
     def __post_init__(self):
@@ -390,8 +389,7 @@ class ECOSCollector:
 
         # URL 구성
         url = (
-            f"{self.BASE_URL}/{self._api_key}/json/kr/1/100/"
-            f"{stat_code}/{cycle}/{start_date}/{end_date}/{item_code}"
+            f"{self.BASE_URL}/{self._api_key}/json/kr/1/100/" f"{stat_code}/{cycle}/{start_date}/{end_date}/{item_code}"
         )
 
         for attempt in range(self._retry_count):
@@ -481,11 +479,11 @@ class ECOSCollector:
     def _get_cycle(indicator_type: EconomicIndicatorType) -> str:
         """지표별 주기 반환 (M: 월간, Q: 분기, A: 연간)"""
         cycles = {
-            EconomicIndicatorType.BOK_BASE_RATE: "M",        # 월간
-            EconomicIndicatorType.KR_CPI: "M",                # 월간
-            EconomicIndicatorType.KR_UNEMPLOYMENT: "M",       # 월간
-            EconomicIndicatorType.KR_GDP: "Q",                # 분기
-            EconomicIndicatorType.KR_CURRENT_ACCOUNT: "M",   # 월간
+            EconomicIndicatorType.BOK_BASE_RATE: "M",  # 월간
+            EconomicIndicatorType.KR_CPI: "M",  # 월간
+            EconomicIndicatorType.KR_UNEMPLOYMENT: "M",  # 월간
+            EconomicIndicatorType.KR_GDP: "Q",  # 분기
+            EconomicIndicatorType.KR_CURRENT_ACCOUNT: "M",  # 월간
         }
         return cycles.get(indicator_type, "M")
 
@@ -617,6 +615,7 @@ class EconomicCollectorService:
 
             if cached:
                 import json
+
                 return json.loads(cached)
             return None
         except Exception as e:
@@ -658,6 +657,7 @@ class EconomicCollectorService:
 
         try:
             from sqlalchemy import text as sa_text
+
             from db.database import async_session_factory
 
             async with async_session_factory() as session:
@@ -677,16 +677,19 @@ class EconomicCollectorService:
                 """)
 
                 for ind in indicators:
-                    await session.execute(query, {
-                        "indicator_name": ind.indicator_name,
-                        "value": ind.value,
-                        "date": ind.date,
-                        "source": ind.source,
-                        "country": ind.country,
-                        "unit": ind.unit,
-                        "change_pct": ind.change_pct,
-                        "collected_at": ind.collected_at,
-                    })
+                    await session.execute(
+                        query,
+                        {
+                            "indicator_name": ind.indicator_name,
+                            "value": ind.value,
+                            "date": ind.date,
+                            "source": ind.source,
+                            "country": ind.country,
+                            "unit": ind.unit,
+                            "change_pct": ind.change_pct,
+                            "collected_at": ind.collected_at,
+                        },
+                    )
                 await session.commit()
 
             logger.info(f"Stored {len(indicators)} indicators to TimescaleDB")

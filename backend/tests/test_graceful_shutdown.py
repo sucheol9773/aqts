@@ -14,15 +14,15 @@ GracefulShutdownManager의 종합 단위 테스트
 """
 
 import asyncio
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import datetime
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from core.graceful_shutdown import (
     GracefulShutdownManager,
-    ShutdownPhase,
     PendingOrder,
+    ShutdownPhase,
 )
 
 

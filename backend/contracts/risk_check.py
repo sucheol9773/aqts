@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 class RiskCheckDecision(str, Enum):
     """리스크 점검 결정."""
+
     PASS = "PASS"
     BLOCK = "BLOCK"
     WARN = "WARN"
@@ -18,6 +19,7 @@ class RiskCheckDecision(str, Enum):
 
 class RiskCheckSeverity(str, Enum):
     """리스크 점검 심각도."""
+
     LOW = "LOW"
     MEDIUM = "MEDIUM"
     HIGH = "HIGH"
@@ -48,9 +50,7 @@ class RiskCheckResult(BaseModel):
     """
 
     ticker: str = Field(..., min_length=1, max_length=20, description="종목 코드")
-    checks: List[RiskCheckItem] = Field(
-        ..., min_length=1, description="개별 리스크 점검 목록"
-    )
+    checks: List[RiskCheckItem] = Field(..., min_length=1, description="개별 리스크 점검 목록")
     overall_decision: RiskCheckDecision = Field(..., description="종합 판정")
     decision_id: Optional[str] = Field(None, description="감사 체인 연결 ID")
 
@@ -72,9 +72,7 @@ class RiskCheckResult(BaseModel):
         """BLOCK 항목이 있으면 overall도 BLOCK이어야 합니다."""
         has_block = any(c.decision == RiskCheckDecision.BLOCK for c in self.checks)
         if has_block and self.overall_decision != RiskCheckDecision.BLOCK:
-            raise ValueError(
-                "개별 점검에 BLOCK이 있지만 overall_decision이 BLOCK이 아닙니다"
-            )
+            raise ValueError("개별 점검에 BLOCK이 있지만 overall_decision이 BLOCK이 아닙니다")
         return self
 
     model_config = {"frozen": True, "extra": "forbid"}

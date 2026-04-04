@@ -9,21 +9,19 @@ Tests cover:
 - Factor analysis data building
 """
 
-import asyncio
-import pytest
-from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch, call
 from tempfile import NamedTemporaryFile
-import pandas as pd
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from core.data_collector.financial_collector import (
+    ACCOUNT_MAP,
+    REPORT_CODE_INVERSE,
+    REPORT_CODE_MAP,
+    DerivedMetrics,
     FinancialCollectorService,
     FinancialStatement,
-    DerivedMetrics,
-    REPORT_CODE_MAP,
-    REPORT_CODE_INVERSE,
-    ACCOUNT_MAP,
 )
 
 
@@ -212,15 +210,12 @@ class TestFetchSingleCompany:
                         {"account_nm": "총자산", "thstrm_amount": "397284000"},
                         {"account_nm": "총부채", "thstrm_amount": "123456000"},
                         {"account_nm": "자본총계", "thstrm_amount": "273828000"},
-                    ]
+                    ],
                 }
                 collector._http_client.get.return_value = mock_response
 
                 result = await collector.fetch_single_company(
-                    corp_code="00126380",
-                    bsns_year=2023,
-                    reprt_code="11011",
-                    fs_div="CFS"
+                    corp_code="00126380", bsns_year=2023, reprt_code="11011", fs_div="CFS"
                 )
 
                 assert result is not None
@@ -238,11 +233,7 @@ class TestFetchSingleCompany:
             mock_settings.return_value.external.dart_api_key = None
 
             service = FinancialCollectorService(mock_db)
-            result = await service.fetch_single_company(
-                corp_code="00126380",
-                bsns_year=2023,
-                reprt_code="11011"
-            )
+            result = await service.fetch_single_company(corp_code="00126380", bsns_year=2023, reprt_code="11011")
 
             assert result is None
 
@@ -258,11 +249,7 @@ class TestFetchSingleCompany:
                 # Mock corp info query returns None
                 mock_db.execute.return_value = MagicMock(fetchone=MagicMock(return_value=None))
 
-                result = await collector.fetch_single_company(
-                    corp_code="00126380",
-                    bsns_year=2023,
-                    reprt_code="11011"
-                )
+                result = await collector.fetch_single_company(corp_code="00126380", bsns_year=2023, reprt_code="11011")
 
                 assert result is None
 
@@ -282,11 +269,7 @@ class TestFetchSingleCompany:
                 # Mock HTTP error response
                 collector._http_client.get = AsyncMock(side_effect=Exception("Network error"))
 
-                result = await collector.fetch_single_company(
-                    corp_code="00126380",
-                    bsns_year=2023,
-                    reprt_code="11011"
-                )
+                result = await collector.fetch_single_company(corp_code="00126380", bsns_year=2023, reprt_code="11011")
 
                 assert result is None
                 # Verify retry attempts
@@ -383,10 +366,16 @@ class TestParseBulkTxt:
             service = FinancialCollectorService(mock_db)
 
             # Create temporary txt file
-            with NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
-                f.write("corp_code\tticker\tcorp_name\tbsns_year\treprt_code\tfs_div\trevenue\toperating_income\tnet_income\ttotal_assets\ttotal_liabilities\ttotal_equity\teps\n")
-                f.write("00126380\t005930\t삼성전자\t2023\t11011\tCFS\t355600000\t45123000\t42900000\t397284000\t123456000\t273828000\t85000\n")
-                f.write("00095100\t066570\tLG전자\t2023\t11011\tCFS\t63000000\t3200000\t2500000\t108500000\t45600000\t62900000\t15000\n")
+            with NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as f:
+                f.write(
+                    "corp_code\tticker\tcorp_name\tbsns_year\treprt_code\tfs_div\trevenue\toperating_income\tnet_income\ttotal_assets\ttotal_liabilities\ttotal_equity\teps\n"
+                )
+                f.write(
+                    "00126380\t005930\t삼성전자\t2023\t11011\tCFS\t355600000\t45123000\t42900000\t397284000\t123456000\t273828000\t85000\n"
+                )
+                f.write(
+                    "00095100\t066570\tLG전자\t2023\t11011\tCFS\t63000000\t3200000\t2500000\t108500000\t45600000\t62900000\t15000\n"
+                )
                 temp_path = f.name
 
             try:
@@ -410,7 +399,7 @@ class TestParseBulkTxt:
 
             service = FinancialCollectorService(mock_db)
 
-            with NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+            with NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as f:
                 f.write("corp_code\tticker\tcorp_name\tbsns_year\treprt_code\tfs_div\trevenue\n")
                 f.write("00126380\t005930\t삼성전자\t2023\t11011\tCFS\t355600000\n")
                 temp_path = f.name
@@ -433,7 +422,7 @@ class TestParseBulkTxt:
 
             service = FinancialCollectorService(mock_db)
 
-            with NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+            with NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as f:
                 f.write("corp_code\tticker\tcorp_name\tbsns_year\treprt_code\tfs_div\trevenue\n")
                 f.write("00126380\t005930\t삼성전자\t2023\t11011\tCFS\t355600000\n")
                 f.write("00095100\t\tLG전자\t2023\t11011\tCFS\t63000000\n")
@@ -443,7 +432,7 @@ class TestParseBulkTxt:
                 result = await service.parse_bulk_txt(Path(temp_path))
 
                 # Filter out NaN ticker values (pandas converts empty string to 'nan')
-                available = [r for r in result if r.ticker and r.ticker != 'nan']
+                available = [r for r in result if r.ticker and r.ticker != "nan"]
 
                 # Only the first statement should be available (second has no ticker)
                 assert len(available) == 1
@@ -555,11 +544,7 @@ class TestCalculateDerivedMetrics:
                 "shares_outstanding": 100_000_000.0,
             }
 
-            metrics = service.calculate_derived_metrics(
-                "005930",
-                financial_data,
-                market_data
-            )
+            metrics = service.calculate_derived_metrics("005930", financial_data, market_data)
 
             assert metrics.per == pytest.approx(8.235, rel=0.01)
 
@@ -588,11 +573,7 @@ class TestCalculateDerivedMetrics:
                 "shares_outstanding": 5_900_000_000.0,
             }
 
-            metrics = service.calculate_derived_metrics(
-                "005930",
-                financial_data,
-                market_data
-            )
+            metrics = service.calculate_derived_metrics("005930", financial_data, market_data)
 
             # BPS = 273_828_000 / 5_900_000_000 = 0.046427
             # PBR = 70000 / 0.046427 = 1,508,246
@@ -621,11 +602,7 @@ class TestCalculateDerivedMetrics:
 
             market_data = {}
 
-            metrics = service.calculate_derived_metrics(
-                "005930",
-                financial_data,
-                market_data
-            )
+            metrics = service.calculate_derived_metrics("005930", financial_data, market_data)
 
             # ROE = 42_900_000_000 / 273_828_000_000 = 0.1566
             assert metrics.roe == pytest.approx(0.1566, rel=0.01)
@@ -653,11 +630,7 @@ class TestCalculateDerivedMetrics:
 
             market_data = {}
 
-            metrics = service.calculate_derived_metrics(
-                "005930",
-                financial_data,
-                market_data
-            )
+            metrics = service.calculate_derived_metrics("005930", financial_data, market_data)
 
             # ROA = 42_900_000_000 / 397_284_000_000 = 0.1079
             assert metrics.roa == pytest.approx(0.1079, rel=0.01)
@@ -685,11 +658,7 @@ class TestCalculateDerivedMetrics:
 
             market_data = {}
 
-            metrics = service.calculate_derived_metrics(
-                "005930",
-                financial_data,
-                market_data
-            )
+            metrics = service.calculate_derived_metrics("005930", financial_data, market_data)
 
             # Debt ratio = 123_456_000_000 / 273_828_000_000 = 0.451
             assert metrics.debt_ratio == pytest.approx(0.451, rel=0.01)
@@ -720,11 +689,7 @@ class TestCalculateDerivedMetrics:
                 "net_debt": 10_000_000.0,
             }
 
-            metrics = service.calculate_derived_metrics(
-                "005930",
-                financial_data,
-                market_data
-            )
+            metrics = service.calculate_derived_metrics("005930", financial_data, market_data)
 
             # Market cap = 70000 * 5_900_000_000 = 413_000_000_000_000
             # EV = 413_000_000_000_000 + 10_000_000 = 413_000_010_000_000
@@ -752,11 +717,7 @@ class TestCalculateDerivedMetrics:
 
             market_data = {"current_price": 70000.0}
 
-            metrics = service.calculate_derived_metrics(
-                "005930",
-                financial_data,
-                market_data
-            )
+            metrics = service.calculate_derived_metrics("005930", financial_data, market_data)
 
             assert metrics.is_available is False
 
@@ -796,10 +757,7 @@ class TestGetFactorData:
                     price_result,
                 ]
 
-                result = await collector.get_factor_data(
-                    tickers=["005930"],
-                    include_market_data=False
-                )
+                result = await collector.get_factor_data(tickers=["005930"], include_market_data=False)
 
                 assert len(result) == 1
                 assert result.iloc[0]["ticker"] == "005930"
@@ -821,10 +779,7 @@ class TestGetFactorData:
 
                 mock_db.execute.return_value = stmt_result
 
-                result = await collector.get_factor_data(
-                    tickers=["999999"],
-                    include_market_data=False
-                )
+                result = await collector.get_factor_data(tickers=["999999"], include_market_data=False)
 
                 assert len(result) == 0
 
@@ -859,10 +814,7 @@ class TestGetFactorData:
                     price_result,
                 ]
 
-                result = await collector.get_factor_data(
-                    tickers=["005930"],
-                    include_market_data=False
-                )
+                result = await collector.get_factor_data(tickers=["005930"], include_market_data=False)
 
                 assert len(result) == 0
 
@@ -907,10 +859,7 @@ class TestGetFactorData:
                     market_result,
                 ]
 
-                result = await collector.get_factor_data(
-                    tickers=["005930"],
-                    include_market_data=True
-                )
+                result = await collector.get_factor_data(tickers=["005930"], include_market_data=True)
 
                 assert len(result) == 1
                 assert result.iloc[0]["return_12m"] == 0.15

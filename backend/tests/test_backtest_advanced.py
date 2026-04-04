@@ -5,19 +5,19 @@ Tests corporate action processing, market impact modeling, and time-of-day rules
 for realistic backtesting with market microstructure considerations.
 """
 
-import pytest
-import math
 from datetime import time
 
-from core.data_collector.corp_action import CorporateActionProcessor
-from core.backtest_engine.impact_model import MarketImpactModel
-from core.order_executor.time_rules import TimeOfDayRules
-from config.constants import Market
+import pytest
 
+from config.constants import Market
+from core.backtest_engine.impact_model import MarketImpactModel
+from core.data_collector.corp_action import CorporateActionProcessor
+from core.order_executor.time_rules import TimeOfDayRules
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CorporateActionProcessor Tests
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class TestCorporateActionProcessor:
     """Test suite for CorporateActionProcessor."""
@@ -100,9 +100,7 @@ class TestCorporateActionProcessor:
         """Test price series with single split."""
         processor = CorporateActionProcessor()
         prices = [100.0, 101.0, 102.0, 103.0]
-        actions = [
-            {'index': 2, 'type': 'split', 'ratio': 2.0}
-        ]
+        actions = [{"index": 2, "type": "split", "ratio": 2.0}]
         adjusted = processor.adjust_price_series(prices, actions)
         # All prices before index 2 (inclusive) are halved
         assert adjusted[0] == 50.0
@@ -114,9 +112,7 @@ class TestCorporateActionProcessor:
         """Test price series with single dividend."""
         processor = CorporateActionProcessor()
         prices = [100.0, 101.0, 102.0, 103.0]
-        actions = [
-            {'index': 2, 'type': 'dividend', 'amount': 1.0}
-        ]
+        actions = [{"index": 2, "type": "dividend", "amount": 1.0}]
         adjusted = processor.adjust_price_series(prices, actions)
         # All prices before index 2 (inclusive) are reduced by dividend
         assert adjusted[0] == 99.0
@@ -128,10 +124,7 @@ class TestCorporateActionProcessor:
         """Test price series with multiple corporate actions."""
         processor = CorporateActionProcessor()
         prices = [100.0, 101.0, 102.0, 103.0, 104.0]
-        actions = [
-            {'index': 2, 'type': 'split', 'ratio': 2.0},
-            {'index': 4, 'type': 'dividend', 'amount': 1.0}
-        ]
+        actions = [{"index": 2, "type": "split", "ratio": 2.0}, {"index": 4, "type": "dividend", "amount": 1.0}]
         adjusted = processor.adjust_price_series(prices, actions)
         # Verify both actions were applied
         assert len(adjusted) == 5
@@ -143,9 +136,7 @@ class TestCorporateActionProcessor:
         """Test with out-of-bounds action index."""
         processor = CorporateActionProcessor()
         prices = [100.0, 101.0, 102.0]
-        actions = [
-            {'index': 10, 'type': 'split', 'ratio': 2.0}
-        ]
+        actions = [{"index": 10, "type": "split", "ratio": 2.0}]
         # Should not raise, just skip invalid action
         adjusted = processor.adjust_price_series(prices, actions)
         assert adjusted == prices
@@ -213,6 +204,7 @@ class TestCorporateActionProcessor:
 # ══════════════════════════════════════════════════════════════════════════════
 # MarketImpactModel Tests
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class TestMarketImpactModel:
     """Test suite for MarketImpactModel."""
@@ -381,6 +373,7 @@ class TestMarketImpactModel:
 # ══════════════════════════════════════════════════════════════════════════════
 # TimeOfDayRules Tests
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class TestTimeOfDayRules:
     """Test suite for TimeOfDayRules."""
@@ -586,6 +579,7 @@ class TestTimeOfDayRules:
 # Integration Tests
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 class TestBacktestIntegration:
     """Integration tests combining multiple modules."""
 
@@ -596,7 +590,7 @@ class TestBacktestIntegration:
 
         # Simulate 2:1 split affecting future impact calculation
         prices = [100.0, 101.0, 102.0, 103.0]
-        actions = [{'index': 1, 'type': 'split', 'ratio': 2.0}]
+        actions = [{"index": 1, "type": "split", "ratio": 2.0}]
         adjusted_prices = processor.adjust_price_series(prices, actions)
 
         # Calculate impact on adjusted price

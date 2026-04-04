@@ -28,16 +28,18 @@ from config.logging import logger
 
 class ShutdownPhase(str, Enum):
     """셧다운 단계"""
-    RUNNING = "RUNNING"            # 정상 가동
-    DRAINING = "DRAINING"          # 신규 요청 차단, 진행 중 완료 대기
+
+    RUNNING = "RUNNING"  # 정상 가동
+    DRAINING = "DRAINING"  # 신규 요청 차단, 진행 중 완료 대기
     STOPPING_SERVICES = "STOPPING_SERVICES"  # 서비스 순차 중지
-    CLEANUP = "CLEANUP"            # DB/리소스 정리
-    COMPLETED = "COMPLETED"        # 종료 완료
+    CLEANUP = "CLEANUP"  # DB/리소스 정리
+    COMPLETED = "COMPLETED"  # 종료 완료
 
 
 @dataclass
 class PendingOrder:
     """진행 중인 주문 추적 정보"""
+
     order_id: str
     ticker: str
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -159,9 +161,7 @@ class GracefulShutdownManager:
             True=등록 성공, False=셧다운 중 거부
         """
         if not self._accepting_orders:
-            logger.warning(
-                f"Order rejected (shutdown in progress): {order_id} {ticker}"
-            )
+            logger.warning(f"Order rejected (shutdown in progress): {order_id} {ticker}")
             return False
 
         self._pending_orders[order_id] = PendingOrder(
@@ -213,8 +213,7 @@ class GracefulShutdownManager:
         self._phase = ShutdownPhase.DRAINING
         self._accepting_orders = False
         logger.info(
-            f"Phase 1: DRAINING - Blocking new orders, "
-            f"waiting for {len(self._pending_orders)} pending orders..."
+            f"Phase 1: DRAINING - Blocking new orders, " f"waiting for {len(self._pending_orders)} pending orders..."
         )
 
         drained = await self._drain_pending_orders(timeout)
@@ -227,10 +226,7 @@ class GracefulShutdownManager:
 
         # ── Phase 2: STOPPING_SERVICES ──
         self._phase = ShutdownPhase.STOPPING_SERVICES
-        logger.info(
-            f"Phase 2: STOPPING_SERVICES - "
-            f"Stopping {len(self._services)} services..."
-        )
+        logger.info(f"Phase 2: STOPPING_SERVICES - " f"Stopping {len(self._services)} services...")
 
         # 역순으로 서비스 종료 (LIFO)
         for name, stop_coro in reversed(self._services):
@@ -242,19 +238,13 @@ class GracefulShutdownManager:
                 results["services_stopped"].append(name)
                 logger.info(f"  ✓ {name} stopped")
             except asyncio.TimeoutError:
-                logger.error(
-                    f"  ✗ {name} stop timed out "
-                    f"({self.SERVICE_STOP_TIMEOUT}s)"
-                )
+                logger.error(f"  ✗ {name} stop timed out " f"({self.SERVICE_STOP_TIMEOUT}s)")
             except Exception as e:
                 logger.error(f"  ✗ {name} stop failed: {e}")
 
         # ── Phase 3: CLEANUP ──
         self._phase = ShutdownPhase.CLEANUP
-        logger.info(
-            f"Phase 3: CLEANUP - "
-            f"Running {len(self._cleanup_callbacks)} cleanup callbacks..."
-        )
+        logger.info(f"Phase 3: CLEANUP - " f"Running {len(self._cleanup_callbacks)} cleanup callbacks...")
 
         for cb in self._cleanup_callbacks:
             try:
@@ -303,10 +293,7 @@ class GracefulShutdownManager:
 
             remaining = len(self._pending_orders)
             if remaining > 0 and int(elapsed) % 10 == 0:
-                logger.info(
-                    f"  Draining: {remaining} orders remaining "
-                    f"({elapsed:.0f}s / {timeout:.0f}s)"
-                )
+                logger.info(f"  Draining: {remaining} orders remaining " f"({elapsed:.0f}s / {timeout:.0f}s)")
 
         drained = initial_count - len(self._pending_orders)
         return drained

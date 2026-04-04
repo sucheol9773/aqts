@@ -8,7 +8,6 @@ Stage 3-B: Backtest integrity advanced realism modules (market microstructure re
 """
 
 import math
-from typing import Optional
 
 
 class MarketImpactModel:
@@ -29,12 +28,7 @@ class MarketImpactModel:
         self.gamma = gamma
         self.eta = eta
 
-    def permanent_impact(
-        self,
-        order_quantity: float,
-        adv: float,
-        daily_volatility: float
-    ) -> float:
+    def permanent_impact(self, order_quantity: float, adv: float, daily_volatility: float) -> float:
         """
         Calculate permanent price impact.
 
@@ -76,12 +70,7 @@ class MarketImpactModel:
 
         return impact_ratio
 
-    def temporary_impact(
-        self,
-        order_quantity: float,
-        adv: float,
-        daily_volatility: float
-    ) -> float:
+    def temporary_impact(self, order_quantity: float, adv: float, daily_volatility: float) -> float:
         """
         Calculate temporary price impact.
 
@@ -118,17 +107,11 @@ class MarketImpactModel:
             return 0.0
 
         participation_ratio = order_quantity / adv
-        impact_ratio = self.eta * daily_volatility * (participation_ratio ** 0.6)
+        impact_ratio = self.eta * daily_volatility * (participation_ratio**0.6)
 
         return impact_ratio
 
-    def total_impact(
-        self,
-        order_quantity: float,
-        adv: float,
-        daily_volatility: float,
-        price: float
-    ) -> float:
+    def total_impact(self, order_quantity: float, adv: float, daily_volatility: float, price: float) -> float:
         """
         Calculate total price impact cost.
 

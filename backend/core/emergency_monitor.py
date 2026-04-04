@@ -24,21 +24,21 @@
 import asyncio
 import math
 from dataclasses import dataclass, field
-from datetime import datetime, timezone, timedelta, time
-from typing import Optional, Any
+from datetime import datetime, time, timedelta, timezone
+from typing import Any, Optional
+
+from sqlalchemy import text
 
 from config.constants import (
+    InvestmentStyle,
     Market,
     OrderSide,
     OrderType,
     RebalancingType,
-    InvestmentStyle,
-    AlertType,
 )
 from config.logging import logger
 from config.settings import get_settings
 from db.database import async_session_factory
-from sqlalchemy import text
 
 
 # ══════════════════════════════════════
@@ -108,15 +108,9 @@ class PortfolioLossReport:
         """트리거 사유"""
         reasons = []
         if self.user_triggered:
-            reasons.append(
-                f"사용자 설정 손실 한도 초과 "
-                f"({self.loss_percent:.2%} < {self.user_threshold:.2%})"
-            )
+            reasons.append(f"사용자 설정 손실 한도 초과 " f"({self.loss_percent:.2%} < {self.user_threshold:.2%})")
         if self.algo_triggered:
-            reasons.append(
-                f"알고리즘 추천 손절 기준 초과 "
-                f"({self.loss_percent:.2%} < {self.algo_threshold:.2%})"
-            )
+            reasons.append(f"알고리즘 추천 손절 기준 초과 " f"({self.loss_percent:.2%} < {self.algo_threshold:.2%})")
         return " / ".join(reasons) if reasons else ""
 
 
@@ -225,10 +219,7 @@ class EmergencyRebalancingMonitor:
         self._state.is_running = True
         self._state.is_paused = False
         self._task = asyncio.create_task(self._monitor_loop())
-        logger.info(
-            f"Emergency rebalancing monitor started "
-            f"(interval={self.CHECK_INTERVAL_SECONDS}s)"
-        )
+        logger.info(f"Emergency rebalancing monitor started " f"(interval={self.CHECK_INTERVAL_SECONDS}s)")
 
     async def stop(self) -> None:
         """비상 모니터링 중지"""
@@ -318,9 +309,7 @@ class EmergencyRebalancingMonitor:
 
             # 4. 트리거 확인 및 처리
             if report.is_triggered:
-                logger.warning(
-                    f"Emergency trigger fired: {report.trigger_reason}"
-                )
+                logger.warning(f"Emergency trigger fired: {report.trigger_reason}")
                 await self._handle_trigger(report, positions)
 
             return report
@@ -513,10 +502,7 @@ class EmergencyRebalancingMonitor:
 
         # 분산 계산 (포지션 수익률 편차의 가중 합)
         if len(positions) > 1:
-            variance = sum(
-                (p.pnl_percent - portfolio_return) ** 2 * (p.current_value / total_value)
-                for p in positions
-            )
+            variance = sum((p.pnl_percent - portfolio_return) ** 2 * (p.current_value / total_value) for p in positions)
             volatility = math.sqrt(variance)
         else:
             # 단일 포지션: 절대 수익률의 10%를 변동성으로 추정
@@ -528,10 +514,7 @@ class EmergencyRebalancingMonitor:
         # 클램핑: 최소 -5%, 최대 -25%
         clamped = max(-0.25, min(-0.05, dynamic_threshold))
 
-        logger.debug(
-            f"Algo threshold: vol={volatility:.4f}, "
-            f"raw={dynamic_threshold:.4f}, clamped={clamped:.4f}"
-        )
+        logger.debug(f"Algo threshold: vol={volatility:.4f}, " f"raw={dynamic_threshold:.4f}, clamped={clamped:.4f}")
 
         return clamped
 
@@ -573,9 +556,7 @@ class EmergencyRebalancingMonitor:
                 await self._execute_defensive_orders(sell_orders)
             else:
                 # 자문형: 알림만 발송 (사용자 승인 대기)
-                logger.info(
-                    f"Advisory mode: {len(sell_orders)} defensive orders pending approval"
-                )
+                logger.info(f"Advisory mode: {len(sell_orders)} defensive orders pending approval")
 
             # 3. 텔레그램 비상 알림
             await self._send_emergency_alert(report, sell_orders)
@@ -584,9 +565,7 @@ class EmergencyRebalancingMonitor:
             await self._record_emergency_event(report, sell_orders)
 
             # 5. 쿨다운 설정
-            self._state.cooldown_until = datetime.now(timezone.utc) + timedelta(
-                minutes=self.TRIGGER_COOLDOWN_MINUTES
-            )
+            self._state.cooldown_until = datetime.now(timezone.utc) + timedelta(minutes=self.TRIGGER_COOLDOWN_MINUTES)
 
             logger.warning(
                 f"Emergency rebalancing processed: "
@@ -621,19 +600,18 @@ class EmergencyRebalancingMonitor:
             if sell_qty <= 0:
                 continue
 
-            orders.append({
-                "ticker": pos.ticker,
-                "market": pos.market.value,
-                "side": OrderSide.SELL.value,
-                "quantity": sell_qty,
-                "order_type": OrderType.MARKET.value,
-                "reason": (
-                    f"비상 리밸런싱: {pos.pnl_percent:.2%} 손실, "
-                    f"{pos.quantity}주 중 {sell_qty}주 매도"
-                ),
-                "current_price": pos.current_price,
-                "estimated_amount": sell_qty * pos.current_price,
-            })
+            orders.append(
+                {
+                    "ticker": pos.ticker,
+                    "market": pos.market.value,
+                    "side": OrderSide.SELL.value,
+                    "quantity": sell_qty,
+                    "order_type": OrderType.MARKET.value,
+                    "reason": (f"비상 리밸런싱: {pos.pnl_percent:.2%} 손실, " f"{pos.quantity}주 중 {sell_qty}주 매도"),
+                    "current_price": pos.current_price,
+                    "estimated_amount": sell_qty * pos.current_price,
+                }
+            )
 
         # 예상 매도 금액 기준 내림차순 정렬 (큰 포지션 우선)
         orders.sort(key=lambda o: -o["estimated_amount"])
@@ -674,18 +652,13 @@ class EmergencyRebalancingMonitor:
                 result = await self._order_executor.execute_order(request)
                 results.append({"order": order_data, "result": result})
 
-                logger.info(
-                    f"Emergency order executed: {order_data['ticker']} "
-                    f"SELL {order_data['quantity']}"
-                )
+                logger.info(f"Emergency order executed: {order_data['ticker']} " f"SELL {order_data['quantity']}")
 
                 # 주문 간 200ms 딜레이 (API Rate Limit)
                 await asyncio.sleep(0.2)
 
             except Exception as e:
-                logger.error(
-                    f"Emergency order failed: {order_data['ticker']}: {e}"
-                )
+                logger.error(f"Emergency order failed: {order_data['ticker']}: {e}")
                 results.append({"order": order_data, "error": str(e)})
 
         return results
@@ -750,17 +723,14 @@ class EmergencyRebalancingMonitor:
         # 주문 요약
         total_sell_amount = sum(o.get("estimated_amount", 0) for o in orders)
         order_summary = "\n".join(
-            f"  • {o['ticker']} {o['quantity']}주 매도 "
-            f"(≈{o['estimated_amount']:,.0f}원)"
-            for o in orders[:5]
+            f"  • {o['ticker']} {o['quantity']}주 매도 " f"(≈{o['estimated_amount']:,.0f}원)" for o in orders[:5]
         )
         if len(orders) > 5:
             order_summary += f"\n  ... 외 {len(orders) - 5}건"
 
         # 최악 포지션
         worst_summary = "\n".join(
-            f"  • {p.ticker}: {p.pnl_percent:+.2%} ({p.pnl:+,.0f}원)"
-            for p in report.worst_positions[:3]
+            f"  • {p.ticker}: {p.pnl_percent:+.2%} ({p.pnl:+,.0f}원)" for p in report.worst_positions[:3]
         )
 
         message = (
@@ -805,23 +775,30 @@ class EmergencyRebalancingMonitor:
                         :orders, :old_summary, :new_summary, :executed_at
                     )
                 """)
-                await session.execute(query, {
-                    "user_id": "default",
-                    "type": RebalancingType.EMERGENCY.value,
-                    "reason": report.trigger_reason,
-                    "orders": json.dumps(orders, default=str),
-                    "old_summary": json.dumps({
-                        "total_value": report.total_current_value,
-                        "loss_percent": report.loss_percent,
-                        "position_count": len(report.worst_positions),
-                    }),
-                    "new_summary": json.dumps({
-                        "defensive_mode": True,
-                        "stock_ratio": self.DEFENSIVE_STOCK_RATIO,
-                        "order_count": len(orders),
-                    }),
-                    "executed_at": datetime.now(timezone.utc),
-                })
+                await session.execute(
+                    query,
+                    {
+                        "user_id": "default",
+                        "type": RebalancingType.EMERGENCY.value,
+                        "reason": report.trigger_reason,
+                        "orders": json.dumps(orders, default=str),
+                        "old_summary": json.dumps(
+                            {
+                                "total_value": report.total_current_value,
+                                "loss_percent": report.loss_percent,
+                                "position_count": len(report.worst_positions),
+                            }
+                        ),
+                        "new_summary": json.dumps(
+                            {
+                                "defensive_mode": True,
+                                "stock_ratio": self.DEFENSIVE_STOCK_RATIO,
+                                "order_count": len(orders),
+                            }
+                        ),
+                        "executed_at": datetime.now(timezone.utc),
+                    },
+                )
                 await session.commit()
         except Exception as e:
             logger.debug(f"Failed to record emergency event: {e}")

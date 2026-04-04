@@ -17,14 +17,13 @@ KRX 장 시간에 맞춰 DEMO 모드 파이프라인을 자동 실행합니다.
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import datetime, date, time, timezone, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from enum import Enum
-from typing import Optional, Callable, Awaitable
+from typing import Awaitable, Callable, Optional
 
 from loguru import logger
 
-from config.settings import get_settings, TradingMode
-
+from config.settings import TradingMode, get_settings
 
 # ══════════════════════════════════════
 # 한국 시간대 및 거래일 관리
@@ -34,30 +33,40 @@ KST = timezone(timedelta(hours=9))
 
 # 2026년 한국 공휴일 (매년 갱신 필요)
 KR_HOLIDAYS_2026 = {
-    date(2026, 1, 1),   # 신정
+    date(2026, 1, 1),  # 신정
     date(2026, 2, 16),  # 설날 연휴
     date(2026, 2, 17),  # 설날
     date(2026, 2, 18),  # 설날 연휴
-    date(2026, 3, 1),   # 삼일절
-    date(2026, 5, 5),   # 어린이날
+    date(2026, 3, 1),  # 삼일절
+    date(2026, 5, 5),  # 어린이날
     date(2026, 5, 24),  # 부처님 오신 날
-    date(2026, 6, 6),   # 현충일
+    date(2026, 6, 6),  # 현충일
     date(2026, 8, 15),  # 광복절
     date(2026, 9, 24),  # 추석 연휴
     date(2026, 9, 25),  # 추석
     date(2026, 9, 26),  # 추석 연휴
     date(2026, 10, 3),  # 개천절
     date(2026, 10, 9),  # 한글날
-    date(2026, 12, 25), # 크리스마스
+    date(2026, 12, 25),  # 크리스마스
 }
 
 # 2025년 한국 공휴일 (백업)
 KR_HOLIDAYS_2025 = {
-    date(2025, 1, 1),   date(2025, 1, 28),  date(2025, 1, 29),
-    date(2025, 1, 30),  date(2025, 3, 1),   date(2025, 5, 5),
-    date(2025, 5, 6),   date(2025, 6, 6),   date(2025, 8, 15),
-    date(2025, 10, 3),  date(2025, 10, 6),  date(2025, 10, 7),
-    date(2025, 10, 8),  date(2025, 10, 9),  date(2025, 12, 25),
+    date(2025, 1, 1),
+    date(2025, 1, 28),
+    date(2025, 1, 29),
+    date(2025, 1, 30),
+    date(2025, 3, 1),
+    date(2025, 5, 5),
+    date(2025, 5, 6),
+    date(2025, 6, 6),
+    date(2025, 8, 15),
+    date(2025, 10, 3),
+    date(2025, 10, 6),
+    date(2025, 10, 7),
+    date(2025, 10, 8),
+    date(2025, 10, 9),
+    date(2025, 12, 25),
 }
 
 ALL_HOLIDAYS = KR_HOLIDAYS_2025 | KR_HOLIDAYS_2026
@@ -89,18 +98,21 @@ def now_kst() -> datetime:
 # 스케줄 이벤트 정의
 # ══════════════════════════════════════
 
+
 class ScheduleEventType(str, Enum):
     """스케줄 이벤트 유형"""
-    PRE_MARKET = "PRE_MARKET"           # 08:30 장 전 준비
-    MARKET_OPEN = "MARKET_OPEN"         # 09:00 장 시작
-    MIDDAY_CHECK = "MIDDAY_CHECK"       # 11:30 중간 점검
-    MARKET_CLOSE = "MARKET_CLOSE"       # 15:30 장 마감
-    POST_MARKET = "POST_MARKET"         # 16:00 마감 후 처리
+
+    PRE_MARKET = "PRE_MARKET"  # 08:30 장 전 준비
+    MARKET_OPEN = "MARKET_OPEN"  # 09:00 장 시작
+    MIDDAY_CHECK = "MIDDAY_CHECK"  # 11:30 중간 점검
+    MARKET_CLOSE = "MARKET_CLOSE"  # 15:30 장 마감
+    POST_MARKET = "POST_MARKET"  # 16:00 마감 후 처리
 
 
 @dataclass
 class ScheduleEvent:
     """스케줄 이벤트"""
+
     event_type: ScheduleEventType
     scheduled_time: time  # KST 기준
     description: str
@@ -146,8 +158,10 @@ DEFAULT_SCHEDULE = [
 # 스케줄러 상태
 # ══════════════════════════════════════
 
+
 class SchedulerStatus(str, Enum):
     """스케줄러 상태"""
+
     IDLE = "IDLE"
     RUNNING = "RUNNING"
     PAUSED = "PAUSED"
@@ -158,6 +172,7 @@ class SchedulerStatus(str, Enum):
 @dataclass
 class SchedulerState:
     """스케줄러 런타임 상태"""
+
     status: SchedulerStatus = SchedulerStatus.IDLE
     current_date: Optional[date] = None
     last_event: Optional[ScheduleEventType] = None
@@ -187,6 +202,7 @@ class SchedulerState:
 # ══════════════════════════════════════
 # 모의투자 자동화 스케줄러
 # ══════════════════════════════════════
+
 
 class TradingScheduler:
     """
@@ -239,8 +255,7 @@ class TradingScheduler:
         # DEMO 모드 검증
         if self._settings.kis.trading_mode != TradingMode.DEMO:
             raise RuntimeError(
-                f"DEMO 모드에서만 스케줄러를 시작할 수 있습니다 "
-                f"(현재: {self._settings.kis.trading_mode.value})"
+                f"DEMO 모드에서만 스케줄러를 시작할 수 있습니다 " f"(현재: {self._settings.kis.trading_mode.value})"
             )
 
         self._running = True
@@ -308,9 +323,7 @@ class TradingScheduler:
                     wake_time = datetime.combine(next_td, time(8, 0), tzinfo=KST)
                     wait_seconds = (wake_time - now).total_seconds()
                     if wait_seconds > 0:
-                        logger.info(
-                            f"비거래일 ({today}). 다음 거래일 {next_td}까지 대기"
-                        )
+                        logger.info(f"비거래일 ({today}). 다음 거래일 {next_td}까지 대기")
                         self._state.next_event_at = wake_time
                         await asyncio.sleep(min(wait_seconds, 3600))  # 최대 1시간 단위 체크
                     continue
@@ -367,18 +380,18 @@ class TradingScheduler:
                 break
             except Exception as e:
                 logger.error(f"스케줄러 루프 오류: {e}")
-                self._state.errors_today.append({
-                    "time": now_kst().isoformat(),
-                    "error": str(e),
-                })
+                self._state.errors_today.append(
+                    {
+                        "time": now_kst().isoformat(),
+                        "error": str(e),
+                    }
+                )
                 await asyncio.sleep(60)  # 오류 후 1분 대기
 
     def _find_next_event(self, now: datetime) -> Optional[ScheduleEvent]:
         """현재 시간 이후 실행할 다음 이벤트 반환"""
         current_time = now.time()
-        executed_types = {
-            e["event_type"] for e in self._state.events_executed_today
-        }
+        executed_types = {e["event_type"] for e in self._state.events_executed_today}
 
         for event in self._schedule:
             if event.event_type.value in executed_types:
@@ -431,20 +444,20 @@ class TradingScheduler:
             self._state.last_event_at = now_kst()
             self._state.events_executed_today.append(result)
 
-            logger.info(
-                f"✓ [{event.event_type.value}] 완료 ({elapsed:.1f}초)"
-            )
+            logger.info(f"✓ [{event.event_type.value}] 완료 ({elapsed:.1f}초)")
 
         except Exception as e:
             elapsed = (now_kst() - start_time).total_seconds()
             result["error"] = f"{type(e).__name__}: {str(e)}"
             result["elapsed_seconds"] = round(elapsed, 1)
 
-            self._state.errors_today.append({
-                "event_type": event.event_type.value,
-                "time": now_kst().isoformat(),
-                "error": str(e),
-            })
+            self._state.errors_today.append(
+                {
+                    "event_type": event.event_type.value,
+                    "time": now_kst().isoformat(),
+                    "error": str(e),
+                }
+            )
 
             logger.error(f"✗ [{event.event_type.value}] 실패: {e}")
 
@@ -459,6 +472,7 @@ class TradingScheduler:
         # 1. 건전성 검사
         try:
             from core.health_checker import HealthChecker
+
             checker = HealthChecker()
             health = await checker.run_full_check()
             result["health_status"] = health.overall_status.value
@@ -469,6 +483,7 @@ class TradingScheduler:
         # 2. TradingGuard 일일 리셋
         try:
             from core.trading_guard import TradingGuard
+
             guard = TradingGuard()
             guard.reset_daily_state()
             result["daily_reset"] = True

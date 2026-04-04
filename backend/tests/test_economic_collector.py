@@ -9,19 +9,19 @@
 - Redis 캐싱
 """
 
-import pytest
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, patch, MagicMock
-import json
+from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from core.data_collector.economic_collector import (
+    ECOS_SERIES_MAP,
+    FRED_SERIES_MAP,
+    EconomicCollectorService,
     EconomicIndicator,
     EconomicIndicatorType,
-    FREDCollector,
     ECOSCollector,
-    EconomicCollectorService,
-    FRED_SERIES_MAP,
-    ECOS_SERIES_MAP,
+    FREDCollector,
 )
 
 

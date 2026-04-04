@@ -14,7 +14,6 @@
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from config.constants import Country
 from core.backtest_engine.engine import (
@@ -167,7 +166,9 @@ class TestBacktestEngine:
         # 비용 없는 경우
         config_no_cost = BacktestConfig(
             initial_capital=50_000_000,
-            commission_rate=0.0, tax_rate=0.0, slippage_rate=0.0,
+            commission_rate=0.0,
+            tax_rate=0.0,
+            slippage_rate=0.0,
         )
         result_no_cost = BacktestEngine(config_no_cost).run("NoCost", signals, prices)
 
@@ -267,14 +268,22 @@ class TestStrategyComparator:
             ("Trend", 1.2, 0.15),
         ]:
             r = BacktestResult(
-                strategy_name=name, config=config,
-                start_date="2024-01-02", end_date="2024-12-31",
-                initial_capital=50e6, final_capital=50e6 * (1 + ret),
-                total_return=ret, cagr=ret, mdd=-0.1,
-                sharpe_ratio=sharpe, sortino_ratio=sharpe * 1.2,
+                strategy_name=name,
+                config=config,
+                start_date="2024-01-02",
+                end_date="2024-12-31",
+                initial_capital=50e6,
+                final_capital=50e6 * (1 + ret),
+                total_return=ret,
+                cagr=ret,
+                mdd=-0.1,
+                sharpe_ratio=sharpe,
+                sortino_ratio=sharpe * 1.2,
                 calmar_ratio=ret / 0.1,
-                win_rate=0.55, profit_factor=1.5,
-                total_trades=50, avg_trade_return=ret / 50,
+                win_rate=0.55,
+                profit_factor=1.5,
+                total_trades=50,
+                avg_trade_return=ret / 50,
                 max_consecutive_losses=3,
             )
             results.append(r)
@@ -340,7 +349,8 @@ class TestBenchmarkMetrics:
 
         # 벤치마크: 일별 수익률
         bm_returns = pd.Series(
-            np.random.normal(0.0004, 0.012, n), index=dates,
+            np.random.normal(0.0004, 0.012, n),
+            index=dates,
         )
 
         prices = _make_prices(n, ["A"])
@@ -375,7 +385,9 @@ class TestBenchmarkMetrics:
         config = BacktestConfig(
             initial_capital=50_000_000,
             benchmark_returns=bm_returns,
-            commission_rate=0.0, tax_rate=0.0, slippage_rate=0.0,
+            commission_rate=0.0,
+            tax_rate=0.0,
+            slippage_rate=0.0,
         )
         result = BacktestEngine(config).run("Correlated", signals, prices)
 
@@ -396,7 +408,9 @@ class TestBenchmarkMetrics:
         # 전략의 실제 일별 수익률을 벤치마크로 설정
         config_pre = BacktestConfig(
             initial_capital=50_000_000,
-            commission_rate=0.0, tax_rate=0.0, slippage_rate=0.0,
+            commission_rate=0.0,
+            tax_rate=0.0,
+            slippage_rate=0.0,
         )
         result_pre = BacktestEngine(config_pre).run("Pre", signals, prices)
 
@@ -406,7 +420,9 @@ class TestBenchmarkMetrics:
             config = BacktestConfig(
                 initial_capital=50_000_000,
                 benchmark_returns=strategy_daily,
-                commission_rate=0.0, tax_rate=0.0, slippage_rate=0.0,
+                commission_rate=0.0,
+                tax_rate=0.0,
+                slippage_rate=0.0,
             )
             result = BacktestEngine(config).run("Identical", signals, prices)
             # 동일하면 TE가 매우 작아야 함
@@ -420,7 +436,8 @@ class TestBenchmarkMetrics:
 
         # 벤치마크: 일 0.0001 수익 (저수익)
         bm_returns = pd.Series(
-            np.full(n, 0.0001), index=dates,
+            np.full(n, 0.0001),
+            index=dates,
         )
 
         # 전략: 확실한 우상향
@@ -432,7 +449,9 @@ class TestBenchmarkMetrics:
         config = BacktestConfig(
             initial_capital=50_000_000,
             benchmark_returns=bm_returns,
-            commission_rate=0.0, tax_rate=0.0, slippage_rate=0.0,
+            commission_rate=0.0,
+            tax_rate=0.0,
+            slippage_rate=0.0,
         )
         result = BacktestEngine(config).run("Outperform", signals, prices)
 
@@ -443,15 +462,26 @@ class TestBenchmarkMetrics:
         """StrategyComparator가 벤치마크 지표 컬럼을 포함"""
         config = BacktestConfig()
         r = BacktestResult(
-            strategy_name="Test", config=config,
-            start_date="2024-01-02", end_date="2024-12-31",
-            initial_capital=50e6, final_capital=55e6,
-            total_return=0.10, cagr=0.10, mdd=-0.05,
-            sharpe_ratio=1.2, sortino_ratio=1.5, calmar_ratio=2.0,
-            win_rate=0.55, profit_factor=1.5,
-            total_trades=50, avg_trade_return=0.002,
+            strategy_name="Test",
+            config=config,
+            start_date="2024-01-02",
+            end_date="2024-12-31",
+            initial_capital=50e6,
+            final_capital=55e6,
+            total_return=0.10,
+            cagr=0.10,
+            mdd=-0.05,
+            sharpe_ratio=1.2,
+            sortino_ratio=1.5,
+            calmar_ratio=2.0,
+            win_rate=0.55,
+            profit_factor=1.5,
+            total_trades=50,
+            avg_trade_return=0.002,
             max_consecutive_losses=3,
-            alpha=0.05, beta=0.9, information_ratio=0.8,
+            alpha=0.05,
+            beta=0.9,
+            information_ratio=0.8,
             tracking_error=0.06,
         )
         df = StrategyComparator.compare([r])

@@ -8,7 +8,7 @@ API 비용이 초과수익(excess return)에 대해 정당한지 평가
   - 월별 누적 분석 지원
 """
 
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 
 class CostAnalyzer:
@@ -157,9 +157,7 @@ class CostAnalyzer:
 
         for data in monthly_data:
             cost = self.calculate_cost(data["api_calls"], data["cost_per_call"])
-            benefit = self.calculate_benefit(
-                data["excess_return_pct"], data["portfolio_value"]
-            )
+            benefit = self.calculate_benefit(data["excess_return_pct"], data["portfolio_value"])
 
             total_cost += cost
             total_benefit += benefit

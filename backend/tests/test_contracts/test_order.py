@@ -3,14 +3,17 @@
 import pytest
 from pydantic import ValidationError
 
-from contracts.order import OrderIntent
 from config.constants import Market, OrderSide, OrderType
+from contracts.order import OrderIntent
 
 
 def _valid_order(**overrides):
     defaults = dict(
-        ticker="005930", market=Market.KRX, side=OrderSide.BUY,
-        order_type=OrderType.MARKET, quantity=100,
+        ticker="005930",
+        market=Market.KRX,
+        side=OrderSide.BUY,
+        order_type=OrderType.MARKET,
+        quantity=100,
     )
     defaults.update(overrides)
     return defaults
@@ -24,9 +27,7 @@ class TestOrderValid:
         assert o.limit_price is None
 
     def test_limit_order(self):
-        o = OrderIntent(**_valid_order(
-            order_type=OrderType.LIMIT, limit_price=70000.0
-        ))
+        o = OrderIntent(**_valid_order(order_type=OrderType.LIMIT, limit_price=70000.0))
         assert o.limit_price == 70000.0
 
     def test_sell_order(self):
@@ -42,9 +43,7 @@ class TestOrderValid:
         assert o.order_type == OrderType.VWAP
 
     def test_with_reason_and_strategy(self):
-        o = OrderIntent(**_valid_order(
-            reason="팩터 시그널 BUY", strategy_id="FACTOR"
-        ))
+        o = OrderIntent(**_valid_order(reason="팩터 시그널 BUY", strategy_id="FACTOR"))
         assert o.reason == "팩터 시그널 BUY"
 
     def test_with_decision_id(self):
@@ -76,9 +75,7 @@ class TestOrderInvalid:
 
     def test_negative_limit_price(self):
         with pytest.raises(ValidationError, match="greater than 0"):
-            OrderIntent(**_valid_order(
-                order_type=OrderType.LIMIT, limit_price=-100.0
-            ))
+            OrderIntent(**_valid_order(order_type=OrderType.LIMIT, limit_price=-100.0))
 
     def test_empty_ticker(self):
         with pytest.raises(ValidationError):

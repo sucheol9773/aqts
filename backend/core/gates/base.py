@@ -12,12 +12,14 @@ from pydantic import BaseModel, Field
 
 class GateDecision(str, Enum):
     """Gate 판정 결과."""
+
     PASS = "PASS"
     BLOCK = "BLOCK"
 
 
 class GateSeverity(str, Enum):
     """Gate 차단 심각도."""
+
     INFO = "INFO"
     WARNING = "WARNING"
     ERROR = "ERROR"

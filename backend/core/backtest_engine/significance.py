@@ -7,8 +7,9 @@ Determine if returns are statistically significantly different from benchmark:
 - Significance testing at 95% confidence level
 """
 
+from typing import Dict, List, Tuple, Union
+
 import numpy as np
-from typing import List, Tuple, Dict, Union
 from scipy import stats
 
 

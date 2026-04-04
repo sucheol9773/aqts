@@ -46,8 +46,7 @@ class FinancialData(BaseModel):
         """filing_date >= period_end (공시는 결산 후에만 가능)."""
         if self.filing_date < self.period_end:
             raise ValueError(
-                f"filing_date({self.filing_date}) < period_end({self.period_end}): "
-                f"look-ahead bias 위험"
+                f"filing_date({self.filing_date}) < period_end({self.period_end}): " f"look-ahead bias 위험"
             )
         return self
 

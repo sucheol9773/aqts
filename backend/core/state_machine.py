@@ -2,32 +2,39 @@
 Pipeline StateMachine: 파이프라인 상태 전이 관리
 """
 
-from enum import Enum
-from typing import Dict, List, Optional, Set
 import logging
+from enum import Enum
+from typing import Dict, List, Set
 
 logger = logging.getLogger(__name__)
 
 
 class PipelineState(str, Enum):
     """파이프라인 상태."""
-    IDLE = "IDLE"                    # 대기
-    COLLECTING = "COLLECTING"        # 데이터 수집 중
-    ANALYZING = "ANALYZING"          # 분석 중 (팩터/시그널/앙상블)
-    CONSTRUCTING = "CONSTRUCTING"    # 포트폴리오 구성 중
-    VALIDATING = "VALIDATING"        # 리스크 검증 중
-    TRADING = "TRADING"              # 주문 실행 중
-    RECONCILING = "RECONCILING"      # 대사 중
-    COMPLETED = "COMPLETED"          # 사이클 완료
-    HALTED = "HALTED"                # 비상 정지
-    ERROR = "ERROR"                  # 오류
+
+    IDLE = "IDLE"  # 대기
+    COLLECTING = "COLLECTING"  # 데이터 수집 중
+    ANALYZING = "ANALYZING"  # 분석 중 (팩터/시그널/앙상블)
+    CONSTRUCTING = "CONSTRUCTING"  # 포트폴리오 구성 중
+    VALIDATING = "VALIDATING"  # 리스크 검증 중
+    TRADING = "TRADING"  # 주문 실행 중
+    RECONCILING = "RECONCILING"  # 대사 중
+    COMPLETED = "COMPLETED"  # 사이클 완료
+    HALTED = "HALTED"  # 비상 정지
+    ERROR = "ERROR"  # 오류
 
 
 # 허용된 상태 전이
 VALID_TRANSITIONS: Dict[PipelineState, Set[PipelineState]] = {
     PipelineState.IDLE: {PipelineState.COLLECTING},
     PipelineState.COLLECTING: {PipelineState.ANALYZING, PipelineState.ERROR, PipelineState.HALTED},
-    PipelineState.ANALYZING: {PipelineState.CONSTRUCTING, PipelineState.COMPLETED, PipelineState.IDLE, PipelineState.ERROR, PipelineState.HALTED},
+    PipelineState.ANALYZING: {
+        PipelineState.CONSTRUCTING,
+        PipelineState.COMPLETED,
+        PipelineState.IDLE,
+        PipelineState.ERROR,
+        PipelineState.HALTED,
+    },
     PipelineState.CONSTRUCTING: {PipelineState.VALIDATING, PipelineState.ERROR, PipelineState.HALTED},
     PipelineState.VALIDATING: {PipelineState.TRADING, PipelineState.IDLE, PipelineState.ERROR, PipelineState.HALTED},
     PipelineState.TRADING: {PipelineState.RECONCILING, PipelineState.HALTED, PipelineState.ERROR},
@@ -40,6 +47,7 @@ VALID_TRANSITIONS: Dict[PipelineState, Set[PipelineState]] = {
 
 class InvalidTransitionError(Exception):
     """잘못된 상태 전이 시도."""
+
     pass
 
 
@@ -74,9 +82,7 @@ class PipelineStateMachine:
             InvalidTransitionError: 허용되지 않은 전이
         """
         if not self.can_transition(target):
-            raise InvalidTransitionError(
-                f"{self._state.value} → {target.value} 전이는 허용되지 않습니다"
-            )
+            raise InvalidTransitionError(f"{self._state.value} → {target.value} 전이는 허용되지 않습니다")
 
         old_state = self._state
         self._state = target

@@ -15,10 +15,8 @@ WeightOptimizer의 종합 단위 테스트
 - 빈 입력/엣지 케이스
 """
 
-import asyncio
 import unittest
-from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import numpy as np
 import pandas as pd
@@ -49,9 +47,7 @@ def _make_result(
     """테스트용 BacktestResult 팩토리"""
     if equity_curve is None:
         dates = pd.date_range("2024-01-01", periods=252, freq="B")
-        equity_curve = pd.Series(
-            np.cumsum(np.random.randn(252) * 0.01) + 100, index=dates
-        )
+        equity_curve = pd.Series(np.cumsum(np.random.randn(252) * 0.01) + 100, index=dates)
 
     return BacktestResult(
         strategy_name=name,
@@ -483,9 +479,7 @@ class TestEnsembleIntegration(unittest.IsolatedAsyncioTestCase):
 
         # Mock ensemble engine
         engine = MagicMock()
-        engine.get_weights = AsyncMock(
-            return_value={"FACTOR": 0.33, "TREND_FOLLOWING": 0.34, "RISK_PARITY": 0.33}
-        )
+        engine.get_weights = AsyncMock(return_value={"FACTOR": 0.33, "TREND_FOLLOWING": 0.34, "RISK_PARITY": 0.33})
         engine.recalibrate_weights = AsyncMock(return_value={})
         engine._weights = None
 

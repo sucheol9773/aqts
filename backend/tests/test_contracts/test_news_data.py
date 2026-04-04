@@ -1,16 +1,18 @@
 """NewsData 계약 테스트 (Contract 3)."""
 
-import pytest
 from datetime import datetime
+
+import pytest
 from pydantic import ValidationError
 
-from contracts.news_data import NewsData
 from config.constants import NewsSource
+from contracts.news_data import NewsData
 
 
 def _valid_news(**overrides):
     defaults = dict(
-        ticker="005930", title="삼성전자 실적 발표",
+        ticker="005930",
+        title="삼성전자 실적 발표",
         content="삼성전자가 4분기 실적을 발표했습니다.",
         source=NewsSource.NAVER_FINANCE,
         published_at=datetime(2024, 6, 1, 9, 0),

@@ -18,18 +18,16 @@ Redis 캐싱으로 성능을 최적화합니다.
 - 장외: 24시간 TTL
 """
 
-import asyncio
 from dataclasses import dataclass
-from datetime import datetime, timezone, time, timedelta
-from typing import Optional, Any
+from datetime import datetime, time, timedelta, timezone
+from typing import Any, Optional
 
 import httpx
-from redis.asyncio import Redis
 
 from config.logging import logger
 from config.settings import get_settings
-from db.database import RedisManager
 from core.data_collector.kis_client import KISClient
+from db.database import RedisManager
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -370,10 +368,7 @@ class ExchangeRateManager:
         # 주말 체크 (0=월요일, 6=일요일)
         is_weekday = kst_time.weekday() < 5
 
-        is_market_hours = (
-            is_weekday
-            and self.MARKET_HOURS_START <= current_time <= self.MARKET_HOURS_END
-        )
+        is_market_hours = is_weekday and self.MARKET_HOURS_START <= current_time <= self.MARKET_HOURS_END
 
         logger.debug(f"시장 시간 확인: {is_market_hours} (시각: {current_time})")
         return is_market_hours

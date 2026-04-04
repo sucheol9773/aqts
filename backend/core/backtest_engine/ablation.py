@@ -9,8 +9,10 @@ Measure incremental contribution of strategy layers:
 Calculates delta metrics between layers to isolate contribution.
 """
 
+from typing import Dict, List, Optional, Union
+
 import numpy as np
-from typing import List, Dict, Optional, Union
+
 from .metrics_calculator import MetricsCalculator
 
 
@@ -49,10 +51,7 @@ class AblationStudy:
         """
         returns = np.asarray(returns)
         if len(returns) != len(self.base_returns):
-            raise ValueError(
-                f"Layer {name} has {len(returns)} returns, "
-                f"expected {len(self.base_returns)}"
-            )
+            raise ValueError(f"Layer {name} has {len(returns)} returns, " f"expected {len(self.base_returns)}")
         self.layers[name] = returns
         # Clear cache since we added a new layer
         self.metrics_cache.clear()
@@ -74,9 +73,7 @@ class AblationStudy:
 
         return results
 
-    def contribution(
-        self, layer_a: str, layer_b: str
-    ) -> Dict[str, Optional[float]]:
+    def contribution(self, layer_a: str, layer_b: str) -> Dict[str, Optional[float]]:
         """
         Calculate delta metrics between two layers (layer_b - layer_a).
 

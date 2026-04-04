@@ -18,14 +18,13 @@ slowapi 기반 요청 제한을 제공합니다.
 
 import os
 
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from config.logging import logger
-
 
 # ══════════════════════════════════════
 # Rate Limiter 인스턴스
@@ -51,10 +50,7 @@ async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) 
     429 Too Many Requests를 AQTS 표준 응답 형식으로 반환합니다.
     """
     client_ip = get_remote_address(request)
-    logger.warning(
-        f"Rate limit exceeded: {client_ip} -> {request.url.path} "
-        f"(limit: {exc.detail})"
-    )
+    logger.warning(f"Rate limit exceeded: {client_ip} -> {request.url.path} " f"(limit: {exc.detail})")
     return JSONResponse(
         status_code=429,
         content={

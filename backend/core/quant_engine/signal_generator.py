@@ -12,7 +12,6 @@ F-02-02 명세 구현:
 """
 
 from dataclasses import dataclass
-from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -28,8 +27,8 @@ class Signal:
 
     ticker: str
     strategy: StrategyType
-    value: float        # -1.0 (강한 매도) ~ +1.0 (강한 매수)
-    confidence: float   # 0.0 ~ 1.0
+    value: float  # -1.0 (강한 매도) ~ +1.0 (강한 매수)
+    confidence: float  # 0.0 ~ 1.0
     reason: str = ""
 
 
@@ -91,9 +90,7 @@ class TechnicalIndicators:
         return macd_line, signal_line, histogram
 
     @staticmethod
-    def atr(
-        high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14
-    ) -> pd.Series:
+    def atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
         """ATR (Average True Range)"""
         prev_close = close.shift(1)
         tr1 = high - low
@@ -112,9 +109,7 @@ class SignalGenerator:
     def __init__(self):
         self._ti = TechnicalIndicators()
 
-    def generate_factor_signal(
-        self, ticker: str, composite_score: float
-    ) -> Signal:
+    def generate_factor_signal(self, ticker: str, composite_score: float) -> Signal:
         """
         팩터 투자 시그널
 
@@ -138,9 +133,7 @@ class SignalGenerator:
             reason=reason,
         )
 
-    def generate_mean_reversion_signal(
-        self, ticker: str, ohlcv: pd.DataFrame
-    ) -> Signal:
+    def generate_mean_reversion_signal(self, ticker: str, ohlcv: pd.DataFrame) -> Signal:
         """
         평균회귀 시그널 (RSI + 볼린저밴드 결합)
 
@@ -148,8 +141,13 @@ class SignalGenerator:
         RSI 과매수(>70) + 볼린저 상단 이탈 → 매도
         """
         if len(ohlcv) < 30:
-            return Signal(ticker=ticker, strategy=StrategyType.MEAN_REVERSION,
-                         value=0.0, confidence=0.0, reason="Insufficient data")
+            return Signal(
+                ticker=ticker,
+                strategy=StrategyType.MEAN_REVERSION,
+                value=0.0,
+                confidence=0.0,
+                reason="Insufficient data",
+            )
 
         close = ohlcv["close"].astype(float)
         current_price = close.iloc[-1]
@@ -165,8 +163,9 @@ class SignalGenerator:
         bb_middle = middle.iloc[-1]
 
         if pd.isna(current_rsi) or pd.isna(bb_upper):
-            return Signal(ticker=ticker, strategy=StrategyType.MEAN_REVERSION,
-                         value=0.0, confidence=0.0, reason="Indicator NaN")
+            return Signal(
+                ticker=ticker, strategy=StrategyType.MEAN_REVERSION, value=0.0, confidence=0.0, reason="Indicator NaN"
+            )
 
         # RSI 시그널: -1 ~ +1
         rsi_signal = 0.0
@@ -202,9 +201,7 @@ class SignalGenerator:
             reason=reason,
         )
 
-    def generate_trend_following_signal(
-        self, ticker: str, ohlcv: pd.DataFrame
-    ) -> Signal:
+    def generate_trend_following_signal(self, ticker: str, ohlcv: pd.DataFrame) -> Signal:
         """
         추세추종 시그널 (이동평균 크로스 + MACD + 듀얼모멘텀)
 
@@ -213,8 +210,13 @@ class SignalGenerator:
         MACD 히스토그램 양수 → 매수 보강
         """
         if len(ohlcv) < 65:
-            return Signal(ticker=ticker, strategy=StrategyType.TREND_FOLLOWING,
-                         value=0.0, confidence=0.0, reason="Insufficient data")
+            return Signal(
+                ticker=ticker,
+                strategy=StrategyType.TREND_FOLLOWING,
+                value=0.0,
+                confidence=0.0,
+                reason="Insufficient data",
+            )
 
         close = ohlcv["close"].astype(float)
 
@@ -229,8 +231,9 @@ class SignalGenerator:
         prev_hist = histogram.iloc[-2] if len(histogram) > 1 else 0.0
 
         if pd.isna(ma60) or pd.isna(current_hist):
-            return Signal(ticker=ticker, strategy=StrategyType.TREND_FOLLOWING,
-                         value=0.0, confidence=0.0, reason="Indicator NaN")
+            return Signal(
+                ticker=ticker, strategy=StrategyType.TREND_FOLLOWING, value=0.0, confidence=0.0, reason="Indicator NaN"
+            )
 
         # 이동평균 정배열/역배열 점수
         ma_signal = 0.0
@@ -271,9 +274,7 @@ class SignalGenerator:
             reason=reason,
         )
 
-    def generate_risk_parity_signal(
-        self, ticker: str, ohlcv: pd.DataFrame, market_volatility: float = 0.0
-    ) -> Signal:
+    def generate_risk_parity_signal(self, ticker: str, ohlcv: pd.DataFrame, market_volatility: float = 0.0) -> Signal:
         """
         리스크 패리티 시그널
 
@@ -281,22 +282,29 @@ class SignalGenerator:
         변동성이 낮은 종목에 더 큰 비중 부여
         """
         if len(ohlcv) < 60:
-            return Signal(ticker=ticker, strategy=StrategyType.RISK_PARITY,
-                         value=0.0, confidence=0.0, reason="Insufficient data")
+            return Signal(
+                ticker=ticker, strategy=StrategyType.RISK_PARITY, value=0.0, confidence=0.0, reason="Insufficient data"
+            )
 
         close = ohlcv["close"].astype(float)
         returns = close.pct_change().dropna()
 
         if len(returns) < 20:
-            return Signal(ticker=ticker, strategy=StrategyType.RISK_PARITY,
-                         value=0.0, confidence=0.0, reason="Insufficient returns")
+            return Signal(
+                ticker=ticker,
+                strategy=StrategyType.RISK_PARITY,
+                value=0.0,
+                confidence=0.0,
+                reason="Insufficient returns",
+            )
 
         # 60일 연환산 변동성
         vol_60d = returns.tail(60).std() * np.sqrt(252)
 
         if vol_60d < 1e-10:
-            return Signal(ticker=ticker, strategy=StrategyType.RISK_PARITY,
-                         value=0.0, confidence=0.0, reason="Zero volatility")
+            return Signal(
+                ticker=ticker, strategy=StrategyType.RISK_PARITY, value=0.0, confidence=0.0, reason="Zero volatility"
+            )
 
         # 목표 변동성 (예: 15%) 대비 역비례 포지션
         target_vol = 0.15
@@ -353,8 +361,6 @@ class SignalGenerator:
                 try:
                     internal_signal_to_contract(sig, market=market)
                 except Exception as e:
-                    logger.warning(
-                        f"[Contract] Signal 계약 위반: {ticker}/{sig.strategy.value} — {e}"
-                    )
+                    logger.warning(f"[Contract] Signal 계약 위반: {ticker}/{sig.strategy.value} — {e}")
 
         return signals

@@ -1,6 +1,7 @@
 """ExecutionGate: 주문 실행 성공 검증 (주문 → 체결 전이)."""
 
 from typing import Any
+
 from core.gates.base import BaseGate, GateResult, GateSeverity
 
 

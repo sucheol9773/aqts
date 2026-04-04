@@ -14,21 +14,19 @@
 - Currency risk management (USD 비중 제한 + 환율 리스크 할증)
 """
 
-import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Optional, Any
+from typing import Any, Optional
 
 import numpy as np
 from scipy.optimize import minimize
 
 from config.constants import (
+    PORTFOLIO_CONSTRAINTS,
     Market,
     RiskProfile,
-    PORTFOLIO_CONSTRAINTS,
 )
 from config.logging import logger
-
 
 # ══════════════════════════════════════
 # 최적화 기본 상수
@@ -215,15 +213,21 @@ class PortfolioConstructionEngine:
             # 최적화 방법 선택
             if method == "black_litterman":
                 weights = self._black_litterman_optimize(
-                    ensemble_signals, cov_matrix, self.constraints,
+                    ensemble_signals,
+                    cov_matrix,
+                    self.constraints,
                 )
             elif method == "risk_parity":
                 weights = self._risk_parity_optimize(
-                    ensemble_signals, self.constraints, cov_matrix,
+                    ensemble_signals,
+                    self.constraints,
+                    cov_matrix,
                 )
             else:
                 weights = self._mean_variance_optimize(
-                    ensemble_signals, self.constraints, cov_matrix,
+                    ensemble_signals,
+                    self.constraints,
+                    cov_matrix,
                 )
 
             # 환율 리스크: USD 비중 하드캡 적용 (F-05-02-A)
@@ -266,9 +270,7 @@ class PortfolioConstructionEngine:
 
             # 환위험 관리 경고 (F-05-02-A)
             us_markets = {Market.NYSE.value, Market.NASDAQ.value, Market.AMEX.value}
-            us_weight = sum(
-                w for m, w in portfolio.market_weights.items() if m in us_markets
-            )
+            us_weight = sum(w for m, w in portfolio.market_weights.items() if m in us_markets)
             if us_weight > self.constraints.get("max_us_weight_warning", 0.50):
                 logger.warning(
                     f"US asset ratio exceeds "
@@ -370,7 +372,6 @@ class PortfolioConstructionEngine:
         Returns:
             축소 추정된 공분산 행렬
         """
-        n = cov_sample.shape[0]
         target = np.diag(np.diag(cov_sample))  # 대각 타겟
         return (1 - shrinkage) * cov_sample + shrinkage * target
 
@@ -445,9 +446,7 @@ class PortfolioConstructionEngine:
         if result.success:
             weights = {tickers[i]: float(result.x[i]) for i in range(n)}
         else:
-            logger.warning(
-                "Mean-variance optimization failed, using signal-proportional weights"
-            )
+            logger.warning("Mean-variance optimization failed, using signal-proportional weights")
             weights = self._signal_proportional_weights(signals, max_weight)
 
         return weights
@@ -662,14 +661,10 @@ class PortfolioConstructionEngine:
         if result.success:
             weights = {tickers[i]: float(result.x[i]) for i in range(n)}
             logger.info(
-                f"Black-Litterman optimization succeeded: "
-                f"mu_bl range=[{mu_bl.min():.4f}, {mu_bl.max():.4f}]"
+                f"Black-Litterman optimization succeeded: " f"mu_bl range=[{mu_bl.min():.4f}, {mu_bl.max():.4f}]"
             )
         else:
-            logger.warning(
-                "Black-Litterman optimization failed, "
-                "falling back to signal-proportional weights"
-            )
+            logger.warning("Black-Litterman optimization failed, " "falling back to signal-proportional weights")
             weights = self._signal_proportional_weights(signals, max_weight)
 
         return weights
@@ -729,10 +724,7 @@ class PortfolioConstructionEngine:
             USD 비중 제한이 적용된 가중치
         """
         us_markets = {Market.NYSE, Market.NASDAQ, Market.AMEX}
-        us_tickers = [
-            t for t in weights
-            if market_info.get(t) in us_markets and weights[t] > 0
-        ]
+        us_tickers = [t for t in weights if market_info.get(t) in us_markets and weights[t] > 0]
         kr_tickers = [t for t in weights if t not in us_tickers and weights[t] > 0]
 
         us_total = sum(weights[t] for t in us_tickers)
@@ -860,12 +852,14 @@ class PortfolioConstructionEngine:
             quantity = int(abs(weight_diff) * seed_capital / 1000)  # 단순화
 
             if quantity > 0:
-                orders.append({
-                    "ticker": ticker,
-                    "action": action,
-                    "quantity": quantity,
-                    "weight_diff": round(weight_diff, 4),
-                    "reason": f"Rebalance from {current_weight*100:.1f}% to {target_weight*100:.1f}%",
-                })
+                orders.append(
+                    {
+                        "ticker": ticker,
+                        "action": action,
+                        "quantity": quantity,
+                        "weight_diff": round(weight_diff, 4),
+                        "reason": f"Rebalance from {current_weight*100:.1f}% to {target_weight*100:.1f}%",
+                    }
+                )
 
         return sorted(orders, key=lambda x: -abs(x["weight_diff"]))

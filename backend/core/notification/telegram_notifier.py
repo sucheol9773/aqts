@@ -24,7 +24,6 @@ from core.notification.alert_manager import (
     AlertStatus,
 )
 
-
 # 텔레그램 메시지 최대 길이
 TELEGRAM_MAX_LENGTH = 4096
 
@@ -38,9 +37,9 @@ ALERT_LEVEL_PRIORITY = {
 
 # 필터 레벨 최소 우선순위 매핑
 FILTER_LEVEL_MAP = {
-    "ALL": 0,         # 모든 알림
-    "IMPORTANT": 1,   # WARNING 이상
-    "ERROR": 2,       # ERROR 이상
+    "ALL": 0,  # 모든 알림
+    "IMPORTANT": 1,  # WARNING 이상
+    "ERROR": 2,  # ERROR 이상
 }
 
 
@@ -96,9 +95,7 @@ class TelegramNotifier:
 
         return True
 
-    async def _send_single_message(
-        self, text: str, parse_mode: str = "HTML"
-    ) -> bool:
+    async def _send_single_message(self, text: str, parse_mode: str = "HTML") -> bool:
         """단일 메시지 발송 (재시도 포함)"""
         url = f"{self._base_url}/sendMessage"
         payload = {
@@ -119,9 +116,7 @@ class TelegramNotifier:
                         f"status={response.status_code}, body={response.text}"
                     )
             except Exception as e:
-                logger.warning(
-                    f"Telegram send error (attempt {attempt}): {e}"
-                )
+                logger.warning(f"Telegram send error (attempt {attempt}): {e}")
 
             if attempt < self._max_retries:
                 await asyncio.sleep(1.0 * attempt)
@@ -146,10 +141,7 @@ class TelegramNotifier:
         """
         # 레벨 필터 체크
         if not self._should_send(alert.level):
-            logger.debug(
-                f"Alert filtered out: [{alert.level.value}] "
-                f"filter={self._alert_level}"
-            )
+            logger.debug(f"Alert filtered out: [{alert.level.value}] " f"filter={self._alert_level}")
             alert.mark_sent()  # 필터링된 경우에도 SENT 처리
             return True
 
@@ -178,14 +170,11 @@ class TelegramNotifier:
         Returns:
             {"sent": int, "failed": int, "filtered": int}
         """
-        pending = await self._alert_manager.get_alerts(
-            limit=100, status=AlertStatus.PENDING
-        )
+        pending = await self._alert_manager.get_alerts(limit=100, status=AlertStatus.PENDING)
 
         result = {"sent": 0, "failed": 0, "filtered": 0}
 
         for alert_data in pending:
-            alert_type_str = alert_data.get("alert_type", "")
             level_str = alert_data.get("level", "INFO")
 
             try:
@@ -224,9 +213,7 @@ class TelegramNotifier:
         """일일 리포트 전송"""
         from config.constants import AlertType
 
-        alert = self._alert_manager.create_from_template(
-            AlertType.DAILY_REPORT, report_data
-        )
+        alert = self._alert_manager.create_from_template(AlertType.DAILY_REPORT, report_data)
         return await self.dispatch_alert(alert)
 
     async def send_emergency_alert(self, reason: str, details: dict) -> bool:
@@ -239,12 +226,11 @@ class TelegramNotifier:
         )
         return await self.dispatch_alert(alert)
 
-    async def send_error_alert(
-        self, module: str, error_message: str, details: str = ""
-    ) -> bool:
+    async def send_error_alert(self, module: str, error_message: str, details: str = "") -> bool:
         """시스템 오류 알림 전송"""
-        from config.constants import AlertType
         from datetime import datetime, timezone
+
+        from config.constants import AlertType
 
         alert = self._alert_manager.create_from_template(
             AlertType.SYSTEM_ERROR,

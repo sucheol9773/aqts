@@ -5,7 +5,7 @@ Stage 5.1-5.2: 자본금 예산 관리 (Capital Budget Management)
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, Dict
+from typing import Dict
 
 
 @dataclass
@@ -33,9 +33,7 @@ class CapitalBudget:
         # 할당 비율 합이 1.0 확인
         total_allocation = sum(self.strategy_allocations.values())
         if abs(total_allocation - 1.0) > 0.001:
-            raise ValueError(
-                f"strategy_allocations must sum to 1.0, got {total_allocation}"
-            )
+            raise ValueError(f"strategy_allocations must sum to 1.0, got {total_allocation}")
 
         # 일일 사용 초기화
         for strategy in self.strategy_allocations:
@@ -97,8 +95,7 @@ class CapitalBudget:
             allocated = self.get_budget(strategy_id)
             used = self._daily_usage.get(strategy_id, 0.0)
             raise ValueError(
-                f"Budget exceeded for {strategy_id}: "
-                f"allocated={allocated}, used={used}, requested={amount}"
+                f"Budget exceeded for {strategy_id}: " f"allocated={allocated}, used={used}, requested={amount}"
             )
 
         self._daily_usage[strategy_id] = self._daily_usage.get(strategy_id, 0.0) + amount
@@ -140,16 +137,9 @@ class AssetClassLimiter:
         # 각 한도가 0~1 범위 확인
         for asset_class, limit in self.limits.items():
             if not (0 <= limit <= 1):
-                raise ValueError(
-                    f"Limit for {asset_class} must be in [0, 1], got {limit}"
-                )
+                raise ValueError(f"Limit for {asset_class} must be in [0, 1], got {limit}")
 
-    def check_limit(
-        self,
-        asset_class: str,
-        current_weight: float,
-        additional_weight: float
-    ) -> bool:
+    def check_limit(self, asset_class: str, current_weight: float, additional_weight: float) -> bool:
         """
         추가 비중이 한도를 초과하지 않는지 확인
 
@@ -168,9 +158,7 @@ class AssetClassLimiter:
             raise ValueError(f"current_weight must be in [0, 1], got {current_weight}")
 
         if not (0 <= additional_weight <= 1):
-            raise ValueError(
-                f"additional_weight must be in [0, 1], got {additional_weight}"
-            )
+            raise ValueError(f"additional_weight must be in [0, 1], got {additional_weight}")
 
         total_weight = current_weight + additional_weight
         limit = self.limits[asset_class]

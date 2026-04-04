@@ -17,15 +17,11 @@ class TestSentimentResult:
     """SentimentResult 데이터 구조 테스트"""
 
     def test_to_signal_value(self):
-        result = SentimentResult(
-            ticker="005930", score=0.75, confidence=0.9, model_used="test"
-        )
+        result = SentimentResult(ticker="005930", score=0.75, confidence=0.9, model_used="test")
         assert result.to_signal_value() == 0.75
 
     def test_to_signal_value_negative(self):
-        result = SentimentResult(
-            ticker="005930", score=-0.42, confidence=0.6, model_used="test"
-        )
+        result = SentimentResult(ticker="005930", score=-0.42, confidence=0.6, model_used="test")
         assert result.to_signal_value() == -0.42
 
     def test_to_dict(self):
@@ -56,13 +52,18 @@ class TestSentimentAnalyzer:
         """Claude API Mock 응답 생성"""
         response = MagicMock()
         response.content = [
-            MagicMock(text=json.dumps({
-                "score": 0.65,
-                "confidence": 0.8,
-                "summary": "삼성전자 반도체 수출 호조 전망",
-                "positive_factors": ["반도체 수출 증가", "AI 메모리 수요 확대"],
-                "negative_factors": ["중국 규제 리스크"],
-            }, ensure_ascii=False))
+            MagicMock(
+                text=json.dumps(
+                    {
+                        "score": 0.65,
+                        "confidence": 0.8,
+                        "summary": "삼성전자 반도체 수출 호조 전망",
+                        "positive_factors": ["반도체 수출 증가", "AI 메모리 수요 확대"],
+                        "negative_factors": ["중국 규제 리스크"],
+                    },
+                    ensure_ascii=False,
+                )
+            )
         ]
         return response
 
@@ -91,8 +92,10 @@ class TestSentimentAnalyzer:
         AsyncAnthropic 클라이언트 생성 자체를 Mock하여
         SOCKS 프록시 등 환경 의존성을 완전히 제거합니다.
         """
-        with patch('core.ai_analyzer.sentiment.AsyncAnthropic') as mock_cls, \
-             patch('core.ai_analyzer.sentiment.get_settings') as mock_settings:
+        with (
+            patch("core.ai_analyzer.sentiment.AsyncAnthropic") as mock_cls,
+            patch("core.ai_analyzer.sentiment.get_settings") as mock_settings,
+        ):
             mock_settings.return_value = MagicMock(
                 anthropic=MagicMock(
                     api_key="test-key",
@@ -106,8 +109,10 @@ class TestSentimentAnalyzer:
     @pytest.mark.asyncio
     async def test_analyze_ticker_no_news(self, _mock_env):
         """뉴스 없을 때 중립 점수 반환"""
-        with patch.object(SentimentAnalyzer, '_get_cached', return_value=None), \
-             patch.object(SentimentAnalyzer, '_set_cache', new_callable=AsyncMock):
+        with (
+            patch.object(SentimentAnalyzer, "_get_cached", return_value=None),
+            patch.object(SentimentAnalyzer, "_set_cache", new_callable=AsyncMock),
+        ):
 
             analyzer = SentimentAnalyzer()
             result = await analyzer.analyze_ticker("005930", [])
@@ -120,11 +125,14 @@ class TestSentimentAnalyzer:
     async def test_analyze_ticker_with_cache(self, _mock_env):
         """캐시 히트 시 캐시 결과 반환"""
         cached = SentimentResult(
-            ticker="005930", score=0.55, confidence=0.7,
-            summary="캐시 결과", model_used="cached",
+            ticker="005930",
+            score=0.55,
+            confidence=0.7,
+            summary="캐시 결과",
+            model_used="cached",
         )
 
-        with patch.object(SentimentAnalyzer, '_get_cached', return_value=cached):
+        with patch.object(SentimentAnalyzer, "_get_cached", return_value=cached):
             analyzer = SentimentAnalyzer()
             result = await analyzer.analyze_ticker("005930", [{"title": "test"}])
 
@@ -134,9 +142,11 @@ class TestSentimentAnalyzer:
     @pytest.mark.asyncio
     async def test_analyze_ticker_api_call(self, _mock_env, mock_anthropic_response, sample_articles):
         """Claude API 호출 및 결과 파싱 테스트"""
-        with patch.object(SentimentAnalyzer, '_get_cached', return_value=None), \
-             patch.object(SentimentAnalyzer, '_set_cache', new_callable=AsyncMock), \
-             patch.object(SentimentAnalyzer, '_store_to_db', new_callable=AsyncMock):
+        with (
+            patch.object(SentimentAnalyzer, "_get_cached", return_value=None),
+            patch.object(SentimentAnalyzer, "_set_cache", new_callable=AsyncMock),
+            patch.object(SentimentAnalyzer, "_store_to_db", new_callable=AsyncMock),
+        ):
 
             analyzer = SentimentAnalyzer()
             analyzer._client = AsyncMock()

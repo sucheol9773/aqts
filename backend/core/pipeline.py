@@ -127,8 +127,7 @@ class InvestmentDecisionPipeline:
         gate_results.append(result)
 
         logger.info(
-            f"[Gate] {gate_id}: {result.decision.value} "
-            f"(severity={result.severity.value}) — {result.reason}"
+            f"[Gate] {gate_id}: {result.decision.value} " f"(severity={result.severity.value}) — {result.reason}"
         )
 
         if result.decision == GateDecision.BLOCK:
@@ -169,7 +168,9 @@ class InvestmentDecisionPipeline:
 
         # ── Step 1: 뉴스 수집 ──
         articles = await self._news_service.get_articles_for_ticker(
-            ticker, hours=24, limit=20,
+            ticker,
+            hours=24,
+            limit=20,
         )
         logger.debug(f"[{ticker}] News articles found: {len(articles)}")
 
@@ -188,7 +189,9 @@ class InvestmentDecisionPipeline:
 
         # ── Step 2: AI 감성 분석 (Mode A) ──
         sentiment = await self._sentiment.analyze_ticker(
-            ticker, articles, force_refresh=force_refresh,
+            ticker,
+            articles,
+            force_refresh=force_refresh,
         )
 
         # ── Step 3: AI 투자 의견 (Mode B) ──
@@ -203,7 +206,9 @@ class InvestmentDecisionPipeline:
 
         # ── Gate: SignalGate (시그널 → 앙상블 전이) ──
         ensemble_inputs = self._build_ensemble_inputs(
-            quant_signals, sentiment, opinion,
+            quant_signals,
+            sentiment,
+            opinion,
         )
         block = await self._evaluate_gate("SignalGate", ensemble_inputs, gate_results)
         if block:
@@ -219,7 +224,9 @@ class InvestmentDecisionPipeline:
 
         # ── Gate: EnsembleGate (앙상블 → 다음 단계 전이) ──
         block = await self._evaluate_gate(
-            "EnsembleGate", result.weights_used, gate_results,
+            "EnsembleGate",
+            result.weights_used,
+            gate_results,
         )
         if block:
             return PipelineResult(
@@ -327,10 +334,14 @@ class InvestmentDecisionPipeline:
         ticker_sentiments: dict[str, dict] = {}
         for ticker in tickers:
             articles = await self._news_service.get_articles_for_ticker(
-                ticker, hours=48, limit=10,
+                ticker,
+                hours=48,
+                limit=10,
             )
             sentiment = await self._sentiment.analyze_ticker(
-                ticker, articles, force_refresh=force_refresh,
+                ticker,
+                articles,
+                force_refresh=force_refresh,
             )
             ticker_sentiments[ticker] = {
                 "score": sentiment.score,
@@ -338,16 +349,16 @@ class InvestmentDecisionPipeline:
             }
 
         sector_news = await self._news_service.get_recent_articles(
-            hours=48, category="sector", limit=20,
+            hours=48,
+            category="sector",
+            limit=20,
         )
 
         macro_context = ""
         try:
             macro_articles = await self._news_service.get_macro_articles(hours=48, limit=5)
             if macro_articles:
-                macro_context = " | ".join(
-                    a.get("title", "") for a in macro_articles[:5]
-                )
+                macro_context = " | ".join(a.get("title", "") for a in macro_articles[:5])
         except Exception:
             pass
 
@@ -369,7 +380,8 @@ class InvestmentDecisionPipeline:
         """
         macro_news = await self._news_service.get_macro_articles(hours=48, limit=30)
         return await self._opinion.generate_macro_opinion(
-            macro_news, force_refresh=force_refresh,
+            macro_news,
+            force_refresh=force_refresh,
         )
 
     async def recalibrate_ensemble_weights(
@@ -386,7 +398,8 @@ class InvestmentDecisionPipeline:
             새 가중치 딕셔너리
         """
         return await self._ensemble.recalibrate_weights(
-            strategy_performances, method="sharpe",
+            strategy_performances,
+            method="sharpe",
         )
 
     # ══════════════════════════════════════
@@ -429,12 +442,14 @@ class InvestmentDecisionPipeline:
         # Quant Engine 시그널 (Phase 2)
         if quant_signals:
             for sig in quant_signals:
-                inputs.append(StrategySignalInput(
-                    strategy=sig.strategy.value if hasattr(sig.strategy, 'value') else str(sig.strategy),
-                    value=sig.value,
-                    confidence=sig.confidence,
-                    reason=sig.reason,
-                ))
+                inputs.append(
+                    StrategySignalInput(
+                        strategy=sig.strategy.value if hasattr(sig.strategy, "value") else str(sig.strategy),
+                        value=sig.value,
+                        confidence=sig.confidence,
+                        reason=sig.reason,
+                    )
+                )
 
         # AI 감성 시그널 (Phase 3 - Mode A + Mode B 통합)
         sentiment_value = sentiment.to_signal_value()
@@ -442,15 +457,15 @@ class InvestmentDecisionPipeline:
 
         # 감성 60% + 의견 40% 가중 평균
         combined_sentiment = sentiment_value * 0.6 + opinion_value * 0.4
-        combined_confidence = (
-            sentiment.confidence * 0.6 + opinion.conviction * 0.4
-        )
+        combined_confidence = sentiment.confidence * 0.6 + opinion.conviction * 0.4
 
-        inputs.append(StrategySignalInput(
-            strategy="SENTIMENT",
-            value=round(max(-1.0, min(1.0, combined_sentiment)), 4),
-            confidence=round(max(0.0, min(1.0, combined_confidence)), 4),
-            reason=f"Sentiment={sentiment_value:.2f}, Opinion={opinion.action.value}",
-        ))
+        inputs.append(
+            StrategySignalInput(
+                strategy="SENTIMENT",
+                value=round(max(-1.0, min(1.0, combined_sentiment)), 4),
+                confidence=round(max(0.0, min(1.0, combined_confidence)), 4),
+                reason=f"Sentiment={sentiment_value:.2f}, Opinion={opinion.action.value}",
+            )
+        )
 
         return inputs

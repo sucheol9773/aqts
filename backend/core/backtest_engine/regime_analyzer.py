@@ -10,8 +10,10 @@ Classify market regimes and calculate regime-specific metrics:
 Provides per-regime performance metrics for validation.
 """
 
+from typing import Dict, List, Union
+
 import numpy as np
-from typing import List, Dict, Optional, Union
+
 from .metrics_calculator import MetricsCalculator
 
 

@@ -4,7 +4,7 @@ DecisionRecord (Pydantic BaseModel) + DecisionRecordStore (in-memory storage)
 """
 
 from datetime import datetime
-from typing import Optional, Dict, List, Any
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, Field

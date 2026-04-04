@@ -13,7 +13,7 @@ Phase 5: 알림 생성·관리·이력 조회
   - SIGNAL_GENERATED: 투자 시그널 발생 알림
 """
 
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
@@ -28,6 +28,7 @@ from config.logging import logger
 # ══════════════════════════════════════
 class AlertLevel(str, Enum):
     """알림 심각도"""
+
     INFO = "INFO"
     WARNING = "WARNING"
     ERROR = "ERROR"
@@ -36,10 +37,11 @@ class AlertLevel(str, Enum):
 
 class AlertStatus(str, Enum):
     """알림 상태"""
-    PENDING = "PENDING"      # 발송 대기
-    SENT = "SENT"            # 발송 완료
-    FAILED = "FAILED"        # 발송 실패
-    READ = "READ"            # 확인됨
+
+    PENDING = "PENDING"  # 발송 대기
+    SENT = "SENT"  # 발송 완료
+    FAILED = "FAILED"  # 발송 실패
+    READ = "READ"  # 확인됨
 
 
 # ══════════════════════════════════════
@@ -48,6 +50,7 @@ class AlertStatus(str, Enum):
 @dataclass
 class Alert:
     """개별 알림 엔티티"""
+
     alert_type: AlertType
     level: AlertLevel
     title: str
@@ -253,9 +256,7 @@ class AlertManager:
             if status:
                 query["status"] = status.value
 
-            cursor = self._collection.find(query).sort(
-                "created_at", -1
-            ).skip(offset).limit(limit)
+            cursor = self._collection.find(query).sort("created_at", -1).skip(offset).limit(limit)
             return [doc async for doc in cursor]
 
         # 메모리 폴백
@@ -268,7 +269,7 @@ class AlertManager:
             filtered = [a for a in filtered if a.status == status]
 
         filtered.sort(key=lambda a: a.created_at, reverse=True)
-        return [a.to_dict() for a in filtered[offset:offset + limit]]
+        return [a.to_dict() for a in filtered[offset : offset + limit]]
 
     async def get_alert_by_id(self, alert_id: str) -> Optional[dict]:
         """ID로 알림 조회"""
@@ -283,14 +284,9 @@ class AlertManager:
     async def get_unread_count(self) -> int:
         """미확인 알림 수"""
         if self._collection is not None:
-            return await self._collection.count_documents(
-                {"status": {"$ne": AlertStatus.READ.value}}
-            )
+            return await self._collection.count_documents({"status": {"$ne": AlertStatus.READ.value}})
 
-        return len([
-            a for a in self._in_memory_alerts
-            if a.status != AlertStatus.READ
-        ])
+        return len([a for a in self._in_memory_alerts if a.status != AlertStatus.READ])
 
     # ── 알림 상태 변경 ──
     async def mark_alert_read(self, alert_id: str) -> bool:
@@ -298,10 +294,12 @@ class AlertManager:
         if self._collection is not None:
             result = await self._collection.update_one(
                 {"id": alert_id},
-                {"$set": {
-                    "status": AlertStatus.READ.value,
-                    "read_at": datetime.now(timezone.utc).isoformat(),
-                }},
+                {
+                    "$set": {
+                        "status": AlertStatus.READ.value,
+                        "read_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                },
             )
             return result.modified_count > 0
 
@@ -316,10 +314,12 @@ class AlertManager:
         if self._collection is not None:
             result = await self._collection.update_many(
                 {"status": {"$ne": AlertStatus.READ.value}},
-                {"$set": {
-                    "status": AlertStatus.READ.value,
-                    "read_at": datetime.now(timezone.utc).isoformat(),
-                }},
+                {
+                    "$set": {
+                        "status": AlertStatus.READ.value,
+                        "read_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                },
             )
             return result.modified_count
 
@@ -342,14 +342,10 @@ class AlertManager:
         """알림 통계"""
         if self._collection is not None:
             total = await self._collection.count_documents({})
-            unread = await self._collection.count_documents(
-                {"status": {"$ne": AlertStatus.READ.value}}
-            )
+            unread = await self._collection.count_documents({"status": {"$ne": AlertStatus.READ.value}})
             by_level = {}
             for level in AlertLevel:
-                count = await self._collection.count_documents(
-                    {"level": level.value}
-                )
+                count = await self._collection.count_documents({"level": level.value})
                 by_level[level.value] = count
             return {"total": total, "unread": unread, "by_level": by_level}
 
@@ -357,7 +353,5 @@ class AlertManager:
         unread = len([a for a in self._in_memory_alerts if a.status != AlertStatus.READ])
         by_level = {}
         for level in AlertLevel:
-            by_level[level.value] = len(
-                [a for a in self._in_memory_alerts if a.level == level]
-            )
+            by_level[level.value] = len([a for a in self._in_memory_alerts if a.level == level])
         return {"total": total, "unread": unread, "by_level": by_level}

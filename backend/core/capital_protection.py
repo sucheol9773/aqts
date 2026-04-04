@@ -11,8 +11,7 @@ Stage 5.4-5.9: 자본 보호 계층 (Capital Protection Layers)
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from typing import Optional
+from datetime import datetime
 
 
 @dataclass
@@ -42,9 +41,7 @@ class DailyOrderLimiter:
             RuntimeError: 한도를 초과했을 때
         """
         if not self.can_place_order():
-            raise RuntimeError(
-                f"Daily order limit exceeded: {self._order_count}/{self.max_orders}"
-            )
+            raise RuntimeError(f"Daily order limit exceeded: {self._order_count}/{self.max_orders}")
 
         self._order_count += 1
         return self.max_orders - self._order_count
@@ -104,10 +101,7 @@ class StaleQuoteBlocker:
         if self.is_stale(quote_timestamp):
             now = datetime.utcnow()
             age_seconds = (now - quote_timestamp).total_seconds()
-            raise ValueError(
-                f"Quote is too stale: age={age_seconds:.1f}s, "
-                f"max_allowed={self.max_stale_seconds}s"
-            )
+            raise ValueError(f"Quote is too stale: age={age_seconds:.1f}s, " f"max_allowed={self.max_stale_seconds}s")
 
 
 @dataclass
@@ -176,10 +170,7 @@ class APIFailureSafeMode:
 
     def __post_init__(self):
         if self.max_consecutive_failures <= 0:
-            raise ValueError(
-                f"max_consecutive_failures must be > 0, "
-                f"got {self.max_consecutive_failures}"
-            )
+            raise ValueError(f"max_consecutive_failures must be > 0, " f"got {self.max_consecutive_failures}")
 
     def record_failure(self) -> bool:
         """
@@ -216,9 +207,7 @@ class CashFloorGuard:
 
     def __post_init__(self):
         if not (0 <= self.min_cash_ratio <= 1):
-            raise ValueError(
-                f"min_cash_ratio must be in [0, 1], got {self.min_cash_ratio}"
-            )
+            raise ValueError(f"min_cash_ratio must be in [0, 1], got {self.min_cash_ratio}")
 
     def check_floor(self, cash_amount: float, total_portfolio: float) -> bool:
         """

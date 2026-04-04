@@ -27,17 +27,19 @@ def _make_positions(n: int = 6) -> list[PositionSnapshot]:
         avg = 50000
         qty = 10
         curr = avg * (1 + pnl_pct / 100)
-        positions.append(PositionSnapshot(
-            ticker=ticker,
-            name=name,
-            quantity=qty,
-            avg_price=avg,
-            current_price=curr,
-            market_value=curr * qty,
-            pnl=avg * qty * pnl_pct / 100,
-            pnl_percent=pnl_pct,
-            weight=100 / n,
-        ))
+        positions.append(
+            PositionSnapshot(
+                ticker=ticker,
+                name=name,
+                quantity=qty,
+                avg_price=avg,
+                current_price=curr,
+                market_value=curr * qty,
+                pnl=avg * qty * pnl_pct / 100,
+                pnl_percent=pnl_pct,
+                weight=100 / n,
+            )
+        )
     return positions
 
 
@@ -156,4 +158,4 @@ class TestTopBottom3:
         assert "Top 3" in msg
         assert "Bottom 3" in msg
         assert "Alphabet" in msg  # GOOGL = top
-        assert "Tesla" in msg     # TSLA = bottom
+        assert "Tesla" in msg  # TSLA = bottom

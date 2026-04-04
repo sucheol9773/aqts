@@ -13,7 +13,7 @@ from api.schemas.alerts import AlertListResponse, AlertResponse, AlertStatsRespo
 from api.schemas.common import APIResponse
 from config.constants import AlertType
 from config.logging import logger
-from core.notification.alert_manager import AlertLevel, AlertManager, AlertStatus
+from core.notification.alert_manager import AlertLevel, AlertManager
 
 router = APIRouter()
 
@@ -45,7 +45,10 @@ async def get_alerts(
         lv = AlertLevel(level) if level else None
 
         alerts = await manager.get_alerts(
-            limit=limit, offset=offset, alert_type=at, level=lv,
+            limit=limit,
+            offset=offset,
+            alert_type=at,
+            level=lv,
         )
         unread = await manager.get_unread_count()
 

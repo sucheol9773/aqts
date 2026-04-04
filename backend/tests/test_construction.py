@@ -13,12 +13,11 @@ TargetAllocation, TargetPortfolio, PortfolioConstructionEngine의 종합 단위 
 """
 
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 
-from config.constants import Market, RiskProfile, PORTFOLIO_CONSTRAINTS
+from config.constants import PORTFOLIO_CONSTRAINTS, Market, RiskProfile
 from core.portfolio_manager.construction import (
     PortfolioConstructionEngine,
     TargetAllocation,
@@ -372,9 +371,7 @@ class TestPortfolioConstructionEngine:
         }
 
     @pytest.mark.asyncio
-    async def test_construct_mean_variance(
-        self, engine, sample_signals, sample_sector_info, sample_market_info
-    ):
+    async def test_construct_mean_variance(self, engine, sample_signals, sample_sector_info, sample_market_info):
         """평균-분산 최적화 포트폴리오 구성 테스트"""
         # Arrange
         current_portfolio = {t: 0.0 for t in sample_signals.keys()}
@@ -400,9 +397,7 @@ class TestPortfolioConstructionEngine:
         assert portfolio.total_value == seed_capital
 
     @pytest.mark.asyncio
-    async def test_construct_risk_parity(
-        self, engine, sample_signals, sample_sector_info, sample_market_info
-    ):
+    async def test_construct_risk_parity(self, engine, sample_signals, sample_sector_info, sample_market_info):
         """리스크 패리티 포트폴리오 구성 테스트"""
         # Arrange
         current_portfolio = {t: 0.0 for t in sample_signals.keys()}
@@ -827,9 +822,7 @@ class TestPortfolioConstructionEngine:
         assert all(o["quantity"] > 0 for o in orders)
 
     @pytest.mark.asyncio
-    async def test_construct_allocations_count(
-        self, engine, sample_signals, sample_sector_info, sample_market_info
-    ):
+    async def test_construct_allocations_count(self, engine, sample_signals, sample_sector_info, sample_market_info):
         """포트폴리오: 할당량 수가 합리적인지 테스트"""
         # Arrange
         current_portfolio = {t: 0.0 for t in sample_signals.keys()}
@@ -877,9 +870,7 @@ class TestPortfolioConstructionEngine:
             assert -1.0 <= allocation.signal_score <= 1.0
 
     @pytest.mark.asyncio
-    async def test_construct_cash_ratio_valid(
-        self, engine, sample_signals, sample_sector_info, sample_market_info
-    ):
+    async def test_construct_cash_ratio_valid(self, engine, sample_signals, sample_sector_info, sample_market_info):
         """포트폴리오: 현금 비중이 유효한지 테스트"""
         # Arrange
         current_portfolio = {t: 0.0 for t in sample_signals.keys()}
@@ -978,10 +969,7 @@ class TestEdgeCases:
         # Arrange
         signals = {f"STOCK_{i:03d}": 0.5 + 0.01 * i for i in range(100)}
         sector_info = {f"STOCK_{i:03d}": f"Sector{i % 10}" for i in range(100)}
-        market_info = {
-            f"STOCK_{i:03d}": Market.NYSE if i % 2 == 0 else Market.NASDAQ
-            for i in range(100)
-        }
+        market_info = {f"STOCK_{i:03d}": Market.NYSE if i % 2 == 0 else Market.NASDAQ for i in range(100)}
 
         # Act
         portfolio = await engine.construct(
@@ -1097,7 +1085,7 @@ class TestEstimateCovariance:
         price_history = {"A": prices_a.tolist(), "B": prices_b.tolist()}
 
         cov = engine._estimate_covariance(tickers, price_history)
-        expected_annual_var = daily_vol ** 2 * 252
+        expected_annual_var = daily_vol**2 * 252
         # 축소 추정이 적용되므로 분산이 약간 줄어들 수 있음
         assert cov[0, 0] > expected_annual_var * 0.2
         assert cov[0, 0] < expected_annual_var * 3.0
@@ -1168,11 +1156,13 @@ class TestBlackLittermanOptimize:
         """실제 공분산 행렬 사용 시 정상 동작"""
         np.random.seed(42)
         signals = {"A": 0.6, "B": 0.4, "C": 0.3}
-        cov = np.array([
-            [0.04, 0.01, 0.005],
-            [0.01, 0.09, 0.02],
-            [0.005, 0.02, 0.06],
-        ])
+        cov = np.array(
+            [
+                [0.04, 0.01, 0.005],
+                [0.01, 0.09, 0.02],
+                [0.005, 0.02, 0.06],
+            ]
+        )
         constraints = {"max_single_weight": 0.40}
 
         weights = engine._black_litterman_optimize(signals, cov, constraints)
@@ -1204,10 +1194,16 @@ class TestBlackLittermanOptimize:
         constraints = {"max_single_weight": 0.80}
 
         w_high = engine._black_litterman_optimize(
-            signals, cov, constraints, signal_confidence=0.95,
+            signals,
+            cov,
+            constraints,
+            signal_confidence=0.95,
         )
         w_low = engine._black_litterman_optimize(
-            signals, cov, constraints, signal_confidence=0.1,
+            signals,
+            cov,
+            constraints,
+            signal_confidence=0.1,
         )
 
         assert w_high["A"] >= w_low["A"] - 0.05
@@ -1287,7 +1283,9 @@ class TestCurrencyCap:
         """USD 비중 초과 시 축소"""
         weights = {"US1": 0.4, "US2": 0.4, "KR1": 0.2}
         market_info = {
-            "US1": Market.NYSE, "US2": Market.NASDAQ, "KR1": Market.KRX,
+            "US1": Market.NYSE,
+            "US2": Market.NASDAQ,
+            "KR1": Market.KRX,
         }
         result = engine._apply_currency_cap(weights, market_info)
         us_total = result["US1"] + result["US2"]
@@ -1297,8 +1295,10 @@ class TestCurrencyCap:
         """축소된 비중이 한국 종목에 재배분"""
         weights = {"US1": 0.5, "US2": 0.3, "KR1": 0.1, "KR2": 0.1}
         market_info = {
-            "US1": Market.NYSE, "US2": Market.NASDAQ,
-            "KR1": Market.KRX, "KR2": Market.KRX,
+            "US1": Market.NYSE,
+            "US2": Market.NASDAQ,
+            "KR1": Market.KRX,
+            "KR2": Market.KRX,
         }
         result = engine._apply_currency_cap(weights, market_info)
         kr_total = result["KR1"] + result["KR2"]

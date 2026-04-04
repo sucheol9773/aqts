@@ -1,6 +1,7 @@
 """SignalGate: 시그널 유효성 검증 (시그널 → 앙상블 전이)."""
 
 from typing import Any
+
 from core.gates.base import BaseGate, GateResult, GateSeverity
 
 

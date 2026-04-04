@@ -9,33 +9,26 @@ Tests for Stage 4 Decision Audit Trail
 - Edge cases: missing steps, duplicate decision_id, invalid step names
 """
 
-import pytest
-import asyncio
-from datetime import datetime, timedelta, timezone
-from unittest.mock import patch, MagicMock, AsyncMock
-from uuid import uuid4
+from datetime import datetime, timedelta
 
-from fastapi import HTTPException, status
+import pytest
+
+# API and auth imports
+from core.audit.collectors import (
+    FeatureCollector,
+    GateResultCollector,
+    InputSnapshotCollector,
+    RiskCheckCollector,
+    SignalCollector,
+)
 
 # Decision audit imports
 from core.audit.decision_record import DecisionRecord, DecisionRecordStore, get_decision_store
-from core.audit.collectors import (
-    InputSnapshotCollector,
-    FeatureCollector,
-    SignalCollector,
-    RiskCheckCollector,
-    GateResultCollector,
-)
-from core.gates.base import GateResult, GateDecision, GateSeverity
-
-# API and auth imports
-from api.middleware.auth import AuthService
-from config.settings import get_settings
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Unit Tests: DecisionRecord (10+ tests)
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class TestDecisionRecord:
     """Test DecisionRecord creation and properties."""
@@ -107,6 +100,7 @@ class TestDecisionRecord:
 # ══════════════════════════════════════════════════════════════════════════════
 # Unit Tests: DecisionRecordStore (15+ tests)
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class TestDecisionRecordStore:
     """Test DecisionRecordStore in-memory storage."""
@@ -285,6 +279,7 @@ class TestDecisionRecordStore:
 # Unit Tests: Collectors (5+ tests)
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 class TestInputSnapshotCollector:
     """Test InputSnapshotCollector."""
 
@@ -420,6 +415,7 @@ class TestGateResultCollector:
 # Integration Tests: Full Audit Chain (5+ tests)
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 class TestFullAuditChain:
     """Test complete 7-step audit chain."""
 
@@ -480,9 +476,7 @@ class TestFullAuditChain:
         store.update_step(decision_id, "step5_portfolio", step5_data)
 
         # Step 6: Risk Check
-        step6_data = collectors["risk"].collect(
-            [{"layer_name": "layer_1", "status": "PASS", "severity": "INFO"}]
-        )
+        step6_data = collectors["risk"].collect([{"layer_name": "layer_1", "status": "PASS", "severity": "INFO"}])
         store.update_step(decision_id, "step6_risk_check", step6_data)
 
         # Step 7: Execution
@@ -490,9 +484,7 @@ class TestFullAuditChain:
         store.update_step(decision_id, "step7_execution", step7_data)
 
         # Gate Results
-        gate_data = collectors["gate"].collect(
-            [{"gate_id": "DataGate", "decision": "PASS"}]
-        )
+        gate_data = collectors["gate"].collect([{"gate_id": "DataGate", "decision": "PASS"}])
         store.update_step(decision_id, "gate_results", gate_data)
 
         # Verify full chain
@@ -526,6 +518,7 @@ class TestFullAuditChain:
 # ══════════════════════════════════════════════════════════════════════════════
 # Edge Cases (5+ tests)
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class TestAuditTrailEdgeCases:
     """Test edge cases and error conditions."""
@@ -586,6 +579,7 @@ class TestAuditTrailEdgeCases:
 # ══════════════════════════════════════════════════════════════════════════════
 # API Route Tests (5+ tests)
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class TestAuditAPIRoutes:
     """Test audit API routes."""

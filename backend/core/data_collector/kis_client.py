@@ -159,8 +159,7 @@ class KISClient:
         if self.is_backtest:
             raise KISAPIError(
                 "BACKTEST",
-                "BACKTEST 모드에서는 실제 API 호출이 불가합니다. "
-                "DEMO 또는 LIVE 모드로 전환하세요.",
+                "BACKTEST 모드에서는 실제 API 호출이 불가합니다. " "DEMO 또는 LIVE 모드로 전환하세요.",
             )
 
     async def _get_auth_headers(self, tr_id: str) -> dict:
@@ -238,13 +237,13 @@ class KISClient:
             "FID_INPUT_ISCD": ticker,
         }
         return await self._request(
-            "GET", "/uapi/domestic-stock/v1/quotations/inquire-price",
-            tr_id, params=params,
+            "GET",
+            "/uapi/domestic-stock/v1/quotations/inquire-price",
+            tr_id,
+            params=params,
         )
 
-    async def get_kr_stock_daily(
-        self, ticker: str, start_date: str, end_date: str, period: str = "D"
-    ) -> dict:
+    async def get_kr_stock_daily(self, ticker: str, start_date: str, end_date: str, period: str = "D") -> dict:
         """국내주식 기간별 시세 조회 (일/주/월)"""
         tr_id = "FHKST03010100"
         params = {
@@ -256,8 +255,10 @@ class KISClient:
             "FID_ORG_ADJ_PRC": "0",
         }
         return await self._request(
-            "GET", "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice",
-            tr_id, params=params,
+            "GET",
+            "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice",
+            tr_id,
+            params=params,
         )
 
     async def get_us_stock_price(self, ticker: str, exchange: str = "NAS") -> dict:
@@ -265,30 +266,40 @@ class KISClient:
         tr_id = "HHDFS00000300"
         params = {"AUTH": "", "EXCD": exchange, "SYMB": ticker}
         return await self._request(
-            "GET", "/uapi/overseas-price/v1/quotations/price",
-            tr_id, params=params,
+            "GET",
+            "/uapi/overseas-price/v1/quotations/price",
+            tr_id,
+            params=params,
         )
 
-    async def get_us_stock_daily(
-        self, ticker: str, period: str = "D", count: int = 100, exchange: str = "NAS"
-    ) -> dict:
+    async def get_us_stock_daily(self, ticker: str, period: str = "D", count: int = 100, exchange: str = "NAS") -> dict:
         """해외주식 기간별 시세 조회"""
         tr_id = "HHDFS76240000"
         params = {
-            "AUTH": "", "EXCD": exchange, "SYMB": ticker,
-            "GUBN": "0", "BYMD": "", "MODP": "1",
+            "AUTH": "",
+            "EXCD": exchange,
+            "SYMB": ticker,
+            "GUBN": "0",
+            "BYMD": "",
+            "MODP": "1",
         }
         return await self._request(
-            "GET", "/uapi/overseas-price/v1/quotations/dailyprice",
-            tr_id, params=params,
+            "GET",
+            "/uapi/overseas-price/v1/quotations/dailyprice",
+            tr_id,
+            params=params,
         )
 
     # ══════════════════════════════════════
     # 주문 API
     # ══════════════════════════════════════
     async def place_kr_order(
-        self, ticker: str, side: str, quantity: int,
-        price: int = 0, order_type: str = "01",
+        self,
+        ticker: str,
+        side: str,
+        quantity: int,
+        price: int = 0,
+        order_type: str = "01",
     ) -> dict:
         """
         국내주식 주문
@@ -315,19 +326,22 @@ class KISClient:
         }
 
         mode_label = self.trading_mode.value
-        logger.info(
-            f"KIS [{mode_label}] Order: {side} {ticker} "
-            f"qty={quantity} price={price} type={order_type}"
-        )
+        logger.info(f"KIS [{mode_label}] Order: {side} {ticker} " f"qty={quantity} price={price} type={order_type}")
 
         return await self._request(
-            "POST", "/uapi/domestic-stock/v1/trading/order-cash",
-            tr_id, body=body,
+            "POST",
+            "/uapi/domestic-stock/v1/trading/order-cash",
+            tr_id,
+            body=body,
         )
 
     async def place_us_order(
-        self, ticker: str, side: str, quantity: int,
-        price: float = 0, exchange: str = "NASD",
+        self,
+        ticker: str,
+        side: str,
+        quantity: int,
+        price: float = 0,
+        exchange: str = "NASD",
     ) -> dict:
         """
         해외주식 주문
@@ -357,14 +371,13 @@ class KISClient:
         }
 
         mode_label = self.trading_mode.value
-        logger.info(
-            f"KIS [{mode_label}] US Order: {side} {ticker}@{exchange} "
-            f"qty={quantity} price={price}"
-        )
+        logger.info(f"KIS [{mode_label}] US Order: {side} {ticker}@{exchange} " f"qty={quantity} price={price}")
 
         return await self._request(
-            "POST", "/uapi/overseas-stock/v1/trading/order",
-            tr_id, body=body,
+            "POST",
+            "/uapi/overseas-stock/v1/trading/order",
+            tr_id,
+            body=body,
         )
 
     # ══════════════════════════════════════
@@ -387,8 +400,10 @@ class KISClient:
             "CTX_AREA_NK100": "",
         }
         return await self._request(
-            "GET", "/uapi/domestic-stock/v1/trading/inquire-balance",
-            tr_id, params=params,
+            "GET",
+            "/uapi/domestic-stock/v1/trading/inquire-balance",
+            tr_id,
+            params=params,
         )
 
     async def get_us_balance(self) -> dict:
@@ -403,8 +418,10 @@ class KISClient:
             "CTX_AREA_NK200": "",
         }
         return await self._request(
-            "GET", "/uapi/overseas-stock/v1/trading/inquire-balance",
-            tr_id, params=params,
+            "GET",
+            "/uapi/overseas-stock/v1/trading/inquire-balance",
+            tr_id,
+            params=params,
         )
 
     # ══════════════════════════════════════
@@ -420,8 +437,10 @@ class KISClient:
             "TR_CRCY_CD": "USD",
         }
         return await self._request(
-            "GET", "/uapi/overseas-stock/v1/trading/inquire-present-balance",
-            tr_id, params=params,
+            "GET",
+            "/uapi/overseas-stock/v1/trading/inquire-present-balance",
+            tr_id,
+            params=params,
         )
 
 

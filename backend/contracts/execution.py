@@ -48,8 +48,7 @@ class ExecutionResult(BaseModel):
         """filled_quantity <= requested_quantity."""
         if self.filled_quantity > self.requested_quantity:
             raise ValueError(
-                f"filled_quantity({self.filled_quantity}) > "
-                f"requested_quantity({self.requested_quantity})"
+                f"filled_quantity({self.filled_quantity}) > " f"requested_quantity({self.requested_quantity})"
             )
         return self
 
@@ -59,8 +58,7 @@ class ExecutionResult(BaseModel):
         if self.status in (OrderStatus.FILLED, OrderStatus.PARTIAL):
             if self.filled_quantity > 0 and self.filled_price is None:
                 raise ValueError(
-                    f"status={self.status.value}이고 filled_quantity > 0이면 "
-                    f"filled_price가 필수입니다"
+                    f"status={self.status.value}이고 filled_quantity > 0이면 " f"filled_price가 필수입니다"
                 )
         return self
 

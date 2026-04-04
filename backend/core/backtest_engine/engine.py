@@ -11,13 +11,12 @@ F-07-01 명세 구현:
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Optional
 
 import numpy as np
 import pandas as pd
 
-from config.constants import Country, TRANSACTION_COSTS
+from config.constants import TRANSACTION_COSTS, Country
 from config.logging import logger
 
 
@@ -26,13 +25,13 @@ class BacktestConfig:
     """백테스트 설정"""
 
     initial_capital: float = 50_000_000.0  # 원
-    start_date: Optional[str] = None       # YYYY-MM-DD
-    end_date: Optional[str] = None         # YYYY-MM-DD
+    start_date: Optional[str] = None  # YYYY-MM-DD
+    end_date: Optional[str] = None  # YYYY-MM-DD
     country: Country = Country.KR
     commission_rate: Optional[float] = None  # None이면 Country 기본값 사용
     tax_rate: Optional[float] = None
     slippage_rate: Optional[float] = None
-    risk_free_rate: float = 0.035          # 연 3.5% (한국 기준금리 근사)
+    risk_free_rate: float = 0.035  # 연 3.5% (한국 기준금리 근사)
     benchmark_returns: Optional[pd.Series] = None  # 벤치마크 수익률
 
     def get_costs(self) -> dict:
@@ -51,11 +50,11 @@ class TradeRecord:
 
     date: str
     ticker: str
-    side: str          # BUY / SELL
+    side: str  # BUY / SELL
     quantity: int
     price: float
-    cost: float        # 거래 비용 (수수료 + 세금 + 슬리피지)
-    pnl: float = 0.0   # 실현 손익 (매도 시에만)
+    cost: float  # 거래 비용 (수수료 + 세금 + 슬리피지)
+    pnl: float = 0.0  # 실현 손익 (매도 시에만)
 
 
 @dataclass
@@ -68,22 +67,22 @@ class BacktestResult:
     end_date: str
     initial_capital: float
     final_capital: float
-    total_return: float       # 총 수익률
-    cagr: float               # 연평균 수익률
-    mdd: float                # 최대 낙폭
-    sharpe_ratio: float       # 샤프 비율
-    sortino_ratio: float      # 소르티노 비율
-    calmar_ratio: float       # 칼마 비율
-    win_rate: float           # 승률
-    profit_factor: float      # 수익 팩터
-    total_trades: int         # 총 거래 횟수
-    avg_trade_return: float   # 평균 거래 수익률
+    total_return: float  # 총 수익률
+    cagr: float  # 연평균 수익률
+    mdd: float  # 최대 낙폭
+    sharpe_ratio: float  # 샤프 비율
+    sortino_ratio: float  # 소르티노 비율
+    calmar_ratio: float  # 칼마 비율
+    win_rate: float  # 승률
+    profit_factor: float  # 수익 팩터
+    total_trades: int  # 총 거래 횟수
+    avg_trade_return: float  # 평균 거래 수익률
     max_consecutive_losses: int  # 최대 연속 손실
     # 벤치마크 대비 지표 (F-07-01 완성)
-    alpha: float = 0.0              # Jensen's Alpha (연율)
-    beta: float = 0.0               # 시장 Beta
+    alpha: float = 0.0  # Jensen's Alpha (연율)
+    beta: float = 0.0  # 시장 Beta
     information_ratio: float = 0.0  # Information Ratio
-    tracking_error: float = 0.0     # Tracking Error (연율)
+    tracking_error: float = 0.0  # Tracking Error (연율)
     # 시계열 데이터
     equity_curve: pd.Series = field(default_factory=pd.Series)  # 자산 곡선
     drawdown_curve: pd.Series = field(default_factory=pd.Series)  # 드로다운 곡선
@@ -218,11 +217,17 @@ class BacktestEngine:
 
                     cash += net_proceeds
 
-                    trade_records.append(TradeRecord(
-                        date=date_str, ticker=ticker, side="SELL",
-                        quantity=quantity, price=effective_price,
-                        cost=total_cost, pnl=pnl,
-                    ))
+                    trade_records.append(
+                        TradeRecord(
+                            date=date_str,
+                            ticker=ticker,
+                            side="SELL",
+                            quantity=quantity,
+                            price=effective_price,
+                            cost=total_cost,
+                            pnl=pnl,
+                        )
+                    )
 
                     del positions[ticker]
 
@@ -265,11 +270,16 @@ class BacktestEngine:
                             "avg_price": effective_price,
                         }
 
-                        trade_records.append(TradeRecord(
-                            date=date_str, ticker=ticker, side="BUY",
-                            quantity=quantity, price=effective_price,
-                            cost=commission,
-                        ))
+                        trade_records.append(
+                            TradeRecord(
+                                date=date_str,
+                                ticker=ticker,
+                                side="BUY",
+                                quantity=quantity,
+                                price=effective_price,
+                                cost=commission,
+                            )
+                        )
 
             # 일말 포트폴리오 평가
             eod_value = cash
@@ -353,14 +363,10 @@ class BacktestEngine:
             avg_trade_return = sum(t.pnl for t in sell_trades) / total_trades / initial
 
         # 최대 연속 손실
-        max_consec_losses = _max_consecutive(
-            [1 if t.pnl <= 0 else 0 for t in sell_trades]
-        )
+        max_consec_losses = _max_consecutive([1 if t.pnl <= 0 else 0 for t in sell_trades])
 
         # 월별 수익률
-        monthly_returns = daily_returns.resample("ME").apply(
-            lambda x: (1 + x).prod() - 1
-        )
+        monthly_returns = daily_returns.resample("ME").apply(lambda x: (1 + x).prod() - 1)
 
         # ── 벤치마크 대비 지표 (F-07-01 완성) ──
         alpha, beta, info_ratio, tracking_err = self._calculate_benchmark_metrics(
@@ -459,10 +465,16 @@ class BacktestEngine:
             end_date="",
             initial_capital=self._config.initial_capital,
             final_capital=self._config.initial_capital,
-            total_return=0.0, cagr=0.0, mdd=0.0,
-            sharpe_ratio=0.0, sortino_ratio=0.0, calmar_ratio=0.0,
-            win_rate=0.0, profit_factor=0.0,
-            total_trades=0, avg_trade_return=0.0,
+            total_return=0.0,
+            cagr=0.0,
+            mdd=0.0,
+            sharpe_ratio=0.0,
+            sortino_ratio=0.0,
+            calmar_ratio=0.0,
+            win_rate=0.0,
+            profit_factor=0.0,
+            total_trades=0,
+            avg_trade_return=0.0,
             max_consecutive_losses=0,
         )
 
@@ -487,23 +499,25 @@ class StrategyComparator:
 
         rows = []
         for r in results:
-            rows.append({
-                "strategy": r.strategy_name,
-                "total_return": r.total_return,
-                "cagr": r.cagr,
-                "mdd": r.mdd,
-                "sharpe": r.sharpe_ratio,
-                "sortino": r.sortino_ratio,
-                "calmar": r.calmar_ratio,
-                "alpha": r.alpha,
-                "beta": r.beta,
-                "info_ratio": r.information_ratio,
-                "tracking_error": r.tracking_error,
-                "win_rate": r.win_rate,
-                "profit_factor": r.profit_factor,
-                "total_trades": r.total_trades,
-                "max_consec_loss": r.max_consecutive_losses,
-            })
+            rows.append(
+                {
+                    "strategy": r.strategy_name,
+                    "total_return": r.total_return,
+                    "cagr": r.cagr,
+                    "mdd": r.mdd,
+                    "sharpe": r.sharpe_ratio,
+                    "sortino": r.sortino_ratio,
+                    "calmar": r.calmar_ratio,
+                    "alpha": r.alpha,
+                    "beta": r.beta,
+                    "info_ratio": r.information_ratio,
+                    "tracking_error": r.tracking_error,
+                    "win_rate": r.win_rate,
+                    "profit_factor": r.profit_factor,
+                    "total_trades": r.total_trades,
+                    "max_consec_loss": r.max_consecutive_losses,
+                }
+            )
 
         df = pd.DataFrame(rows).set_index("strategy")
         return df.sort_values("sharpe", ascending=False)

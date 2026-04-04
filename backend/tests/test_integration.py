@@ -11,18 +11,17 @@ AQTS Phase 6 - Integration Tests
 모든 외부 의존성(DB, Redis, KIS API, Anthropic) mock 처리.
 """
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-import asyncio
-from datetime import datetime, timezone
-from unittest.mock import MagicMock, AsyncMock, patch, PropertyMock
 
+from config.constants import OrderSide
 from config.settings import TradingMode
-from config.constants import OrderSide, Market
-
 
 # ══════════════════════════════════════
 # Fixtures
 # ══════════════════════════════════════
+
 
 @pytest.fixture
 def demo_settings():
@@ -144,6 +143,7 @@ def backtest_settings():
 # 1. TradingGuard + ModeManager 연동
 # ══════════════════════════════════════
 
+
 class TestTradingGuardModeManagerIntegration:
     """TradingGuard와 ModeManager 간 연동 테스트"""
 
@@ -154,8 +154,8 @@ class TestTradingGuardModeManagerIntegration:
         mock_mm_settings.return_value = demo_settings
         mock_tg_settings.return_value = demo_settings
 
-        from core.trading_guard import TradingGuard
         from core.mode_manager import ModeManager
+        from core.trading_guard import TradingGuard
 
         guard = TradingGuard()
         manager = ModeManager()
@@ -185,7 +185,6 @@ class TestTradingGuardModeManagerIntegration:
         mock_tg_settings.return_value = live_settings
 
         from core.trading_guard import TradingGuard
-        from core.mode_manager import ModeManager
 
         guard = TradingGuard()
 
@@ -256,6 +255,7 @@ class TestTradingGuardModeManagerIntegration:
 # 2. ModeManager 모드 전환 시나리오
 # ══════════════════════════════════════
 
+
 class TestModeTransitionIntegration:
     """모드 전환 종합 시나리오 테스트"""
 
@@ -325,9 +325,7 @@ class TestModeTransitionIntegration:
         result = manager.check_demo_to_live()
 
         # LIVE/DEMO 자격증명 분리 항목이 실패
-        separation_item = next(
-            i for i in result.items if "분리" in i.name
-        )
+        separation_item = next(i for i in result.items if "분리" in i.name)
         assert separation_item.passed is False
 
     @patch("core.mode_manager.get_settings")
@@ -376,6 +374,7 @@ class TestModeTransitionIntegration:
 # ══════════════════════════════════════
 # 3. HealthChecker + ModeManager 연동
 # ══════════════════════════════════════
+
 
 class TestHealthCheckerModeManagerIntegration:
     """HealthChecker와 ModeManager 연동 테스트"""
@@ -442,6 +441,7 @@ class TestHealthCheckerModeManagerIntegration:
 # ══════════════════════════════════════
 # 4. TradingGuard 서킷브레이커 시나리오
 # ══════════════════════════════════════
+
 
 class TestCircuitBreakerScenarios:
     """서킷브레이커 연쇄 동작 시나리오"""
@@ -562,13 +562,14 @@ class TestCircuitBreakerScenarios:
 # 5. AlertManager + TelegramNotifier 연동
 # ══════════════════════════════════════
 
+
 class TestNotificationIntegration:
     """알림 시스템 통합 테스트"""
 
     def test_create_alert_from_template(self, demo_settings):
         """템플릿 기반 알림 생성"""
-        from core.notification.alert_manager import AlertManager, AlertLevel
         from config.constants import AlertType
+        from core.notification.alert_manager import AlertLevel, AlertManager
 
         manager = AlertManager()
         alert = manager.create_from_template(
@@ -587,23 +588,20 @@ class TestNotificationIntegration:
     @pytest.mark.asyncio
     async def test_alert_stats_calculation(self, demo_settings):
         """알림 통계 계산"""
-        from core.notification.alert_manager import AlertManager, AlertLevel
         from config.constants import AlertType
+        from core.notification.alert_manager import AlertLevel, AlertManager
 
         manager = AlertManager()
 
         # 다양한 레벨 알림 생성
         manager.create_alert(
-            alert_type=AlertType.SYSTEM_ERROR,
-            title="정보", message="시스템 정상", level=AlertLevel.INFO
+            alert_type=AlertType.SYSTEM_ERROR, title="정보", message="시스템 정상", level=AlertLevel.INFO
         )
         manager.create_alert(
-            alert_type=AlertType.SYSTEM_ERROR,
-            title="경고", message="메모리 사용량 높음", level=AlertLevel.WARNING
+            alert_type=AlertType.SYSTEM_ERROR, title="경고", message="메모리 사용량 높음", level=AlertLevel.WARNING
         )
         manager.create_alert(
-            alert_type=AlertType.SYSTEM_ERROR,
-            title="오류", message="API 타임아웃", level=AlertLevel.ERROR
+            alert_type=AlertType.SYSTEM_ERROR, title="오류", message="API 타임아웃", level=AlertLevel.ERROR
         )
 
         stats = await manager.get_alert_stats()
@@ -619,9 +617,9 @@ class TestNotificationIntegration:
         demo_settings.telegram.bot_token = "real-bot-token"
         mock_settings.return_value = demo_settings
 
-        from core.notification.telegram_notifier import TelegramNotifier
-        from core.notification.alert_manager import Alert, AlertLevel, AlertStatus
         from config.constants import AlertType
+        from core.notification.alert_manager import Alert, AlertLevel
+        from core.notification.telegram_notifier import TelegramNotifier
 
         notifier = TelegramNotifier()
 
@@ -650,6 +648,7 @@ class TestNotificationIntegration:
 # ══════════════════════════════════════
 # 6. E2E 시나리오
 # ══════════════════════════════════════
+
 
 class TestE2EScenarios:
     """종단 간(E2E) 시나리오 테스트"""
@@ -761,8 +760,12 @@ class TestE2EScenarios:
 
         # 점진적 손실 시뮬레이션
         portfolio_values = [
-            49_000_000, 47_000_000, 45_000_000,
-            42_000_000, 40_000_000, 38_000_000,
+            49_000_000,
+            47_000_000,
+            45_000_000,
+            42_000_000,
+            40_000_000,
+            38_000_000,
         ]
 
         for i, pv in enumerate(portfolio_values):

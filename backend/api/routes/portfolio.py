@@ -5,7 +5,6 @@
 """
 
 from datetime import datetime, timezone
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import text
@@ -66,15 +65,17 @@ async def get_portfolio_summary(
                 position_value = current_price * net_qty
                 total_position_value += position_value
 
-                positions.append(PositionResponse(
-                    ticker=ticker,
-                    market=market,
-                    quantity=int(net_qty),
-                    avg_price=round(avg_price, 2),
-                    current_price=round(current_price, 2),
-                    unrealized_pnl=round(unrealized, 2),
-                    weight=0.0,  # 아래에서 재계산
-                ))
+                positions.append(
+                    PositionResponse(
+                        ticker=ticker,
+                        market=market,
+                        quantity=int(net_qty),
+                        avg_price=round(avg_price, 2),
+                        current_price=round(current_price, 2),
+                        unrealized_pnl=round(unrealized, 2),
+                        weight=0.0,  # 아래에서 재계산
+                    )
+                )
         except Exception as db_err:
             logger.warning(f"Portfolio DB query failed (returning empty): {db_err}")
 
@@ -84,9 +85,7 @@ async def get_portfolio_summary(
 
         # 포지션 비중 재계산
         for pos in positions:
-            pos.weight = round(
-                (pos.current_price * pos.quantity) / total_value, 4
-            ) if total_value > 0 else 0.0
+            pos.weight = round((pos.current_price * pos.quantity) / total_value, 4) if total_value > 0 else 0.0
 
         total_unrealized = sum(p.unrealized_pnl for p in positions)
 
@@ -134,9 +133,7 @@ async def get_positions(
             result = await db.execute(query)
             rows = result.fetchall()
 
-            total_value = sum(
-                (row[3] / row[4] if row[4] > 0 else 0) * row[2] for row in rows
-            )
+            total_value = sum((row[3] / row[4] if row[4] > 0 else 0) * row[2] for row in rows)
 
             for row in rows:
                 ticker, market, net_qty, total_cost, total_bought = row
@@ -145,15 +142,17 @@ async def get_positions(
                 unrealized = (current_price - avg_price) * net_qty
                 position_value = current_price * net_qty
 
-                positions.append(PositionResponse(
-                    ticker=ticker,
-                    market=market,
-                    quantity=int(net_qty),
-                    avg_price=round(avg_price, 2),
-                    current_price=round(current_price, 2),
-                    unrealized_pnl=round(unrealized, 2),
-                    weight=round(position_value / total_value, 4) if total_value > 0 else 0.0,
-                ))
+                positions.append(
+                    PositionResponse(
+                        ticker=ticker,
+                        market=market,
+                        quantity=int(net_qty),
+                        avg_price=round(avg_price, 2),
+                        current_price=round(current_price, 2),
+                        unrealized_pnl=round(unrealized, 2),
+                        weight=round(position_value / total_value, 4) if total_value > 0 else 0.0,
+                    )
+                )
         except Exception as db_err:
             logger.warning(f"Positions DB query failed (returning empty): {db_err}")
 
@@ -178,8 +177,13 @@ async def get_performance(
     try:
         # 기간에 따른 날짜 필터
         period_days = {
-            "1D": 1, "1W": 7, "1M": 30, "3M": 90,
-            "6M": 180, "1Y": 365, "ALL": 3650,
+            "1D": 1,
+            "1W": 7,
+            "1M": 30,
+            "3M": 90,
+            "6M": 180,
+            "1Y": 365,
+            "ALL": 3650,
         }
         days = period_days.get(period, 30)
         return_pct = 0.0
@@ -236,8 +240,13 @@ async def get_value_history(
     """
     try:
         period_days = {
-            "1D": 1, "1W": 7, "1M": 30, "3M": 90,
-            "6M": 180, "1Y": 365, "ALL": 3650,
+            "1D": 1,
+            "1W": 7,
+            "1M": 30,
+            "3M": 90,
+            "6M": 180,
+            "1Y": 365,
+            "ALL": 3650,
         }
         days = period_days.get(period, 30)
         history: list[dict] = []
@@ -264,11 +273,13 @@ async def get_value_history(
             for row in rows:
                 trade_date, daily_flow = row
                 cumulative += float(daily_flow)
-                history.append({
-                    "date": trade_date.isoformat() if trade_date else None,
-                    "value": round(cumulative, 2),
-                    "daily_change": round(float(daily_flow), 2),
-                })
+                history.append(
+                    {
+                        "date": trade_date.isoformat() if trade_date else None,
+                        "value": round(cumulative, 2),
+                        "daily_change": round(float(daily_flow), 2),
+                    }
+                )
         except Exception as db_err:
             logger.warning(f"Value history DB query failed (returning empty): {db_err}")
 

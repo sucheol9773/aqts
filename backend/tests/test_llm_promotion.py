@@ -10,16 +10,14 @@ Stage 7: LLM Production Promotion Tests
 """
 
 import pytest
-from statistics import mean, stdev
 
-from core.ai_analyzer.drift_monitor import DriftMonitor
 from core.ai_analyzer.cost_analyzer import CostAnalyzer
-from core.ai_analyzer.reproducibility import ReproducibilityTest
+from core.ai_analyzer.drift_monitor import DriftMonitor
 from core.ai_analyzer.promotion_checklist import (
     PromotionChecklist,
     PromotionDecision,
 )
-
+from core.ai_analyzer.reproducibility import ReproducibilityTest
 
 # ═══════════════════════════════════════════════════════════════════════════
 # DriftMonitor Tests
@@ -209,26 +207,41 @@ class TestCostAnalyzer:
         # benefit = 1_000_000 * 0.05 = 50_000
         # ratio = 1_000 / 50_000 = 0.02
         analyzer = CostAnalyzer(max_cost_ratio=0.20)  # threshold = 20%
-        assert analyzer.is_cost_effective(
-            api_calls=100_000, cost_per_call=0.01,
-            excess_return_pct=0.05, portfolio_value=1_000_000,
-        ) is True  # 2% < 20%
+        assert (
+            analyzer.is_cost_effective(
+                api_calls=100_000,
+                cost_per_call=0.01,
+                excess_return_pct=0.05,
+                portfolio_value=1_000_000,
+            )
+            is True
+        )  # 2% < 20%
 
     def test_is_cost_effective_true_at_moderate_threshold(self):
         """cost ratio < moderate threshold → still cost-effective."""
         analyzer = CostAnalyzer(max_cost_ratio=0.05)  # threshold = 5%
-        assert analyzer.is_cost_effective(
-            api_calls=100_000, cost_per_call=0.01,
-            excess_return_pct=0.05, portfolio_value=1_000_000,
-        ) is True  # 2% < 5%
+        assert (
+            analyzer.is_cost_effective(
+                api_calls=100_000,
+                cost_per_call=0.01,
+                excess_return_pct=0.05,
+                portfolio_value=1_000_000,
+            )
+            is True
+        )  # 2% < 5%
 
     def test_is_cost_effective_false_when_ratio_exceeds_threshold(self):
         """cost ratio > threshold → not cost-effective (False)."""
         analyzer = CostAnalyzer(max_cost_ratio=0.01)  # threshold = 1%
-        assert analyzer.is_cost_effective(
-            api_calls=100_000, cost_per_call=0.01,
-            excess_return_pct=0.05, portfolio_value=1_000_000,
-        ) is False  # 2% > 1%
+        assert (
+            analyzer.is_cost_effective(
+                api_calls=100_000,
+                cost_per_call=0.01,
+                excess_return_pct=0.05,
+                portfolio_value=1_000_000,
+            )
+            is False
+        )  # 2% > 1%
 
     def test_is_cost_effective_zero_benefit(self):
         """benefit이 0인 경우."""
@@ -635,9 +648,7 @@ class TestLLMPromotionIntegration:
             [0.5, 0.501, 0.499, 0.502],
             [0.501, 0.499, 0.5, 0.502],
         ]
-        repro_result = repro_test.run_full_test(
-            sentiment_runs=sentiment_runs, opinion_runs=[["BUY", "BUY"]]
-        )
+        repro_result = repro_test.run_full_test(sentiment_runs=sentiment_runs, opinion_runs=[["BUY", "BUY"]])
 
         # 4. Cost-Benefit 분석
         cost_analyzer = CostAnalyzer()
@@ -687,9 +698,7 @@ class TestLLMPromotionIntegration:
             ["BUY", "BUY", "BUY", "BUY", "BUY"],  # 100% BUY
             ["BUY", "BUY", "BUY", "BUY", "BUY"],  # 100% BUY
         ]
-        repro_result = repro_test.run_full_test(
-            sentiment_runs=[[0.5, 0.51]], opinion_runs=opinion_runs
-        )
+        repro_result = repro_test.run_full_test(sentiment_runs=[[0.5, 0.51]], opinion_runs=opinion_runs)
 
         # 3. Cost-Benefit 분석
         cost_analyzer = CostAnalyzer()

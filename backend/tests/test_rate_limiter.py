@@ -7,8 +7,6 @@ slowapi 기반 Rate Limiting 미들웨어의 정상 동작을 검증합니다.
 - 엔드포인트별 다른 제한 적용
 """
 
-import pytest
-
 from api.middleware.rate_limiter import (
     RATE_GENERAL,
     RATE_LOGIN,

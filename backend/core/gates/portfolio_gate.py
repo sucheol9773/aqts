@@ -1,6 +1,7 @@
 """PortfolioGate: 포트폴리오 구성 유효성 검증 (포트폴리오 → TradingGuard 전이)."""
 
 from typing import Any
+
 from core.gates.base import BaseGate, GateResult, GateSeverity
 
 
@@ -41,8 +42,7 @@ class PortfolioGate(BaseGate):
             w = getattr(p, "target_weight", 0.0)
             if w > max_single_weight:
                 return self._block(
-                    f"{getattr(p, 'ticker', '?')} 비중 {w:.2%} > "
-                    f"한도 {max_single_weight:.2%}",
+                    f"{getattr(p, 'ticker', '?')} 비중 {w:.2%} > " f"한도 {max_single_weight:.2%}",
                     severity=GateSeverity.WARNING,
                     ticker=getattr(p, "ticker", "?"),
                     weight=w,

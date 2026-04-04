@@ -10,25 +10,24 @@ Comprehensive pytest tests for daily_reporter.py module covering:
 - Edge cases
 """
 
-from datetime import datetime, date, timezone, timedelta
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
-from typing import Optional
 
 import pytest
 
 from config.settings import TradingMode
 from core.daily_reporter import (
-    TradeRecord,
-    PositionSnapshot,
+    KST,
     DailyReport,
     DailyReporter,
-    KST,
+    PositionSnapshot,
+    TradeRecord,
 )
-
 
 # ══════════════════════════════════════════════════════════════
 # Fixtures
 # ══════════════════════════════════════════════════════════════
+
 
 @pytest.fixture
 def mock_settings():
@@ -125,6 +124,7 @@ def sample_daily_report():
 # TradeRecord Tests
 # ══════════════════════════════════════════════════════════════
 
+
 class TestTradeRecord:
     """Test TradeRecord dataclass"""
 
@@ -170,6 +170,7 @@ class TestTradeRecord:
 # ══════════════════════════════════════════════════════════════
 # PositionSnapshot Tests
 # ══════════════════════════════════════════════════════════════
+
 
 class TestPositionSnapshot:
     """Test PositionSnapshot dataclass"""
@@ -221,6 +222,7 @@ class TestPositionSnapshot:
 # ══════════════════════════════════════════════════════════════
 # DailyReport Tests
 # ══════════════════════════════════════════════════════════════
+
 
 class TestDailyReport:
     """Test DailyReport dataclass"""
@@ -301,6 +303,7 @@ class TestDailyReport:
 # DailyReporter Tests - Basic Report Generation
 # ══════════════════════════════════════════════════════════════
 
+
 class TestDailyReporterBasic:
     """Test basic DailyReporter functionality"""
 
@@ -357,6 +360,7 @@ class TestDailyReporterBasic:
 # DailyReporter Tests - With Trades and Positions
 # ══════════════════════════════════════════════════════════════
 
+
 class TestDailyReporterTradesAndPositions:
     """Test DailyReporter with trades and positions"""
 
@@ -404,6 +408,7 @@ class TestDailyReporterTradesAndPositions:
 # ══════════════════════════════════════════════════════════════
 # DailyReporter Tests - PnL Calculations
 # ══════════════════════════════════════════════════════════════
+
 
 class TestDailyReporterPnL:
     """Test DailyReporter PnL calculations"""
@@ -477,6 +482,7 @@ class TestDailyReporterPnL:
 # ══════════════════════════════════════════════════════════════
 # DailyReporter Tests - Trade Statistics
 # ══════════════════════════════════════════════════════════════
+
 
 class TestDailyReporterTradeStats:
     """Test DailyReporter trade statistics"""
@@ -555,6 +561,7 @@ class TestDailyReporterTradeStats:
 # ══════════════════════════════════════════════════════════════
 # DailyReporter Tests - Telegram Message Formatting
 # ══════════════════════════════════════════════════════════════
+
 
 class TestDailyReporterTelegramFormat:
     """Test Telegram message formatting"""
@@ -704,10 +711,7 @@ class TestDailyReporterTelegramFormat:
 
     def test_format_telegram_message_trade_top_5_limit(self, mock_settings, sample_daily_report):
         """_format_telegram_message limits trades to top 5"""
-        trades = [
-            TradeRecord(f"{i:06d}", f"회사{i}", "BUY", 100, 70000 + i, 7_000_000)
-            for i in range(7)
-        ]
+        trades = [TradeRecord(f"{i:06d}", f"회사{i}", "BUY", 100, 70000 + i, 7_000_000) for i in range(7)]
         sample_daily_report.trades = trades
         with patch("core.daily_reporter.get_settings", return_value=mock_settings):
             reporter = DailyReporter()
@@ -728,6 +732,7 @@ class TestDailyReporterTelegramFormat:
 # DailyReporter Tests - Telegram Sending
 # ══════════════════════════════════════════════════════════════
 
+
 class TestDailyReporterTelegramSend:
     """Test Telegram message sending"""
 
@@ -738,10 +743,7 @@ class TestDailyReporterTelegramSend:
         mock_notifier.send_message.return_value = True
 
         with patch("core.daily_reporter.get_settings", return_value=mock_settings):
-            with patch(
-                "core.notification.telegram_notifier.TelegramNotifier",
-                return_value=mock_notifier
-            ):
+            with patch("core.notification.telegram_notifier.TelegramNotifier", return_value=mock_notifier):
                 reporter = DailyReporter()
                 result = await reporter.send_telegram_report(sample_daily_report)
                 assert result is True
@@ -754,10 +756,7 @@ class TestDailyReporterTelegramSend:
         mock_notifier.send_message.return_value = False
 
         with patch("core.daily_reporter.get_settings", return_value=mock_settings):
-            with patch(
-                "core.notification.telegram_notifier.TelegramNotifier",
-                return_value=mock_notifier
-            ):
+            with patch("core.notification.telegram_notifier.TelegramNotifier", return_value=mock_notifier):
                 reporter = DailyReporter()
                 result = await reporter.send_telegram_report(sample_daily_report)
                 assert result is False
@@ -769,10 +768,7 @@ class TestDailyReporterTelegramSend:
         mock_notifier.send_message.side_effect = Exception("Network error")
 
         with patch("core.daily_reporter.get_settings", return_value=mock_settings):
-            with patch(
-                "core.notification.telegram_notifier.TelegramNotifier",
-                return_value=mock_notifier
-            ):
+            with patch("core.notification.telegram_notifier.TelegramNotifier", return_value=mock_notifier):
                 reporter = DailyReporter()
                 result = await reporter.send_telegram_report(sample_daily_report)
                 assert result is False
@@ -784,10 +780,7 @@ class TestDailyReporterTelegramSend:
         mock_notifier.send_message.return_value = True
 
         with patch("core.daily_reporter.get_settings", return_value=mock_settings):
-            with patch(
-                "core.notification.telegram_notifier.TelegramNotifier",
-                return_value=mock_notifier
-            ):
+            with patch("core.notification.telegram_notifier.TelegramNotifier", return_value=mock_notifier):
                 reporter = DailyReporter()
                 await reporter.send_telegram_report(sample_daily_report)
                 # Verify send_message was called with a formatted string
@@ -799,6 +792,7 @@ class TestDailyReporterTelegramSend:
 # ══════════════════════════════════════════════════════════════
 # DailyReporter Tests - Report History
 # ══════════════════════════════════════════════════════════════
+
 
 class TestDailyReporterHistory:
     """Test report history accumulation"""
@@ -867,6 +861,7 @@ class TestDailyReporterHistory:
 # DailyReporter Tests - KIS Data Collection
 # ══════════════════════════════════════════════════════════════
 
+
 class TestDailyReporterKISCollection:
     """Test KIS data collection"""
 
@@ -895,10 +890,7 @@ class TestDailyReporterKISCollection:
         }
 
         with patch("core.daily_reporter.get_settings", return_value=mock_settings):
-            with patch(
-                "core.data_collector.kis_client.KISClient",
-                return_value=mock_client
-            ):
+            with patch("core.data_collector.kis_client.KISClient", return_value=mock_client):
                 reporter = DailyReporter()
                 result = await reporter.collect_from_kis()
 
@@ -931,10 +923,7 @@ class TestDailyReporterKISCollection:
         }
 
         with patch("core.daily_reporter.get_settings", return_value=mock_settings):
-            with patch(
-                "core.data_collector.kis_client.KISClient",
-                return_value=mock_client
-            ):
+            with patch("core.data_collector.kis_client.KISClient", return_value=mock_client):
                 reporter = DailyReporter()
                 result = await reporter.collect_from_kis()
 
@@ -969,10 +958,7 @@ class TestDailyReporterKISCollection:
         }
 
         with patch("core.daily_reporter.get_settings", return_value=mock_settings):
-            with patch(
-                "core.data_collector.kis_client.KISClient",
-                return_value=mock_client
-            ):
+            with patch("core.data_collector.kis_client.KISClient", return_value=mock_client):
                 reporter = DailyReporter()
                 result = await reporter.collect_from_kis()
 
@@ -986,10 +972,7 @@ class TestDailyReporterKISCollection:
         mock_client.get_kr_balance.return_value = None
 
         with patch("core.daily_reporter.get_settings", return_value=mock_settings):
-            with patch(
-                "core.data_collector.kis_client.KISClient",
-                return_value=mock_client
-            ):
+            with patch("core.data_collector.kis_client.KISClient", return_value=mock_client):
                 reporter = DailyReporter()
                 result = await reporter.collect_from_kis()
 
@@ -1004,10 +987,7 @@ class TestDailyReporterKISCollection:
         mock_client.get_kr_balance.side_effect = Exception("API error")
 
         with patch("core.daily_reporter.get_settings", return_value=mock_settings):
-            with patch(
-                "core.data_collector.kis_client.KISClient",
-                return_value=mock_client
-            ):
+            with patch("core.data_collector.kis_client.KISClient", return_value=mock_client):
                 reporter = DailyReporter()
                 result = await reporter.collect_from_kis()
 
@@ -1019,6 +999,7 @@ class TestDailyReporterKISCollection:
 # ══════════════════════════════════════════════════════════════
 # Edge Cases and Error Handling
 # ══════════════════════════════════════════════════════════════
+
 
 class TestDailyReporterEdgeCases:
     """Test edge cases and error conditions"""

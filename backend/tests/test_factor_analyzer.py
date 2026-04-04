@@ -13,13 +13,12 @@
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from config.constants import RiskProfile
 from core.quant_engine.factor_analyzer import (
     FactorAnalyzer,
-    _zscore_series,
     _scale_to_percentile,
+    _zscore_series,
 )
 
 
@@ -106,12 +105,14 @@ class TestFactorAnalyzerValueFactor:
 
     def test_low_per_gets_high_score(self):
         """낮은 PER → 높은 가치 점수"""
-        df = pd.DataFrame({
-            "ticker": ["A", "B", "C"],
-            "per": [5.0, 15.0, 30.0],
-            "pbr": [0.5, 1.0, 3.0],
-            "ev_ebitda": [3.0, 8.0, 20.0],
-        })
+        df = pd.DataFrame(
+            {
+                "ticker": ["A", "B", "C"],
+                "per": [5.0, 15.0, 30.0],
+                "pbr": [0.5, 1.0, 3.0],
+                "ev_ebitda": [3.0, 8.0, 20.0],
+            }
+        )
         result = FactorAnalyzer.calc_value_factor(df)
         # A가 가장 저평가이므로 가장 높은 점수
         assert result.iloc[0] > result.iloc[1]
@@ -119,11 +120,13 @@ class TestFactorAnalyzerValueFactor:
 
     def test_negative_per_excluded(self):
         """음수 PER (적자 기업)은 NaN 처리"""
-        df = pd.DataFrame({
-            "ticker": ["A", "B", "C"],
-            "per": [-10.0, 15.0, 30.0],
-            "pbr": [1.0, 1.0, 1.0],
-        })
+        df = pd.DataFrame(
+            {
+                "ticker": ["A", "B", "C"],
+                "per": [-10.0, 15.0, 30.0],
+                "pbr": [1.0, 1.0, 1.0],
+            }
+        )
         result = FactorAnalyzer.calc_value_factor(df)
         # A의 PER은 NaN 처리되어 다른 지표(PBR)로만 계산
         assert len(result) == 3
@@ -131,10 +134,12 @@ class TestFactorAnalyzerValueFactor:
 
     def test_missing_columns(self):
         """일부 컬럼 누락 시 사용 가능한 컬럼으로만 계산"""
-        df = pd.DataFrame({
-            "ticker": ["A", "B", "C"],
-            "per": [5.0, 15.0, 30.0],
-        })
+        df = pd.DataFrame(
+            {
+                "ticker": ["A", "B", "C"],
+                "per": [5.0, 15.0, 30.0],
+            }
+        )
         result = FactorAnalyzer.calc_value_factor(df)
         assert len(result) == 3
 
@@ -144,11 +149,13 @@ class TestFactorAnalyzerMomentumFactor:
 
     def test_high_12m_low_1m_gets_high_score(self):
         """12M 수익률 높고 1M 수익률 낮은 종목 → 높은 모멘텀"""
-        df = pd.DataFrame({
-            "ticker": ["A", "B", "C"],
-            "return_12m": [0.50, 0.20, -0.10],
-            "return_1m": [0.02, 0.05, 0.10],
-        })
+        df = pd.DataFrame(
+            {
+                "ticker": ["A", "B", "C"],
+                "return_12m": [0.50, 0.20, -0.10],
+                "return_1m": [0.02, 0.05, 0.10],
+            }
+        )
         result = FactorAnalyzer.calc_momentum_factor(df)
         # A: 0.50-0.02=0.48, B: 0.20-0.05=0.15, C: -0.10-0.10=-0.20
         assert result.iloc[0] > result.iloc[1]
@@ -168,20 +175,22 @@ class TestFactorAnalyzerCompositeScore:
         """테스트용 데이터프레임 생성"""
         np.random.seed(42)
         n = 20
-        return pd.DataFrame({
-            "ticker": [f"STOCK_{i:03d}" for i in range(n)],
-            "per": np.random.uniform(5, 50, n),
-            "pbr": np.random.uniform(0.3, 5.0, n),
-            "ev_ebitda": np.random.uniform(3, 30, n),
-            "return_12m": np.random.uniform(-0.3, 0.6, n),
-            "return_1m": np.random.uniform(-0.1, 0.15, n),
-            "roe": np.random.uniform(0.02, 0.30, n),
-            "roa": np.random.uniform(0.01, 0.15, n),
-            "debt_ratio": np.random.uniform(0.1, 3.0, n),
-            "volatility_60d": np.random.uniform(0.1, 0.5, n),
-            "beta": np.random.uniform(0.5, 2.0, n),
-            "market_cap": np.random.uniform(1e9, 1e12, n),
-        })
+        return pd.DataFrame(
+            {
+                "ticker": [f"STOCK_{i:03d}" for i in range(n)],
+                "per": np.random.uniform(5, 50, n),
+                "pbr": np.random.uniform(0.3, 5.0, n),
+                "ev_ebitda": np.random.uniform(3, 30, n),
+                "return_12m": np.random.uniform(-0.3, 0.6, n),
+                "return_1m": np.random.uniform(-0.1, 0.15, n),
+                "roe": np.random.uniform(0.02, 0.30, n),
+                "roa": np.random.uniform(0.01, 0.15, n),
+                "debt_ratio": np.random.uniform(0.1, 3.0, n),
+                "volatility_60d": np.random.uniform(0.1, 0.5, n),
+                "beta": np.random.uniform(0.5, 2.0, n),
+                "market_cap": np.random.uniform(1e9, 1e12, n),
+            }
+        )
 
     def test_composite_score_range(self):
         """복합 점수는 0~100 범위"""

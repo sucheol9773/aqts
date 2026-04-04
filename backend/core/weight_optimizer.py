@@ -22,13 +22,12 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-from config.constants import RiskProfile, StrategyType
+from config.constants import RiskProfile
 from config.logging import logger
 from core.backtest_engine.engine import (
     BacktestConfig,
     BacktestEngine,
     BacktestResult,
-    StrategyComparator,
 )
 
 
@@ -46,20 +45,13 @@ class OptimizationResult:
     strategy_metrics: dict[str, dict[str, float]]  # {strategy: {metric: value}}
     optimization_score: float = 0.0  # 최적화 목적함수 값
     backtest_period: str = ""
-    optimized_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    optimized_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
     def weight_changes(self) -> dict[str, float]:
         """가중치 변화량 (new - old)"""
         all_keys = set(self.old_weights) | set(self.new_weights)
-        return {
-            k: round(
-                self.new_weights.get(k, 0.0) - self.old_weights.get(k, 0.0), 4
-            )
-            for k in all_keys
-        }
+        return {k: round(self.new_weights.get(k, 0.0) - self.old_weights.get(k, 0.0), 4) for k in all_keys}
 
 
 # ══════════════════════════════════════
@@ -83,10 +75,10 @@ class WeightOptimizer:
     """
 
     # 가중치 제약 조건
-    MIN_WEIGHT = 0.05        # 최소 5%
-    MAX_WEIGHT = 0.40        # 최대 40%
-    SENTIMENT_MAX = 0.25     # 감성 시그널 최대 25%
-    SMOOTHING_ALPHA = 0.3    # 지수이동평균 평활화 계수
+    MIN_WEIGHT = 0.05  # 최소 5%
+    MAX_WEIGHT = 0.40  # 최대 40%
+    SENTIMENT_MAX = 0.25  # 감성 시그널 최대 25%
+    SMOOTHING_ALPHA = 0.3  # 지수이동평균 평활화 계수
 
     def __init__(self, risk_profile: RiskProfile = RiskProfile.BALANCED):
         self._risk_profile = risk_profile
@@ -152,10 +144,7 @@ class WeightOptimizer:
             period = f"{min(dates)} ~ {max(end_dates)}"
 
         # 최적화 점수 (가중 평균 Sharpe)
-        opt_score = sum(
-            final_weights.get(name, 0) * metrics.get(name, {}).get("sharpe", 0)
-            for name in final_weights
-        )
+        opt_score = sum(final_weights.get(name, 0) * metrics.get(name, {}).get("sharpe", 0) for name in final_weights)
 
         return OptimizationResult(
             method=method,
@@ -194,10 +183,7 @@ class WeightOptimizer:
             최종 OptimizationResult (시간가중 평균)
         """
         if not strategy_signals or len(prices) < window:
-            logger.warning(
-                f"Insufficient data for walk-forward: "
-                f"{len(prices)} days < {window} window"
-            )
+            logger.warning(f"Insufficient data for walk-forward: " f"{len(prices)} days < {window} window")
             return OptimizationResult(
                 method=f"walk_forward_{method}",
                 risk_profile=self._risk_profile.value,
@@ -248,9 +234,7 @@ class WeightOptimizer:
         final_weights = self._time_weighted_average(window_weights)
 
         # 제약 조건 + 정규화
-        final_weights = self._normalize(
-            self._apply_constraints(final_weights)
-        )
+        final_weights = self._normalize(self._apply_constraints(final_weights))
 
         # 전체 기간 메트릭 (마지막 윈도우 기준)
         all_keys = set()
@@ -263,9 +247,7 @@ class WeightOptimizer:
             old_weights={},
             new_weights=final_weights,
             strategy_metrics={},
-            optimization_score=round(np.mean(window_scores), 4)
-            if window_scores
-            else 0.0,
+            optimization_score=round(np.mean(window_scores), 4) if window_scores else 0.0,
             backtest_period=f"{dates[0].date()} ~ {dates[-1].date()}",
         )
 
@@ -388,9 +370,7 @@ class WeightOptimizer:
     # ══════════════════════════════════════
     # 제약 조건 및 정규화
     # ══════════════════════════════════════
-    def _apply_constraints(
-        self, weights: dict[str, float]
-    ) -> dict[str, float]:
+    def _apply_constraints(self, weights: dict[str, float]) -> dict[str, float]:
         """
         가중치 제약 조건 적용
 
@@ -478,10 +458,7 @@ class WeightOptimizer:
 
         avg = {}
         for key in all_keys:
-            weighted_sum = sum(
-                tw * ws.get(key, 0.0)
-                for tw, ws in zip(time_weights, weight_series)
-            )
+            weighted_sum = sum(tw * ws.get(key, 0.0) for tw, ws in zip(time_weights, weight_series))
             avg[key] = weighted_sum / total_tw
 
         return avg
@@ -516,13 +493,8 @@ class WeightOptimizer:
 
         if result.new_weights and result.strategy_metrics:
             # 앙상블 엔진에 성과 지표 전달하여 recalibrate
-            performances = {
-                name: m.get("sharpe", 0.0)
-                for name, m in result.strategy_metrics.items()
-            }
-            await ensemble_engine.recalibrate_weights(
-                performances, method="sharpe"
-            )
+            performances = {name: m.get("sharpe", 0.0) for name, m in result.strategy_metrics.items()}
+            await ensemble_engine.recalibrate_weights(performances, method="sharpe")
 
             # 최적화 결과의 가중치로 덮어쓰기 (더 정교한 방식 적용)
             ensemble_engine._weights = result.new_weights

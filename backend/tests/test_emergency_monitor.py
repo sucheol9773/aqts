@@ -11,35 +11,29 @@
 """
 
 import asyncio
-import json
-import math
-from datetime import datetime, timezone, timedelta, time
-from typing import Any
+from datetime import datetime, time, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-import pytest_asyncio
 
 from config.constants import (
+    InvestmentStyle,
     Market,
     OrderSide,
     OrderType,
-    RebalancingType,
-    InvestmentStyle,
-    AlertType,
 )
 from config.settings import AppSettings, RiskManagementSettings
 from core.emergency_monitor import (
-    PositionSnapshot,
-    PortfolioLossReport,
     EmergencyMonitorState,
     EmergencyRebalancingMonitor,
+    PortfolioLossReport,
+    PositionSnapshot,
 )
-
 
 # ══════════════════════════════════════
 # Fixtures
 # ══════════════════════════════════════
+
 
 @pytest.fixture
 def mock_settings():
@@ -96,9 +90,11 @@ def mock_rebalancing_engine():
 
 
 @pytest.fixture
-def monitor(mock_kis_client, mock_telegram, mock_order_executor, mock_trading_guard, mock_rebalancing_engine, mock_settings):
+def monitor(
+    mock_kis_client, mock_telegram, mock_order_executor, mock_trading_guard, mock_rebalancing_engine, mock_settings
+):
     """테스트용 모니터 인스턴스"""
-    with patch('core.emergency_monitor.get_settings', return_value=mock_settings):
+    with patch("core.emergency_monitor.get_settings", return_value=mock_settings):
         monitor_instance = EmergencyRebalancingMonitor(
             kis_client=mock_kis_client,
             telegram_notifier=mock_telegram,
@@ -112,6 +108,7 @@ def monitor(mock_kis_client, mock_telegram, mock_order_executor, mock_trading_gu
 # ══════════════════════════════════════
 # TestPositionSnapshot (5 tests)
 # ══════════════════════════════════════
+
 
 class TestPositionSnapshot:
     """포지션 스냅샷 테스트"""
@@ -180,6 +177,7 @@ class TestPositionSnapshot:
 # ══════════════════════════════════════
 # TestPortfolioLossReport (5 tests)
 # ══════════════════════════════════════
+
 
 class TestPortfolioLossReport:
     """포트폴리오 손실 분석 보고서 테스트"""
@@ -250,6 +248,7 @@ class TestPortfolioLossReport:
 # TestEmergencyMonitorState (3 tests)
 # ══════════════════════════════════════
 
+
 class TestEmergencyMonitorState:
     """모니터 상태 관리 테스트"""
 
@@ -296,6 +295,7 @@ class TestEmergencyMonitorState:
 # ══════════════════════════════════════
 # TestCalculateLoss (10 tests)
 # ══════════════════════════════════════
+
 
 class TestCalculateLoss:
     """손실률 계산 테스트"""
@@ -411,6 +411,7 @@ class TestCalculateLoss:
 # TestCalculateAlgoThreshold (8 tests)
 # ══════════════════════════════════════
 
+
 class TestCalculateAlgoThreshold:
     """알고리즘 동적 손절 임계값 계산 테스트"""
 
@@ -496,6 +497,7 @@ class TestCalculateAlgoThreshold:
 # TestGenerateDefensiveOrders (5 tests)
 # ══════════════════════════════════════
 
+
 class TestGenerateDefensiveOrders:
     """방어 주문 생성 테스트"""
 
@@ -560,6 +562,7 @@ class TestGenerateDefensiveOrders:
 # TestHandleTrigger (8 tests)
 # ══════════════════════════════════════
 
+
 class TestHandleTrigger:
     """트리거 처리 테스트"""
 
@@ -572,7 +575,7 @@ class TestHandleTrigger:
         ]
         report = monitor._calculate_loss(positions)
 
-        with patch.object(monitor, '_execute_defensive_orders', new_callable=AsyncMock) as mock_exec:
+        with patch.object(monitor, "_execute_defensive_orders", new_callable=AsyncMock) as mock_exec:
             mock_exec.return_value = [{"order": {"ticker": "005930"}, "result": {"status": "filled"}}]
             await monitor._handle_trigger(report, positions)
 
@@ -587,7 +590,7 @@ class TestHandleTrigger:
         ]
         report = monitor._calculate_loss(positions)
 
-        with patch.object(monitor, '_execute_defensive_orders', new_callable=AsyncMock) as mock_exec:
+        with patch.object(monitor, "_execute_defensive_orders", new_callable=AsyncMock) as mock_exec:
             await monitor._handle_trigger(report, positions)
 
         # 자문형은 execute_defensive_orders를 호출하지 않음
@@ -601,7 +604,7 @@ class TestHandleTrigger:
         ]
         report = monitor._calculate_loss(positions)
 
-        with patch.object(monitor, '_send_emergency_alert', new_callable=AsyncMock) as mock_alert:
+        with patch.object(monitor, "_send_emergency_alert", new_callable=AsyncMock) as mock_alert:
             await monitor._handle_trigger(report, positions)
 
         mock_alert.assert_called_once()
@@ -614,9 +617,9 @@ class TestHandleTrigger:
         ]
         report = monitor._calculate_loss(positions)
 
-        with patch.object(monitor, '_execute_defensive_orders', new_callable=AsyncMock):
-            with patch.object(monitor, '_send_emergency_alert', new_callable=AsyncMock):
-                with patch.object(monitor, '_record_emergency_event', new_callable=AsyncMock):
+        with patch.object(monitor, "_execute_defensive_orders", new_callable=AsyncMock):
+            with patch.object(monitor, "_send_emergency_alert", new_callable=AsyncMock):
+                with patch.object(monitor, "_record_emergency_event", new_callable=AsyncMock):
                     await monitor._handle_trigger(report, positions)
 
         assert monitor._state.cooldown_until is not None
@@ -630,8 +633,8 @@ class TestHandleTrigger:
         ]
         report = monitor._calculate_loss(positions)
 
-        with patch.object(monitor, '_record_emergency_event', new_callable=AsyncMock) as mock_record:
-            with patch.object(monitor, '_send_emergency_alert', new_callable=AsyncMock):
+        with patch.object(monitor, "_record_emergency_event", new_callable=AsyncMock) as mock_record:
+            with patch.object(monitor, "_send_emergency_alert", new_callable=AsyncMock):
                 await monitor._handle_trigger(report, positions)
 
         mock_record.assert_called_once()
@@ -645,9 +648,9 @@ class TestHandleTrigger:
         ]
         report = monitor._calculate_loss(positions)
 
-        with patch.object(monitor, '_execute_defensive_orders', new_callable=AsyncMock):
-            with patch.object(monitor, '_send_emergency_alert', new_callable=AsyncMock):
-                with patch.object(monitor, '_record_emergency_event', new_callable=AsyncMock):
+        with patch.object(monitor, "_execute_defensive_orders", new_callable=AsyncMock):
+            with patch.object(monitor, "_send_emergency_alert", new_callable=AsyncMock):
+                with patch.object(monitor, "_record_emergency_event", new_callable=AsyncMock):
                     await monitor._handle_trigger(report, positions)
 
         assert monitor._state.trigger_count == initial_count + 1
@@ -662,8 +665,8 @@ class TestHandleTrigger:
         report = monitor._calculate_loss(positions)
 
         # execute_defensive_orders가 예외 발생
-        with patch.object(monitor, '_execute_defensive_orders', side_effect=Exception("Order failed")):
-            with patch.object(monitor, '_send_error_alert', new_callable=AsyncMock) as mock_error:
+        with patch.object(monitor, "_execute_defensive_orders", side_effect=Exception("Order failed")):
+            with patch.object(monitor, "_send_error_alert", new_callable=AsyncMock) as mock_error:
                 await monitor._handle_trigger(report, positions)
 
         # 오류 알림 발송 시도
@@ -673,6 +676,7 @@ class TestHandleTrigger:
 # ══════════════════════════════════════
 # TestMonitorLoop (8 tests)
 # ══════════════════════════════════════
+
 
 class TestMonitorLoop:
     """모니터 루프 테스트"""
@@ -705,8 +709,8 @@ class TestMonitorLoop:
     async def test_monitor_loop_respects_market_hours(self, monitor):
         """장중 시간 필터링 테스트"""
         # 장중 시간이 아닌 시간대 시뮬레이션
-        with patch.object(monitor, '_is_market_hours', return_value=False):
-            with patch.object(monitor, 'run_check', new_callable=AsyncMock) as mock_check:
+        with patch.object(monitor, "_is_market_hours", return_value=False):
+            with patch.object(monitor, "run_check", new_callable=AsyncMock) as mock_check:
                 # 짧은 시간만 루프 실행
                 await monitor.start()
                 await asyncio.sleep(0.5)
@@ -719,8 +723,8 @@ class TestMonitorLoop:
     async def test_monitor_loop_respects_weekend(self, monitor):
         """주말 필터링 테스트"""
         # 주말 시뮬레이션 (is_market_hours가 False 반환)
-        with patch.object(monitor, '_is_market_hours', return_value=False):
-            with patch.object(monitor, 'run_check', new_callable=AsyncMock) as mock_check:
+        with patch.object(monitor, "_is_market_hours", return_value=False):
+            with patch.object(monitor, "run_check", new_callable=AsyncMock) as mock_check:
                 await monitor.start()
                 await asyncio.sleep(0.5)
                 await monitor.stop()
@@ -732,8 +736,8 @@ class TestMonitorLoop:
         """Kill Switch 활성화 시 중단 테스트"""
         mock_trading_guard.state.kill_switch_on = True
 
-        with patch.object(monitor, 'run_check', new_callable=AsyncMock) as mock_check:
-            with patch.object(monitor, '_is_market_hours', return_value=True):
+        with patch.object(monitor, "run_check", new_callable=AsyncMock) as mock_check:
+            with patch.object(monitor, "_is_market_hours", return_value=True):
                 await monitor.start()
                 await asyncio.sleep(0.5)
                 await monitor.stop()
@@ -747,8 +751,8 @@ class TestMonitorLoop:
         # 쿨다운 활성화
         monitor._state.cooldown_until = datetime.now(timezone.utc) + timedelta(minutes=10)
 
-        with patch.object(monitor, 'run_check', new_callable=AsyncMock) as mock_check:
-            with patch.object(monitor, '_is_market_hours', return_value=True):
+        with patch.object(monitor, "run_check", new_callable=AsyncMock) as mock_check:
+            with patch.object(monitor, "_is_market_hours", return_value=True):
                 await monitor.start()
                 await asyncio.sleep(0.5)
                 await monitor.stop()
@@ -759,7 +763,7 @@ class TestMonitorLoop:
     @pytest.mark.asyncio
     async def test_monitor_loop_manual_run_check(self, monitor):
         """수동 체크 호출 테스트"""
-        with patch.object(monitor, '_fetch_current_positions', new_callable=AsyncMock) as mock_fetch:
+        with patch.object(monitor, "_fetch_current_positions", new_callable=AsyncMock) as mock_fetch:
             mock_fetch.return_value = []
             result = await monitor.run_check()
             # 포지션이 없으면 None 반환
@@ -770,13 +774,14 @@ class TestMonitorLoop:
 # TestMarketHoursAndCooldown (5 tests)
 # ══════════════════════════════════════
 
+
 class TestMarketHoursAndCooldown:
     """시장 시간 및 쿨다운 테스트"""
 
     def test_is_market_hours_during_market(self, monitor):
         """장중 시간 확인 테스트"""
         # 장중 시간 시뮬레이션 (09:00~15:30 KST)
-        with patch('core.emergency_monitor.datetime') as mock_datetime:
+        with patch("core.emergency_monitor.datetime") as mock_datetime:
             # 10:00 KST (장중)
             kst_time = time(10, 0, 0)
             mock_now = MagicMock()
@@ -798,7 +803,7 @@ class TestMarketHoursAndCooldown:
     def test_is_market_hours_weekend(self, monitor):
         """주말 확인 테스트"""
         # 주말은 장중이 아님
-        with patch('core.emergency_monitor.datetime') as mock_datetime:
+        with patch("core.emergency_monitor.datetime") as mock_datetime:
             kst_time = time(10, 0, 0)
             mock_now = MagicMock()
             mock_now.time.return_value = kst_time
@@ -823,6 +828,7 @@ class TestMarketHoursAndCooldown:
 # ══════════════════════════════════════
 # TestFetchPositions (5 tests)
 # ══════════════════════════════════════
+
 
 class TestFetchPositions:
     """포지션 조회 테스트"""
@@ -876,10 +882,8 @@ class TestFetchPositions:
         # KIS 클라이언트가 None인 경우
         monitor._kis_client = None
 
-        with patch.object(monitor, '_load_positions_from_db', new_callable=AsyncMock) as mock_db:
-            mock_db.return_value = [
-                PositionSnapshot("005930", Market.KRX, 100, 70000, 71400, "IT")
-            ]
+        with patch.object(monitor, "_load_positions_from_db", new_callable=AsyncMock) as mock_db:
+            mock_db.return_value = [PositionSnapshot("005930", Market.KRX, 100, 70000, 71400, "IT")]
             positions = await monitor._fetch_current_positions()
 
         mock_db.assert_called_once()
@@ -925,6 +929,7 @@ class TestFetchPositions:
 # ══════════════════════════════════════
 # TestEmergencyMessage (3 tests)
 # ══════════════════════════════════════
+
 
 class TestEmergencyMessage:
     """긴급 메시지 포맷팅 테스트"""

@@ -17,16 +17,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from config.settings import TradingMode
-from core.data_collector.kis_client import KISClient, KISTokenManager, KISAPIError
+from core.data_collector.kis_client import KISAPIError, KISClient, KISTokenManager
 
 
 def _mock_kis_settings(trading_mode=TradingMode.DEMO):
     """KIS 설정 Mock 생성"""
     mock = MagicMock()
     mock.trading_mode = trading_mode
-    mock.is_live = (trading_mode == TradingMode.LIVE)
-    mock.is_demo = (trading_mode == TradingMode.DEMO)
-    mock.is_backtest = (trading_mode == TradingMode.BACKTEST)
+    mock.is_live = trading_mode == TradingMode.LIVE
+    mock.is_demo = trading_mode == TradingMode.DEMO
+    mock.is_backtest = trading_mode == TradingMode.BACKTEST
     mock.app_key = "test_key"
     mock.app_secret = "test_secret"
     mock.account_no = "12345678"

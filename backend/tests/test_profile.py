@@ -16,12 +16,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from config.constants import (
-    RiskProfile,
     InvestmentStyle,
     RebalancingFrequency,
+    RiskProfile,
     StrategyType,
-    HOLDING_PERIOD_MAP,
-    ENSEMBLE_DEFAULT_WEIGHTS,
 )
 from core.portfolio_manager.profile import (
     InvestorProfile,
@@ -664,9 +662,7 @@ class TestInvestorProfileManager:
         for profile in profiles:
             result = manager._apply_profile_to_strategy(profile)
             weights_sum = sum(result["ensemble_weights"].values())
-            assert abs(weights_sum - 1.0) < 0.001, (
-                f"{profile.risk_profile.value} 가중치 합계: {weights_sum}"
-            )
+            assert abs(weights_sum - 1.0) < 0.001, f"{profile.risk_profile.value} 가중치 합계: {weights_sum}"
 
     def test_apply_profile_to_strategy_contains_required_fields(self, manager):
         """필수 전략 파라미터 필드 검증 테스트

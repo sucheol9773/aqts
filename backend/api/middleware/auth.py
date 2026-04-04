@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Tuple
 
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
@@ -62,9 +62,7 @@ class AuthService:
         """
         settings = get_settings()
         to_encode = data.copy()
-        expire = datetime.now(timezone.utc) + timedelta(
-            hours=settings.dashboard.access_token_expire_hours
-        )
+        expire = datetime.now(timezone.utc) + timedelta(hours=settings.dashboard.access_token_expire_hours)
         to_encode.update({"exp": expire})
         encoded_jwt = jwt.encode(
             to_encode,
@@ -86,9 +84,7 @@ class AuthService:
         """
         settings = get_settings()
         to_encode = data.copy()
-        expire = datetime.now(timezone.utc) + timedelta(
-            days=settings.dashboard.refresh_token_expire_days
-        )
+        expire = datetime.now(timezone.utc) + timedelta(days=settings.dashboard.refresh_token_expire_days)
         to_encode.update({"exp": expire})
         encoded_jwt = jwt.encode(
             to_encode,
@@ -151,7 +147,7 @@ class AuthService:
         if stored.startswith(("$2b$", "$2a$")):
             valid = AuthService.verify_password(password, stored)
         else:
-            valid = (password == stored)
+            valid = password == stored
 
         if not valid:
             raise HTTPException(

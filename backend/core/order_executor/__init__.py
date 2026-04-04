@@ -8,9 +8,9 @@
 """
 
 from core.order_executor.executor import (
+    OrderExecutor,
     OrderRequest,
     OrderResult,
-    OrderExecutor,
 )
 
 __all__ = [

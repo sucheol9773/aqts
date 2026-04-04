@@ -5,32 +5,32 @@ Stage 2-B 테스트: Pipeline Gates + StateMachine + GateRegistry + FallbackHand
 """
 
 import unittest
-
-import pytest
-from datetime import datetime
 from types import SimpleNamespace
 
-from core.gates.base import GateResult, GateDecision, GateSeverity, BaseGate
-from core.gates.data_gate import DataGate
-from core.gates.factor_gate import FactorGate
-from core.gates.signal_gate import SignalGate
-from core.gates.ensemble_gate import EnsembleGate
-from core.gates.portfolio_gate import PortfolioGate
-from core.gates.trading_guard_gate import TradingGuardGate
-from core.gates.recon_gate import ReconGate
-from core.gates.execution_gate import ExecutionGate
-from core.gates.fill_gate import FillGate
-from core.gate_registry import GateRegistry
-from core.state_machine import (
-    PipelineStateMachine, PipelineState, InvalidTransitionError,
-    VALID_TRANSITIONS,
-)
-from core.fallback_handler import FallbackHandler
+import pytest
 
+from core.fallback_handler import FallbackHandler
+from core.gate_registry import GateRegistry
+from core.gates.base import GateDecision, GateResult, GateSeverity
+from core.gates.data_gate import DataGate
+from core.gates.ensemble_gate import EnsembleGate
+from core.gates.execution_gate import ExecutionGate
+from core.gates.factor_gate import FactorGate
+from core.gates.fill_gate import FillGate
+from core.gates.portfolio_gate import PortfolioGate
+from core.gates.recon_gate import ReconGate
+from core.gates.signal_gate import SignalGate
+from core.gates.trading_guard_gate import TradingGuardGate
+from core.state_machine import (
+    InvalidTransitionError,
+    PipelineState,
+    PipelineStateMachine,
+)
 
 # ══════════════════════════════════════════════════════════════
 # 1. GateResult 스키마 테스트
 # ══════════════════════════════════════════════════════════════
+
 
 class TestGateResult:
     def test_pass_result(self):
@@ -39,8 +39,10 @@ class TestGateResult:
 
     def test_block_result(self):
         r = GateResult(
-            gate_id="DataGate", decision=GateDecision.BLOCK,
-            reason="데이터 없음", severity=GateSeverity.CRITICAL,
+            gate_id="DataGate",
+            decision=GateDecision.BLOCK,
+            reason="데이터 없음",
+            severity=GateSeverity.CRITICAL,
         )
         assert r.severity == GateSeverity.CRITICAL
 
@@ -51,7 +53,8 @@ class TestGateResult:
 
     def test_with_context(self):
         r = GateResult(
-            gate_id="DataGate", decision=GateDecision.PASS,
+            gate_id="DataGate",
+            decision=GateDecision.PASS,
             context={"count": 100},
         )
         assert r.context["count"] == 100
@@ -60,6 +63,7 @@ class TestGateResult:
 # ══════════════════════════════════════════════════════════════
 # 2. 개별 Gate 테스트
 # ══════════════════════════════════════════════════════════════
+
 
 @pytest.mark.asyncio
 class TestDataGate(unittest.IsolatedAsyncioTestCase):
@@ -299,6 +303,7 @@ class TestGateRegistry(unittest.IsolatedAsyncioTestCase):
 # 4. StateMachine 테스트
 # ══════════════════════════════════════════════════════════════
 
+
 @pytest.mark.smoke
 class TestPipelineStateMachine:
     def test_initial_state(self):
@@ -367,6 +372,7 @@ class TestPipelineStateMachine:
 # 5. FallbackHandler 테스트
 # ══════════════════════════════════════════════════════════════
 
+
 class TestFallbackHandler(unittest.IsolatedAsyncioTestCase):
     def test_pass_no_change(self):
         sm = PipelineStateMachine()
@@ -381,7 +387,8 @@ class TestFallbackHandler(unittest.IsolatedAsyncioTestCase):
         sm.transition(PipelineState.COLLECTING)
         handler = FallbackHandler(sm)
         result = GateResult(
-            gate_id="DataGate", decision=GateDecision.BLOCK,
+            gate_id="DataGate",
+            decision=GateDecision.BLOCK,
             reason="데이터 없음",
         )
         state = handler.handle(result)
@@ -397,7 +404,8 @@ class TestFallbackHandler(unittest.IsolatedAsyncioTestCase):
         sm.transition(PipelineState.RECONCILING)
         handler = FallbackHandler(sm)
         result = GateResult(
-            gate_id="ReconGate", decision=GateDecision.BLOCK,
+            gate_id="ReconGate",
+            decision=GateDecision.BLOCK,
             reason="대사 불일치",
         )
         state = handler.handle(result)
@@ -412,7 +420,9 @@ class TestFallbackHandler(unittest.IsolatedAsyncioTestCase):
             on_block_callback=lambda r, s: callback_called.append((r.gate_id, s)),
         )
         result = GateResult(
-            gate_id="DataGate", decision=GateDecision.BLOCK, reason="test",
+            gate_id="DataGate",
+            decision=GateDecision.BLOCK,
+            reason="test",
         )
         handler.handle(result)
         assert len(callback_called) == 1
@@ -422,6 +432,7 @@ class TestFallbackHandler(unittest.IsolatedAsyncioTestCase):
 # ══════════════════════════════════════════════════════════════
 # 6. 통합 시나리오 테스트
 # ══════════════════════════════════════════════════════════════
+
 
 @pytest.mark.asyncio
 class TestIntegrationScenarios(unittest.IsolatedAsyncioTestCase):
@@ -470,18 +481,25 @@ class TestIntegrationScenarios(unittest.IsolatedAsyncioTestCase):
     async def test_scenario_recon_mismatch_halts(self):
         """대사 불일치 → HALTED."""
         sm = PipelineStateMachine()
-        for s in [PipelineState.COLLECTING, PipelineState.ANALYZING,
-                   PipelineState.CONSTRUCTING, PipelineState.VALIDATING,
-                   PipelineState.TRADING, PipelineState.RECONCILING]:
+        for s in [
+            PipelineState.COLLECTING,
+            PipelineState.ANALYZING,
+            PipelineState.CONSTRUCTING,
+            PipelineState.VALIDATING,
+            PipelineState.TRADING,
+            PipelineState.RECONCILING,
+        ]:
             sm.transition(s)
 
         handler = FallbackHandler(sm)
         gate = ReconGate()
-        result = await gate.evaluate({
-            "broker_balance": 1_000_000,
-            "internal_balance": 800_000,
-            "mismatches": ["qty_mismatch"],
-        })
+        result = await gate.evaluate(
+            {
+                "broker_balance": 1_000_000,
+                "internal_balance": 800_000,
+                "mismatches": ["qty_mismatch"],
+            }
+        )
         handler.handle(result)
         assert sm.state == PipelineState.HALTED
 

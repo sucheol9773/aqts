@@ -5,7 +5,6 @@
 OrderExecutor 엔진과 직접 연동하여 실제 주문을 처리합니다.
 """
 
-from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -14,8 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
 from api.middleware.auth import get_current_user
-from api.middleware.rate_limiter import limiter, RATE_ORDER
-from api.schemas.common import APIResponse, PaginatedResponse
+from api.middleware.rate_limiter import RATE_ORDER, limiter
+from api.schemas.common import APIResponse
 from api.schemas.orders import (
     BatchOrderRequest,
     BatchOrderResponse,
@@ -66,8 +65,7 @@ async def create_order(
     """
     try:
         logger.info(
-            f"Order created: {order_body.side} {order_body.ticker} "
-            f"x{order_body.quantity} ({order_body.order_type})"
+            f"Order created: {order_body.side} {order_body.ticker} " f"x{order_body.quantity} ({order_body.order_type})"
         )
 
         # API 스키마 → OrderRequest 변환
@@ -146,11 +144,13 @@ async def create_batch_orders(
         fail_count = 0
 
         for result, orig in zip(results, batch_body.orders):
-            responses.append(_order_result_to_response(
-                result,
-                order_type=orig.order_type,
-                reason=orig.reason or "",
-            ))
+            responses.append(
+                _order_result_to_response(
+                    result,
+                    order_type=orig.order_type,
+                    reason=orig.reason or "",
+                )
+            )
             if result.status in (OrderStatus.FILLED, OrderStatus.PARTIAL):
                 success_count += 1
             elif result.status == OrderStatus.FAILED:
@@ -161,10 +161,7 @@ async def create_batch_orders(
         await audit.log(
             action_type="BATCH_ORDER_CREATED",
             module="order_executor",
-            description=(
-                f"Batch order: {len(results)}건 "
-                f"(성공: {success_count}, 실패: {fail_count})"
-            ),
+            description=(f"Batch order: {len(results)}건 " f"(성공: {success_count}, 실패: {fail_count})"),
             metadata={
                 "total": len(results),
                 "success_count": success_count,
@@ -179,7 +176,8 @@ async def create_batch_orders(
             fail_count=fail_count,
         )
         return APIResponse(
-            success=True, data=batch_response,
+            success=True,
+            data=batch_response,
             message=f"{len(results)}건 배치 주문이 실행되었습니다.",
         )
     except Exception as e:
@@ -226,18 +224,20 @@ async def get_orders(
             rows = result.fetchall()
 
             for row in rows:
-                orders.append(OrderResponse(
-                    order_id=row[0],
-                    ticker=row[1],
-                    market=row[2],
-                    side=row[3],
-                    quantity=row[4],
-                    order_type="MARKET",  # orders 테이블에 order_type 미저장 → 기본값
-                    status=row[7],
-                    filled_price=float(row[6]) if row[6] and float(row[6]) > 0 else None,
-                    filled_at=row[8] if row[7] == "FILLED" else None,
-                    reason=row[9] if row[9] else None,
-                ))
+                orders.append(
+                    OrderResponse(
+                        order_id=row[0],
+                        ticker=row[1],
+                        market=row[2],
+                        side=row[3],
+                        quantity=row[4],
+                        order_type="MARKET",  # orders 테이블에 order_type 미저장 → 기본값
+                        status=row[7],
+                        filled_price=float(row[6]) if row[6] and float(row[6]) > 0 else None,
+                        filled_at=row[8] if row[7] == "FILLED" else None,
+                        reason=row[9] if row[9] else None,
+                    )
+                )
         except Exception as db_err:
             logger.warning(f"Orders DB query failed (returning empty): {db_err}")
 

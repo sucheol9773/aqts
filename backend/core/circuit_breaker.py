@@ -37,6 +37,7 @@ from config.logging import logger
 
 class CircuitState(str, Enum):
     """서킷 브레이커 상태"""
+
     CLOSED = "CLOSED"
     OPEN = "OPEN"
     HALF_OPEN = "HALF_OPEN"
@@ -45,6 +46,7 @@ class CircuitState(str, Enum):
 @dataclass
 class CircuitStats:
     """서킷 브레이커 통계"""
+
     total_calls: int = 0
     total_failures: int = 0
     consecutive_failures: int = 0
@@ -60,10 +62,7 @@ class CircuitBreakerError(Exception):
     def __init__(self, breaker_name: str, remaining_seconds: float):
         self.breaker_name = breaker_name
         self.remaining_seconds = remaining_seconds
-        super().__init__(
-            f"Circuit breaker '{breaker_name}' is OPEN. "
-            f"Recovery in {remaining_seconds:.1f}s"
-        )
+        super().__init__(f"Circuit breaker '{breaker_name}' is OPEN. " f"Recovery in {remaining_seconds:.1f}s")
 
 
 class CircuitBreaker:
@@ -92,10 +91,7 @@ class CircuitBreaker:
         self._stats = CircuitStats()
         self._lock = asyncio.Lock()
 
-        logger.info(
-            f"CircuitBreaker '{name}' 초기화: "
-            f"threshold={failure_threshold}, timeout={recovery_timeout}s"
-        )
+        logger.info(f"CircuitBreaker '{name}' 초기화: " f"threshold={failure_threshold}, timeout={recovery_timeout}s")
 
     @property
     def state(self) -> CircuitState:
@@ -120,9 +116,7 @@ class CircuitBreaker:
         if new_state == CircuitState.HALF_OPEN:
             self._stats.half_open_calls = 0
 
-        logger.warning(
-            f"CircuitBreaker '{self.name}': {old_state.value} → {new_state.value}"
-        )
+        logger.warning(f"CircuitBreaker '{self.name}': {old_state.value} → {new_state.value}")
 
     def _record_success(self) -> None:
         """성공 기록"""
@@ -150,10 +144,7 @@ class CircuitBreaker:
         if self._state == CircuitState.HALF_OPEN:
             # HALF_OPEN에서 실패하면 즉시 OPEN으로 복귀
             self._transition_to(CircuitState.OPEN)
-        elif (
-            self._state == CircuitState.CLOSED
-            and self._stats.consecutive_failures >= self.failure_threshold
-        ):
+        elif self._state == CircuitState.CLOSED and self._stats.consecutive_failures >= self.failure_threshold:
             self._transition_to(CircuitState.OPEN)
 
     def _check_state(self) -> None:

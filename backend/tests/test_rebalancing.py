@@ -10,13 +10,10 @@
 """
 
 import os
-import json
-from datetime import datetime, timezone, time
-from typing import Optional
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-import pytest_asyncio
 
 # 테스트 환경 변수 설정 (import 이전)
 os.environ.setdefault("DB_PASSWORD", "test_password")
@@ -35,24 +32,24 @@ os.environ.setdefault("KIS_DEMO_ACCOUNT_NO", "12345678-01")
 os.environ.setdefault("ANTHROPIC_API_KEY", "test_api_key")
 
 from config.constants import (
+    InvestmentStyle,
     Market,
     OrderSide,
     OrderType,
-    RebalancingType,
     RebalancingFrequency,
-    InvestmentStyle,
+    RebalancingType,
     RiskProfile,
 )
-from core.portfolio_manager.rebalancing import (
-    RebalancingOrder,
-    RebalancingResult,
-    RebalancingEngine,
-)
-from core.portfolio_manager.profile import InvestorProfile
 from core.portfolio_manager.construction import (
     PortfolioConstructionEngine,
-    TargetPortfolio,
     TargetAllocation,
+    TargetPortfolio,
+)
+from core.portfolio_manager.profile import InvestorProfile
+from core.portfolio_manager.rebalancing import (
+    RebalancingEngine,
+    RebalancingOrder,
+    RebalancingResult,
 )
 
 
@@ -247,9 +244,7 @@ def mock_construction_engine():
 @pytest.fixture
 def rebalancing_engine(investor_profile, mock_construction_engine):
     """리밸런싱 엔진 인스턴스"""
-    with patch(
-        "core.portfolio_manager.rebalancing.get_settings"
-    ) as mock_settings:
+    with patch("core.portfolio_manager.rebalancing.get_settings") as mock_settings:
         mock_settings.return_value = MagicMock()
         engine = RebalancingEngine(
             profile=investor_profile,
@@ -266,9 +261,9 @@ def sample_current_portfolio():
         "000660": 0.20,  # SK하이닉스
         "035720": 0.15,  # 카카오
         "051910": 0.10,  # LG화학
-        "AAPL": 0.15,    # Apple
-        "MSFT": 0.10,    # Microsoft
-        "CASH": 0.05,    # 현금
+        "AAPL": 0.15,  # Apple
+        "MSFT": 0.10,  # Microsoft
+        "CASH": 0.05,  # 현금
     }
 
 
@@ -354,11 +349,9 @@ class TestRebalancingEngine:
         # DEFAULT_REBALANCING_TIME = time(9, 30, 0)
 
         # Mock the datetime to 08:00
-        from datetime import timedelta
+
         last_rebal = datetime(2026, 2, 1, 10, 0, 0, tzinfo=timezone.utc)
-        rebalancing_engine._get_last_rebalancing_time = AsyncMock(
-            return_value=last_rebal
-        )
+        rebalancing_engine._get_last_rebalancing_time = AsyncMock(return_value=last_rebal)
 
         result = await rebalancing_engine.check_scheduled_rebalancing()
 
@@ -373,52 +366,35 @@ class TestRebalancingEngine:
     async def test_check_scheduled_rebalancing_after_930(self, rebalancing_engine):
         """정기 리밸런싱 시간 후 테스트"""
         # Arrange - 09:30 이후 시간
-        rebalancing_engine._get_last_rebalancing_time = AsyncMock(
-            return_value=None
-        )
-        rebalancing_engine._is_first_business_day_of_month = AsyncMock(
-            return_value=True
-        )
+        rebalancing_engine._get_last_rebalancing_time = AsyncMock(return_value=None)
+        rebalancing_engine._is_first_business_day_of_month = AsyncMock(return_value=True)
 
         # Act
-        with patch(
-            "core.portfolio_manager.rebalancing.datetime"
-        ) as mock_datetime:
-            check_time = datetime.now(timezone.utc).replace(
-                hour=10, minute=0, second=0
-            )
+        with patch("core.portfolio_manager.rebalancing.datetime") as mock_datetime:
+            check_time = datetime.now(timezone.utc).replace(hour=10, minute=0, second=0)
             mock_datetime.now.return_value = check_time
-            mock_datetime.side_effect = lambda *args, **kwargs: datetime(
-                *args, **kwargs
-            )
+            mock_datetime.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
             result = await rebalancing_engine.check_scheduled_rebalancing()
 
         # Assert
         assert result is True
 
     @pytest.mark.asyncio
-    async def test_check_scheduled_rebalancing_frequency_monthly(
-        self, rebalancing_engine
-    ):
+    async def test_check_scheduled_rebalancing_frequency_monthly(self, rebalancing_engine):
         """월간 리밸런싱 주기 테스트"""
         # Arrange
         from datetime import timedelta
+
         last_rebal = datetime(2026, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
-        rebalancing_engine._get_last_rebalancing_time = AsyncMock(
-            return_value=last_rebal
-        )
+        rebalancing_engine._get_last_rebalancing_time = AsyncMock(return_value=last_rebal)
         rebalancing_engine.profile.rebalancing_frequency = RebalancingFrequency.MONTHLY
 
         # Act
-        with patch(
-            "core.portfolio_manager.rebalancing.datetime"
-        ) as mock_datetime:
+        with patch("core.portfolio_manager.rebalancing.datetime") as mock_datetime:
             # 35일 후: 30일 이상이므로 True
             current_time = last_rebal + timedelta(days=35)
             mock_datetime.now.return_value = current_time
-            mock_datetime.side_effect = lambda *args, **kwargs: datetime(
-                *args, **kwargs
-            )
+            mock_datetime.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
             result = await rebalancing_engine.check_scheduled_rebalancing()
 
         # Assert
@@ -440,9 +416,7 @@ class TestRebalancingEngine:
         portfolio_values = {"005930": 24_500_000, "000660": 24_500_000}
 
         # Act
-        result = await rebalancing_engine.check_emergency_trigger(
-            current_portfolio, market_data, portfolio_values
-        )
+        result = await rebalancing_engine.check_emergency_trigger(current_portfolio, market_data, portfolio_values)
 
         # Assert
         # loss_pct = -0.02, loss_tolerance = -0.50
@@ -454,9 +428,7 @@ class TestRebalancingEngine:
         # 코드상으로는 loss_tolerance가 음수인 것 같으므로, 다시 확인하자.
         # 더 안전한 테스트: 거의 0의 loss_tolerance로 설정
         rebalancing_engine.profile.loss_tolerance = -0.001  # -0.1% 손실만 허용
-        result = await rebalancing_engine.check_emergency_trigger(
-            current_portfolio, market_data, portfolio_values
-        )
+        result = await rebalancing_engine.check_emergency_trigger(current_portfolio, market_data, portfolio_values)
 
         # -0.02 > -0.001? NO, 따라서 None
         assert result is None
@@ -480,9 +452,7 @@ class TestRebalancingEngine:
         portfolio_values = {"005930": 24_000_000, "000660": 24_000_000}  # 48M total, 손실 4%
 
         # Act
-        result = await rebalancing_engine.check_emergency_trigger(
-            current_portfolio, market_data, portfolio_values
-        )
+        result = await rebalancing_engine.check_emergency_trigger(current_portfolio, market_data, portfolio_values)
 
         # Assert
         # 손실이 4%(-0.04)이고 tolerance가 -10%(-0.10)이면
@@ -491,19 +461,13 @@ class TestRebalancingEngine:
         assert "Emergency" in result
 
     @pytest.mark.asyncio
-    async def test_check_emergency_trigger_exception_handling(
-        self, rebalancing_engine
-    ):
+    async def test_check_emergency_trigger_exception_handling(self, rebalancing_engine):
         """예외 발생 시 처리 테스트"""
         # Arrange
-        rebalancing_engine._calculate_portfolio_loss = AsyncMock(
-            side_effect=Exception("Test error")
-        )
+        rebalancing_engine._calculate_portfolio_loss = AsyncMock(side_effect=Exception("Test error"))
 
         # Act
-        result = await rebalancing_engine.check_emergency_trigger(
-            {}, {}, {}
-        )
+        result = await rebalancing_engine.check_emergency_trigger({}, {}, {})
 
         # Assert
         assert result is None
@@ -522,9 +486,7 @@ class TestRebalancingEngine:
         """정기 리밸런싱 실행 테스트"""
         # Arrange
         ensemble_signals = {"005930": 0.8, "000660": 0.3, "035720": 0.7}
-        rebalancing_engine.construction_engine.construct = AsyncMock(
-            return_value=sample_target_portfolio
-        )
+        rebalancing_engine.construction_engine.construct = AsyncMock(return_value=sample_target_portfolio)
         rebalancing_engine._handle_rebalancing_by_style = AsyncMock()
         rebalancing_engine._record_rebalancing = AsyncMock()
 
@@ -555,9 +517,7 @@ class TestRebalancingEngine:
         sector_info = {"005930": "IT", "000660": "IT"}
         market_info = {"005930": Market.KRX, "000660": Market.KRX}
 
-        rebalancing_engine.construction_engine.construct = AsyncMock(
-            return_value=sample_target_portfolio
-        )
+        rebalancing_engine.construction_engine.construct = AsyncMock(return_value=sample_target_portfolio)
         rebalancing_engine._handle_rebalancing_by_style = AsyncMock()
         rebalancing_engine._record_rebalancing = AsyncMock()
 
@@ -573,9 +533,7 @@ class TestRebalancingEngine:
         # Assert
         assert result is not None
         rebalancing_engine.construction_engine.construct.assert_called_once()
-        call_kwargs = (
-            rebalancing_engine.construction_engine.construct.call_args.kwargs
-        )
+        call_kwargs = rebalancing_engine.construction_engine.construct.call_args.kwargs
         assert call_kwargs["sector_info"] == sector_info
         assert call_kwargs["market_info"] == market_info
 
@@ -583,9 +541,7 @@ class TestRebalancingEngine:
     async def test_execute_scheduled_rebalancing_exception(self, rebalancing_engine):
         """정기 리밸런싱 예외 테스트"""
         # Arrange
-        rebalancing_engine.construction_engine.construct = AsyncMock(
-            side_effect=Exception("Construction failed")
-        )
+        rebalancing_engine.construction_engine.construct = AsyncMock(side_effect=Exception("Construction failed"))
 
         # Act & Assert
         with pytest.raises(Exception):
@@ -600,9 +556,7 @@ class TestRebalancingEngine:
     # ══════════════════════════════════════
 
     @pytest.mark.asyncio
-    async def test_execute_emergency_rebalancing(
-        self, rebalancing_engine, sample_current_portfolio
-    ):
+    async def test_execute_emergency_rebalancing(self, rebalancing_engine, sample_current_portfolio):
         """비상 리밸런싱 실행 테스트"""
         # Arrange
         market_data = {"005930": 50000, "000660": 50000}
@@ -642,9 +596,7 @@ class TestRebalancingEngine:
         assert rebalancing_engine._generate_defensive_portfolio.called
 
     @pytest.mark.asyncio
-    async def test_execute_emergency_rebalancing_exception(
-        self, rebalancing_engine
-    ):
+    async def test_execute_emergency_rebalancing_exception(self, rebalancing_engine):
         """비상 리밸런싱 예외 테스트"""
         # Arrange
         rebalancing_engine._generate_defensive_portfolio = AsyncMock(
@@ -719,9 +671,7 @@ class TestRebalancingEngine:
         )
 
         # Act
-        orders = rebalancing_engine._generate_rebalancing_orders(
-            current, target, 50_000_000.0
-        )
+        orders = rebalancing_engine._generate_rebalancing_orders(current, target, 50_000_000.0)
 
         # Assert
         assert len(orders) == 0
@@ -751,9 +701,7 @@ class TestRebalancingEngine:
         )
 
         # Act
-        orders = rebalancing_engine._generate_rebalancing_orders(
-            current, target, 50_000_000.0
-        )
+        orders = rebalancing_engine._generate_rebalancing_orders(current, target, 50_000_000.0)
 
         # Assert
         assert len(orders) > 0
@@ -782,17 +730,13 @@ class TestRebalancingEngine:
     # ══════════════════════════════════════
 
     @pytest.mark.asyncio
-    async def test_generate_defensive_portfolio(
-        self, rebalancing_engine, sample_current_portfolio
-    ):
+    async def test_generate_defensive_portfolio(self, rebalancing_engine, sample_current_portfolio):
         """방어 포트폴리오 생성 테스트"""
         # Arrange
         market_data = {ticker: 50000 for ticker in sample_current_portfolio}
 
         # Act
-        defensive = await rebalancing_engine._generate_defensive_portfolio(
-            sample_current_portfolio, market_data
-        )
+        defensive = await rebalancing_engine._generate_defensive_portfolio(sample_current_portfolio, market_data)
 
         # Assert
         assert isinstance(defensive, TargetPortfolio)
@@ -803,23 +747,17 @@ class TestRebalancingEngine:
         for allocation in defensive.allocations:
             original_weight = sample_current_portfolio.get(allocation.ticker, 0)
             if original_weight > 0.001:
-                assert allocation.target_weight == pytest.approx(
-                    original_weight * 0.3, rel=1e-6
-                )
+                assert allocation.target_weight == pytest.approx(original_weight * 0.3, rel=1e-6)
 
     @pytest.mark.asyncio
-    async def test_generate_defensive_portfolio_cash_heavy(
-        self, rebalancing_engine
-    ):
+    async def test_generate_defensive_portfolio_cash_heavy(self, rebalancing_engine):
         """방어 포트폴리오의 높은 현금 비중 테스트"""
         # Arrange
         current = {"005930": 0.5, "000660": 0.5}
         market_data = {"005930": 50000, "000660": 50000}
 
         # Act
-        defensive = await rebalancing_engine._generate_defensive_portfolio(
-            current, market_data
-        )
+        defensive = await rebalancing_engine._generate_defensive_portfolio(current, market_data)
 
         # Assert
         # 70% 현금 비중 확인
@@ -841,9 +779,7 @@ class TestRebalancingEngine:
         portfolio_values = {"005930": 27_500_000, "000660": 27_500_000}  # 총 55M
 
         # Act
-        loss = await rebalancing_engine._calculate_portfolio_loss(
-            current_portfolio, portfolio_values
-        )
+        loss = await rebalancing_engine._calculate_portfolio_loss(current_portfolio, portfolio_values)
 
         # Assert
         assert loss == 0.0
@@ -857,9 +793,7 @@ class TestRebalancingEngine:
         portfolio_values = {"005930": 20_000_000, "000660": 20_000_000}  # 총 40M
 
         # Act
-        loss = await rebalancing_engine._calculate_portfolio_loss(
-            current_portfolio, portfolio_values
-        )
+        loss = await rebalancing_engine._calculate_portfolio_loss(current_portfolio, portfolio_values)
 
         # Assert
         assert loss < 0.0
@@ -873,17 +807,13 @@ class TestRebalancingEngine:
         portfolio_values = {}
 
         # Act
-        loss = await rebalancing_engine._calculate_portfolio_loss(
-            current_portfolio, portfolio_values
-        )
+        loss = await rebalancing_engine._calculate_portfolio_loss(current_portfolio, portfolio_values)
 
         # Assert
         assert loss == 0.0
 
     @pytest.mark.asyncio
-    async def test_calculate_portfolio_loss_capped_at_zero(
-        self, rebalancing_engine
-    ):
+    async def test_calculate_portfolio_loss_capped_at_zero(self, rebalancing_engine):
         """손실이 항상 0 이하인지 테스트 (이득은 0으로 캡핑)"""
         # Arrange
         rebalancing_engine.profile.seed_capital = 40_000_000.0
@@ -891,25 +821,19 @@ class TestRebalancingEngine:
         portfolio_values = {"005930": 50_000_000}  # 이득 25%
 
         # Act
-        loss = await rebalancing_engine._calculate_portfolio_loss(
-            current_portfolio, portfolio_values
-        )
+        loss = await rebalancing_engine._calculate_portfolio_loss(current_portfolio, portfolio_values)
 
         # Assert
         assert loss <= 0.0
 
     @pytest.mark.asyncio
-    async def test_calculate_portfolio_loss_exception_handling(
-        self, rebalancing_engine
-    ):
+    async def test_calculate_portfolio_loss_exception_handling(self, rebalancing_engine):
         """예외 발생 시 처리 테스트"""
         # Arrange
         current_portfolio = None  # 잘못된 타입
 
         # Act
-        loss = await rebalancing_engine._calculate_portfolio_loss(
-            current_portfolio, {}
-        )
+        loss = await rebalancing_engine._calculate_portfolio_loss(current_portfolio, {})
 
         # Assert
         assert loss == 0.0
@@ -966,9 +890,7 @@ class TestRebalancingEngine:
     # _summarize_target_portfolio 테스트
     # ══════════════════════════════════════
 
-    def test_summarize_target_portfolio(
-        self, rebalancing_engine, sample_target_portfolio
-    ):
+    def test_summarize_target_portfolio(self, rebalancing_engine, sample_target_portfolio):
         """목표 포트폴리오 요약 생성 테스트"""
         # Act
         summary = rebalancing_engine._summarize_target_portfolio(sample_target_portfolio)
@@ -982,9 +904,7 @@ class TestRebalancingEngine:
         assert summary["position_count"] > 0
         assert summary["cash_ratio"] == sample_target_portfolio.cash_ratio
 
-    def test_summarize_target_portfolio_top_3_order(
-        self, rebalancing_engine, sample_target_portfolio
-    ):
+    def test_summarize_target_portfolio_top_3_order(self, rebalancing_engine, sample_target_portfolio):
         """목표 포트폴리오 Top 3 정렬 테스트"""
         # Act
         summary = rebalancing_engine._summarize_target_portfolio(sample_target_portfolio)
@@ -996,9 +916,7 @@ class TestRebalancingEngine:
         if len(top_3) > 1:
             assert top_3[0][1] >= top_3[1][1]
 
-    def test_summarize_target_portfolio_sector_weights(
-        self, rebalancing_engine
-    ):
+    def test_summarize_target_portfolio_sector_weights(self, rebalancing_engine):
         """목표 포트폴리오 섹터 가중치 테스트"""
         # Arrange
         allocations = [
@@ -1043,9 +961,7 @@ class TestRebalancingEngine:
         """정기 리밸런싱 전체 워크플로우 테스트"""
         # Arrange
         ensemble_signals = {a.ticker: a.signal_score for a in sample_target_portfolio.allocations}
-        rebalancing_engine.construction_engine.construct = AsyncMock(
-            return_value=sample_target_portfolio
-        )
+        rebalancing_engine.construction_engine.construct = AsyncMock(return_value=sample_target_portfolio)
         rebalancing_engine._handle_rebalancing_by_style = AsyncMock()
         rebalancing_engine._record_rebalancing = AsyncMock()
 
@@ -1064,9 +980,7 @@ class TestRebalancingEngine:
         rebalancing_engine._record_rebalancing.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_rebalancing_workflow_emergency(
-        self, rebalancing_engine, sample_current_portfolio
-    ):
+    async def test_rebalancing_workflow_emergency(self, rebalancing_engine, sample_current_portfolio):
         """비상 리밸런싱 전체 워크플로우 테스트"""
         # Arrange
         market_data = {ticker: 50000 for ticker in sample_current_portfolio}
@@ -1088,9 +1002,7 @@ class TestRebalancingEngine:
             total_value=50_000_000.0,
         )
 
-        rebalancing_engine._generate_defensive_portfolio = AsyncMock(
-            return_value=defensive_portfolio
-        )
+        rebalancing_engine._generate_defensive_portfolio = AsyncMock(return_value=defensive_portfolio)
         rebalancing_engine._handle_emergency_rebalancing_by_style = AsyncMock()
         rebalancing_engine._record_rebalancing = AsyncMock()
 

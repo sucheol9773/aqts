@@ -5,7 +5,7 @@ Stage 5.3: 브로커 재조정 (Broker Reconciliation)
 불일치를 감지하면 즉시 알림을 발행합니다.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -45,9 +45,7 @@ class ReconciliationEngine:
     _last_result: Optional[ReconciliationResult] = None
 
     def reconcile(
-        self,
-        broker_positions: Dict[str, float],
-        internal_positions: Dict[str, float]
+        self, broker_positions: Dict[str, float], internal_positions: Dict[str, float]
     ) -> ReconciliationResult:
         """
         브로커 포지션과 내부 포지션 비교
@@ -76,12 +74,14 @@ class ReconciliationEngine:
 
             if abs(broker_qty - internal_qty) > 1e-6:  # 부동소수점 오차 허용
                 matched = False
-                mismatches.append({
-                    "ticker": ticker,
-                    "broker_qty": broker_qty,
-                    "internal_qty": internal_qty,
-                    "difference": broker_qty - internal_qty,
-                })
+                mismatches.append(
+                    {
+                        "ticker": ticker,
+                        "broker_qty": broker_qty,
+                        "internal_qty": internal_qty,
+                        "difference": broker_qty - internal_qty,
+                    }
+                )
 
         broker_total = sum(broker_positions.values())
         internal_total = sum(internal_positions.values())
@@ -97,12 +97,7 @@ class ReconciliationEngine:
         self._last_result = result
         return result
 
-    def reconcile_balance(
-        self,
-        broker_balance: float,
-        internal_balance: float,
-        tolerance: float = 0.01
-    ) -> bool:
+    def reconcile_balance(self, broker_balance: float, internal_balance: float, tolerance: float = 0.01) -> bool:
         """
         계좌 잔액(현금) 확인
 

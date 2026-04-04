@@ -5,17 +5,18 @@ Tests for mode transitions (BACKTEST → DEMO → LIVE)
 and transition history tracking.
 """
 
-import pytest
-from datetime import datetime, timezone
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from config.settings import TradingMode
 from core.mode_manager import (
     ModeManager,
     TransitionCheckItem,
     TransitionCheckResult,
     TransitionStatus,
 )
-from config.settings import TradingMode
 
 
 class TestTransitionCheckItem:
@@ -466,9 +467,7 @@ class TestModeManagerDemoToLive:
         assert result.can_transition is False
 
     @patch("core.mode_manager.get_settings")
-    def test_warns_when_telegram_not_configured_but_required_pass(
-        self, mock_get_settings, mock_settings_demo_prod
-    ):
+    def test_warns_when_telegram_not_configured_but_required_pass(self, mock_get_settings, mock_settings_demo_prod):
         """텔레그램이 설정되지 않아도 필수 항목이 통과하면 WARNINGS 상태"""
         settings = mock_settings_demo_prod
         settings.kis.live_app_key = "valid_key"

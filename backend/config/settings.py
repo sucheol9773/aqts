@@ -21,8 +21,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # ══════════════════════════════════════
 class TradingMode(str, Enum):
     """거래 모드"""
-    LIVE = "LIVE"          # 실전 거래 (실제 자금)
-    DEMO = "DEMO"          # 모의 거래 (가상 자금)
+
+    LIVE = "LIVE"  # 실전 거래 (실제 자금)
+    DEMO = "DEMO"  # 모의 거래 (가상 자금)
     BACKTEST = "BACKTEST"  # 백테스트 전용 (API 호출 없음)
 
 

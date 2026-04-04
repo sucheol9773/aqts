@@ -6,8 +6,7 @@ NFR-04 명세 구현:
 - 투자 의사결정 과정 추적
 """
 
-from datetime import datetime
-from typing import Any, Optional
+from typing import Optional
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession

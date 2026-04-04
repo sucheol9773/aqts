@@ -7,22 +7,21 @@ InvestmentDecisionPipeline이 Gate 평가 결과(PASS/BLOCK)를 올바르게
 """
 
 import unittest
-from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from core.fallback_handler import FallbackHandler
 from core.gate_registry import GateRegistry
-from core.gates import DataGate, EnsembleGate, FactorGate, SignalGate
-from core.gates.base import GateDecision, GateResult, GateSeverity
+from core.gates import DataGate
+from core.gates.base import GateDecision, GateSeverity
 from core.pipeline import (
     InvestmentDecisionPipeline,
     PipelineResult,
     _build_default_gate_registry,
 )
 from core.state_machine import PipelineState, PipelineStateMachine
-from core.strategy_ensemble.engine import EnsembleSignal, StrategySignalInput
+from core.strategy_ensemble.engine import EnsembleSignal
 
 
 # ────────────────────────────────────────────
@@ -125,36 +124,35 @@ class TestPipelineFullAnalysisAllPass(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         # 외부 서비스 Mock
         self.news_mock = AsyncMock()
-        self.news_mock.get_articles_for_ticker = AsyncMock(return_value=[
-            {"title": "뉴스1"}, {"title": "뉴스2"},
-        ])
+        self.news_mock.get_articles_for_ticker = AsyncMock(
+            return_value=[
+                {"title": "뉴스1"},
+                {"title": "뉴스2"},
+            ]
+        )
 
         self.sentiment_mock = AsyncMock()
-        self.sentiment_mock.analyze_ticker = AsyncMock(
-            return_value=_make_mock_sentiment()
-        )
+        self.sentiment_mock.analyze_ticker = AsyncMock(return_value=_make_mock_sentiment())
 
         self.opinion_mock = AsyncMock()
-        self.opinion_mock.generate_stock_opinion = AsyncMock(
-            return_value=_make_mock_opinion()
-        )
+        self.opinion_mock.generate_stock_opinion = AsyncMock(return_value=_make_mock_opinion())
 
         self.ensemble_mock = AsyncMock()
         self.ensemble_result = _make_mock_ensemble_signal()
-        self.ensemble_mock.generate_ensemble_signal = AsyncMock(
-            return_value=self.ensemble_result
-        )
+        self.ensemble_mock.generate_ensemble_signal = AsyncMock(return_value=self.ensemble_result)
 
     async def _run_pipeline(self, gate_registry=None):
         sm = PipelineStateMachine()
         registry = gate_registry or _build_default_gate_registry()
         fallback = FallbackHandler(sm)
 
-        with patch("core.pipeline.NewsCollectorService", return_value=self.news_mock), \
-             patch("core.pipeline.SentimentAnalyzer", return_value=self.sentiment_mock), \
-             patch("core.pipeline.OpinionGenerator", return_value=self.opinion_mock), \
-             patch("core.pipeline.SignalGenerator"), \
-             patch("core.pipeline.StrategyEnsembleEngine", return_value=self.ensemble_mock):
+        with (
+            patch("core.pipeline.NewsCollectorService", return_value=self.news_mock),
+            patch("core.pipeline.SentimentAnalyzer", return_value=self.sentiment_mock),
+            patch("core.pipeline.OpinionGenerator", return_value=self.opinion_mock),
+            patch("core.pipeline.SignalGenerator"),
+            patch("core.pipeline.StrategyEnsembleEngine", return_value=self.ensemble_mock),
+        ):
             pipeline = InvestmentDecisionPipeline(
                 state_machine=sm,
                 gate_registry=registry,
@@ -208,11 +206,13 @@ class TestPipelineDataGateBlock(unittest.IsolatedAsyncioTestCase):
         registry = _build_default_gate_registry()
         fallback = FallbackHandler(sm)
 
-        with patch("core.pipeline.NewsCollectorService", return_value=news_mock), \
-             patch("core.pipeline.SentimentAnalyzer"), \
-             patch("core.pipeline.OpinionGenerator"), \
-             patch("core.pipeline.SignalGenerator"), \
-             patch("core.pipeline.StrategyEnsembleEngine"):
+        with (
+            patch("core.pipeline.NewsCollectorService", return_value=news_mock),
+            patch("core.pipeline.SentimentAnalyzer"),
+            patch("core.pipeline.OpinionGenerator"),
+            patch("core.pipeline.SignalGenerator"),
+            patch("core.pipeline.StrategyEnsembleEngine"),
+        ):
             pipeline = InvestmentDecisionPipeline(
                 state_machine=sm,
                 gate_registry=registry,
@@ -238,34 +238,30 @@ class TestPipelineSignalGateBlock(unittest.IsolatedAsyncioTestCase):
     async def test_no_signals_triggers_block(self):
         """시그널 입력이 빈 리스트면 SignalGate가 BLOCK."""
         news_mock = AsyncMock()
-        news_mock.get_articles_for_ticker = AsyncMock(return_value=[
-            {"title": "뉴스"}
-        ])
+        news_mock.get_articles_for_ticker = AsyncMock(return_value=[{"title": "뉴스"}])
 
         sentiment_mock = AsyncMock()
-        sentiment_mock.analyze_ticker = AsyncMock(
-            return_value=_make_mock_sentiment()
-        )
+        sentiment_mock.analyze_ticker = AsyncMock(return_value=_make_mock_sentiment())
 
         opinion_mock = AsyncMock()
-        opinion_mock.generate_stock_opinion = AsyncMock(
-            return_value=_make_mock_opinion()
-        )
+        opinion_mock.generate_stock_opinion = AsyncMock(return_value=_make_mock_opinion())
 
         sm = PipelineStateMachine()
         registry = _build_default_gate_registry()
         fallback = FallbackHandler(sm)
 
-        with patch("core.pipeline.NewsCollectorService", return_value=news_mock), \
-             patch("core.pipeline.SentimentAnalyzer", return_value=sentiment_mock), \
-             patch("core.pipeline.OpinionGenerator", return_value=opinion_mock), \
-             patch("core.pipeline.SignalGenerator"), \
-             patch("core.pipeline.StrategyEnsembleEngine"), \
-             patch.object(
-                 InvestmentDecisionPipeline,
-                 "_build_ensemble_inputs",
-                 return_value=[],  # 빈 시그널
-             ):
+        with (
+            patch("core.pipeline.NewsCollectorService", return_value=news_mock),
+            patch("core.pipeline.SentimentAnalyzer", return_value=sentiment_mock),
+            patch("core.pipeline.OpinionGenerator", return_value=opinion_mock),
+            patch("core.pipeline.SignalGenerator"),
+            patch("core.pipeline.StrategyEnsembleEngine"),
+            patch.object(
+                InvestmentDecisionPipeline,
+                "_build_ensemble_inputs",
+                return_value=[],  # 빈 시그널
+            ),
+        ):
             pipeline = InvestmentDecisionPipeline(
                 state_machine=sm,
                 gate_registry=registry,
@@ -288,38 +284,30 @@ class TestPipelineEnsembleGateBlock(unittest.IsolatedAsyncioTestCase):
     async def test_invalid_weights_triggers_block(self):
         """가중치 합이 1.0이 아니면 EnsembleGate가 BLOCK."""
         news_mock = AsyncMock()
-        news_mock.get_articles_for_ticker = AsyncMock(return_value=[
-            {"title": "뉴스"}
-        ])
+        news_mock.get_articles_for_ticker = AsyncMock(return_value=[{"title": "뉴스"}])
 
         sentiment_mock = AsyncMock()
-        sentiment_mock.analyze_ticker = AsyncMock(
-            return_value=_make_mock_sentiment()
-        )
+        sentiment_mock.analyze_ticker = AsyncMock(return_value=_make_mock_sentiment())
 
         opinion_mock = AsyncMock()
-        opinion_mock.generate_stock_opinion = AsyncMock(
-            return_value=_make_mock_opinion()
-        )
+        opinion_mock.generate_stock_opinion = AsyncMock(return_value=_make_mock_opinion())
 
         # 가중치 합이 0.8 (≠ 1.0)
-        bad_ensemble = _make_mock_ensemble_signal(
-            weights={"TREND": 0.5, "SENTIMENT": 0.3}  # sum = 0.8
-        )
+        bad_ensemble = _make_mock_ensemble_signal(weights={"TREND": 0.5, "SENTIMENT": 0.3})  # sum = 0.8
         ensemble_mock = AsyncMock()
-        ensemble_mock.generate_ensemble_signal = AsyncMock(
-            return_value=bad_ensemble
-        )
+        ensemble_mock.generate_ensemble_signal = AsyncMock(return_value=bad_ensemble)
 
         sm = PipelineStateMachine()
         registry = _build_default_gate_registry()
         fallback = FallbackHandler(sm)
 
-        with patch("core.pipeline.NewsCollectorService", return_value=news_mock), \
-             patch("core.pipeline.SentimentAnalyzer", return_value=sentiment_mock), \
-             patch("core.pipeline.OpinionGenerator", return_value=opinion_mock), \
-             patch("core.pipeline.SignalGenerator"), \
-             patch("core.pipeline.StrategyEnsembleEngine", return_value=ensemble_mock):
+        with (
+            patch("core.pipeline.NewsCollectorService", return_value=news_mock),
+            patch("core.pipeline.SentimentAnalyzer", return_value=sentiment_mock),
+            patch("core.pipeline.OpinionGenerator", return_value=opinion_mock),
+            patch("core.pipeline.SignalGenerator"),
+            patch("core.pipeline.StrategyEnsembleEngine", return_value=ensemble_mock),
+        ):
             pipeline = InvestmentDecisionPipeline(
                 state_machine=sm,
                 gate_registry=registry,
@@ -340,30 +328,24 @@ class TestPipelineBatchAnalysis(unittest.IsolatedAsyncioTestCase):
     async def test_batch_returns_pipeline_results(self):
         """배치 분석 결과가 PipelineResult 딕셔너리입니다."""
         news_mock = AsyncMock()
-        news_mock.get_articles_for_ticker = AsyncMock(return_value=[
-            {"title": "뉴스"}
-        ])
+        news_mock.get_articles_for_ticker = AsyncMock(return_value=[{"title": "뉴스"}])
 
         sentiment_mock = AsyncMock()
-        sentiment_mock.analyze_ticker = AsyncMock(
-            return_value=_make_mock_sentiment()
-        )
+        sentiment_mock.analyze_ticker = AsyncMock(return_value=_make_mock_sentiment())
 
         opinion_mock = AsyncMock()
-        opinion_mock.generate_stock_opinion = AsyncMock(
-            return_value=_make_mock_opinion()
-        )
+        opinion_mock.generate_stock_opinion = AsyncMock(return_value=_make_mock_opinion())
 
         ensemble_mock = AsyncMock()
-        ensemble_mock.generate_ensemble_signal = AsyncMock(
-            return_value=_make_mock_ensemble_signal()
-        )
+        ensemble_mock.generate_ensemble_signal = AsyncMock(return_value=_make_mock_ensemble_signal())
 
-        with patch("core.pipeline.NewsCollectorService", return_value=news_mock), \
-             patch("core.pipeline.SentimentAnalyzer", return_value=sentiment_mock), \
-             patch("core.pipeline.OpinionGenerator", return_value=opinion_mock), \
-             patch("core.pipeline.SignalGenerator"), \
-             patch("core.pipeline.StrategyEnsembleEngine", return_value=ensemble_mock):
+        with (
+            patch("core.pipeline.NewsCollectorService", return_value=news_mock),
+            patch("core.pipeline.SentimentAnalyzer", return_value=sentiment_mock),
+            patch("core.pipeline.OpinionGenerator", return_value=opinion_mock),
+            patch("core.pipeline.SignalGenerator"),
+            patch("core.pipeline.StrategyEnsembleEngine", return_value=ensemble_mock),
+        ):
             pipeline = InvestmentDecisionPipeline()
             results = await pipeline.run_batch_analysis(["005930", "000660"])
 
@@ -385,30 +367,24 @@ class TestPipelineBatchAnalysis(unittest.IsolatedAsyncioTestCase):
             return [{"title": "뉴스"}]
 
         news_mock = AsyncMock()
-        news_mock.get_articles_for_ticker = AsyncMock(
-            side_effect=alternating_articles
-        )
+        news_mock.get_articles_for_ticker = AsyncMock(side_effect=alternating_articles)
 
         sentiment_mock = AsyncMock()
-        sentiment_mock.analyze_ticker = AsyncMock(
-            return_value=_make_mock_sentiment()
-        )
+        sentiment_mock.analyze_ticker = AsyncMock(return_value=_make_mock_sentiment())
 
         opinion_mock = AsyncMock()
-        opinion_mock.generate_stock_opinion = AsyncMock(
-            return_value=_make_mock_opinion()
-        )
+        opinion_mock.generate_stock_opinion = AsyncMock(return_value=_make_mock_opinion())
 
         ensemble_mock = AsyncMock()
-        ensemble_mock.generate_ensemble_signal = AsyncMock(
-            return_value=_make_mock_ensemble_signal()
-        )
+        ensemble_mock.generate_ensemble_signal = AsyncMock(return_value=_make_mock_ensemble_signal())
 
-        with patch("core.pipeline.NewsCollectorService", return_value=news_mock), \
-             patch("core.pipeline.SentimentAnalyzer", return_value=sentiment_mock), \
-             patch("core.pipeline.OpinionGenerator", return_value=opinion_mock), \
-             patch("core.pipeline.SignalGenerator"), \
-             patch("core.pipeline.StrategyEnsembleEngine", return_value=ensemble_mock):
+        with (
+            patch("core.pipeline.NewsCollectorService", return_value=news_mock),
+            patch("core.pipeline.SentimentAnalyzer", return_value=sentiment_mock),
+            patch("core.pipeline.OpinionGenerator", return_value=opinion_mock),
+            patch("core.pipeline.SignalGenerator"),
+            patch("core.pipeline.StrategyEnsembleEngine", return_value=ensemble_mock),
+        ):
             pipeline = InvestmentDecisionPipeline()
             results = await pipeline.run_batch_analysis(["BLOCK_ME", "005930"])
 
@@ -424,29 +400,23 @@ class TestPipelineStateTransitions(unittest.IsolatedAsyncioTestCase):
     async def test_successful_run_transitions(self):
         """성공 시 IDLE → COLLECTING → ANALYZING → … → COMPLETED."""
         news_mock = AsyncMock()
-        news_mock.get_articles_for_ticker = AsyncMock(return_value=[
-            {"title": "뉴스"}
-        ])
+        news_mock.get_articles_for_ticker = AsyncMock(return_value=[{"title": "뉴스"}])
         sentiment_mock = AsyncMock()
-        sentiment_mock.analyze_ticker = AsyncMock(
-            return_value=_make_mock_sentiment()
-        )
+        sentiment_mock.analyze_ticker = AsyncMock(return_value=_make_mock_sentiment())
         opinion_mock = AsyncMock()
-        opinion_mock.generate_stock_opinion = AsyncMock(
-            return_value=_make_mock_opinion()
-        )
+        opinion_mock.generate_stock_opinion = AsyncMock(return_value=_make_mock_opinion())
         ensemble_mock = AsyncMock()
-        ensemble_mock.generate_ensemble_signal = AsyncMock(
-            return_value=_make_mock_ensemble_signal()
-        )
+        ensemble_mock.generate_ensemble_signal = AsyncMock(return_value=_make_mock_ensemble_signal())
 
         sm = PipelineStateMachine()
 
-        with patch("core.pipeline.NewsCollectorService", return_value=news_mock), \
-             patch("core.pipeline.SentimentAnalyzer", return_value=sentiment_mock), \
-             patch("core.pipeline.OpinionGenerator", return_value=opinion_mock), \
-             patch("core.pipeline.SignalGenerator"), \
-             patch("core.pipeline.StrategyEnsembleEngine", return_value=ensemble_mock):
+        with (
+            patch("core.pipeline.NewsCollectorService", return_value=news_mock),
+            patch("core.pipeline.SentimentAnalyzer", return_value=sentiment_mock),
+            patch("core.pipeline.OpinionGenerator", return_value=opinion_mock),
+            patch("core.pipeline.SignalGenerator"),
+            patch("core.pipeline.StrategyEnsembleEngine", return_value=ensemble_mock),
+        ):
             pipeline = InvestmentDecisionPipeline(state_machine=sm)
             await pipeline.run_full_analysis("005930")
 
@@ -465,11 +435,13 @@ class TestPipelineStateTransitions(unittest.IsolatedAsyncioTestCase):
         sm = PipelineStateMachine()
         fallback = FallbackHandler(sm)
 
-        with patch("core.pipeline.NewsCollectorService", return_value=news_mock), \
-             patch("core.pipeline.SentimentAnalyzer"), \
-             patch("core.pipeline.OpinionGenerator"), \
-             patch("core.pipeline.SignalGenerator"), \
-             patch("core.pipeline.StrategyEnsembleEngine"):
+        with (
+            patch("core.pipeline.NewsCollectorService", return_value=news_mock),
+            patch("core.pipeline.SentimentAnalyzer"),
+            patch("core.pipeline.OpinionGenerator"),
+            patch("core.pipeline.SignalGenerator"),
+            patch("core.pipeline.StrategyEnsembleEngine"),
+        ):
             pipeline = InvestmentDecisionPipeline(
                 state_machine=sm,
                 fallback_handler=fallback,
@@ -493,11 +465,13 @@ class TestPipelineFallbackCallback(unittest.IsolatedAsyncioTestCase):
         sm = PipelineStateMachine()
         fallback = FallbackHandler(sm, on_block_callback=callback)
 
-        with patch("core.pipeline.NewsCollectorService", return_value=news_mock), \
-             patch("core.pipeline.SentimentAnalyzer"), \
-             patch("core.pipeline.OpinionGenerator"), \
-             patch("core.pipeline.SignalGenerator"), \
-             patch("core.pipeline.StrategyEnsembleEngine"):
+        with (
+            patch("core.pipeline.NewsCollectorService", return_value=news_mock),
+            patch("core.pipeline.SentimentAnalyzer"),
+            patch("core.pipeline.OpinionGenerator"),
+            patch("core.pipeline.SignalGenerator"),
+            patch("core.pipeline.StrategyEnsembleEngine"),
+        ):
             pipeline = InvestmentDecisionPipeline(
                 state_machine=sm,
                 fallback_handler=fallback,
@@ -516,27 +490,21 @@ class TestPipelineGateResultLogging(unittest.IsolatedAsyncioTestCase):
 
     async def test_gate_results_contain_reason_and_severity(self):
         news_mock = AsyncMock()
-        news_mock.get_articles_for_ticker = AsyncMock(return_value=[
-            {"title": "뉴스"}
-        ])
+        news_mock.get_articles_for_ticker = AsyncMock(return_value=[{"title": "뉴스"}])
         sentiment_mock = AsyncMock()
-        sentiment_mock.analyze_ticker = AsyncMock(
-            return_value=_make_mock_sentiment()
-        )
+        sentiment_mock.analyze_ticker = AsyncMock(return_value=_make_mock_sentiment())
         opinion_mock = AsyncMock()
-        opinion_mock.generate_stock_opinion = AsyncMock(
-            return_value=_make_mock_opinion()
-        )
+        opinion_mock.generate_stock_opinion = AsyncMock(return_value=_make_mock_opinion())
         ensemble_mock = AsyncMock()
-        ensemble_mock.generate_ensemble_signal = AsyncMock(
-            return_value=_make_mock_ensemble_signal()
-        )
+        ensemble_mock.generate_ensemble_signal = AsyncMock(return_value=_make_mock_ensemble_signal())
 
-        with patch("core.pipeline.NewsCollectorService", return_value=news_mock), \
-             patch("core.pipeline.SentimentAnalyzer", return_value=sentiment_mock), \
-             patch("core.pipeline.OpinionGenerator", return_value=opinion_mock), \
-             patch("core.pipeline.SignalGenerator"), \
-             patch("core.pipeline.StrategyEnsembleEngine", return_value=ensemble_mock):
+        with (
+            patch("core.pipeline.NewsCollectorService", return_value=news_mock),
+            patch("core.pipeline.SentimentAnalyzer", return_value=sentiment_mock),
+            patch("core.pipeline.OpinionGenerator", return_value=opinion_mock),
+            patch("core.pipeline.SignalGenerator"),
+            patch("core.pipeline.StrategyEnsembleEngine", return_value=ensemble_mock),
+        ):
             pipeline = InvestmentDecisionPipeline()
             result = await pipeline.run_full_analysis("005930")
 
@@ -552,29 +520,23 @@ class TestPipelineNoGateRegistry(unittest.IsolatedAsyncioTestCase):
     async def test_empty_registry_skips_gates(self):
         """빈 GateRegistry면 Gate 없이 정상 진행."""
         news_mock = AsyncMock()
-        news_mock.get_articles_for_ticker = AsyncMock(return_value=[
-            {"title": "뉴스"}
-        ])
+        news_mock.get_articles_for_ticker = AsyncMock(return_value=[{"title": "뉴스"}])
         sentiment_mock = AsyncMock()
-        sentiment_mock.analyze_ticker = AsyncMock(
-            return_value=_make_mock_sentiment()
-        )
+        sentiment_mock.analyze_ticker = AsyncMock(return_value=_make_mock_sentiment())
         opinion_mock = AsyncMock()
-        opinion_mock.generate_stock_opinion = AsyncMock(
-            return_value=_make_mock_opinion()
-        )
+        opinion_mock.generate_stock_opinion = AsyncMock(return_value=_make_mock_opinion())
         ensemble_mock = AsyncMock()
-        ensemble_mock.generate_ensemble_signal = AsyncMock(
-            return_value=_make_mock_ensemble_signal()
-        )
+        ensemble_mock.generate_ensemble_signal = AsyncMock(return_value=_make_mock_ensemble_signal())
 
         empty_registry = GateRegistry()  # Gate 없음
 
-        with patch("core.pipeline.NewsCollectorService", return_value=news_mock), \
-             patch("core.pipeline.SentimentAnalyzer", return_value=sentiment_mock), \
-             patch("core.pipeline.OpinionGenerator", return_value=opinion_mock), \
-             patch("core.pipeline.SignalGenerator"), \
-             patch("core.pipeline.StrategyEnsembleEngine", return_value=ensemble_mock):
+        with (
+            patch("core.pipeline.NewsCollectorService", return_value=news_mock),
+            patch("core.pipeline.SentimentAnalyzer", return_value=sentiment_mock),
+            patch("core.pipeline.OpinionGenerator", return_value=opinion_mock),
+            patch("core.pipeline.SignalGenerator"),
+            patch("core.pipeline.StrategyEnsembleEngine", return_value=ensemble_mock),
+        ):
             pipeline = InvestmentDecisionPipeline(gate_registry=empty_registry)
             result = await pipeline.run_full_analysis("005930")
 

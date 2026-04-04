@@ -1,6 +1,7 @@
 """FactorGate: 팩터 스코어 유효성 검증 (팩터 → 시그널 전이)."""
 
-from typing import Any, List
+from typing import Any
+
 from core.gates.base import BaseGate, GateResult, GateSeverity
 
 
@@ -31,8 +32,15 @@ class FactorGate(BaseGate):
             # FeatureVector 계약으로 이미 범위 검증됨 → 존재만 확인
             has_any = any(
                 getattr(vec, f, None) is not None
-                for f in ("factor_value", "factor_momentum", "factor_quality",
-                          "factor_low_vol", "factor_size", "tech_rsi", "sentiment")
+                for f in (
+                    "factor_value",
+                    "factor_momentum",
+                    "factor_quality",
+                    "factor_low_vol",
+                    "factor_size",
+                    "tech_rsi",
+                    "sentiment",
+                )
             )
             if has_any:
                 valid += 1
@@ -42,7 +50,9 @@ class FactorGate(BaseGate):
             return self._block(
                 f"팩터 커버리지 {coverage:.1%} < 최소 {min_coverage:.1%}",
                 severity=GateSeverity.ERROR,
-                coverage=coverage, total=total, valid=valid,
+                coverage=coverage,
+                total=total,
+                valid=valid,
             )
 
         return self._pass(

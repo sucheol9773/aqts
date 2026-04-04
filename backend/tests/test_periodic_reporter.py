@@ -20,7 +20,6 @@ import pytest
 
 from core.periodic_reporter import (
     DailySummary,
-    PeriodicReport,
     PeriodicReporter,
     ReportPeriod,
 )
@@ -51,13 +50,15 @@ def _make_daily_data(
         current_value += pnl
         pct = (pnl / (current_value - pnl) * 100) if (current_value - pnl) > 0 else 0
 
-        data.append(DailySummary(
-            date=d,
-            portfolio_value=current_value,
-            daily_pnl=pnl,
-            daily_return_pct=round(pct, 4),
-            trades_count=3,
-        ))
+        data.append(
+            DailySummary(
+                date=d,
+                portfolio_value=current_value,
+                daily_pnl=pnl,
+                daily_return_pct=round(pct, 4),
+                trades_count=3,
+            )
+        )
     return data
 
 
@@ -159,7 +160,9 @@ class TestMonthlyReport:
         )
 
         report = reporter.generate_monthly(
-            data, year=2026, month=1,
+            data,
+            year=2026,
+            month=1,
             benchmark_return_pct=0.5,
         )
 
@@ -176,14 +179,14 @@ class TestMonthlyReport:
         )
 
         report = reporter.generate_monthly(
-            data, year=2026, month=1,
+            data,
+            year=2026,
+            month=1,
             benchmark_return_pct=0.5,
         )
 
         assert report.benchmark_return_pct == 0.5
-        assert report.excess_return_pct == round(
-            report.period_return_pct - 0.5, 2
-        )
+        assert report.excess_return_pct == round(report.period_return_pct - 0.5, 2)
 
     def test_strategy_contributions(self, reporter):
         """전략별 기여도"""
@@ -191,7 +194,9 @@ class TestMonthlyReport:
         contributions = {"FACTOR": 0.5, "TREND": 0.3, "RISK_PARITY": 0.2}
 
         report = reporter.generate_monthly(
-            data, year=2026, month=1,
+            data,
+            year=2026,
+            month=1,
             strategy_contributions=contributions,
         )
 
@@ -345,7 +350,9 @@ class TestTelegramFormat:
         """월간 포맷에 벤치마크 대비 포함"""
         data = _make_daily_data(date(2026, 1, 2), n_days=5)
         report = reporter.generate_monthly(
-            data, year=2026, month=1,
+            data,
+            year=2026,
+            month=1,
             benchmark_return_pct=0.5,
         )
         msg = reporter.format_monthly_telegram(report)
@@ -356,7 +363,9 @@ class TestTelegramFormat:
         """월간 포맷에 전략 기여도 포함"""
         data = _make_daily_data(date(2026, 1, 2), n_days=5)
         report = reporter.generate_monthly(
-            data, year=2026, month=1,
+            data,
+            year=2026,
+            month=1,
             strategy_contributions={"FACTOR": 0.5, "TREND": 0.3},
         )
         msg = reporter.format_monthly_telegram(report)

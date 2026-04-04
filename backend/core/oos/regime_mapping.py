@@ -14,7 +14,6 @@ unmapped 발생 시 fallback 정책을 적용하고 경고 로그를 남깁니�
 """
 
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
@@ -57,9 +56,7 @@ class RegimeMapper:
 
     def _load_config(self) -> None:
         """operational_thresholds.yaml에서 매핑 로드"""
-        config_path = (
-            Path(__file__).parent.parent.parent / "config" / "operational_thresholds.yaml"
-        )
+        config_path = Path(__file__).parent.parent.parent / "config" / "operational_thresholds.yaml"
 
         if config_path.exists():
             try:
@@ -68,12 +65,9 @@ class RegimeMapper:
                     if config and "regime_mapping" in config:
                         mapping_config = config["regime_mapping"]
                         self._fallback = mapping_config.pop("fallback", self.DEFAULT_FALLBACK)
-                        self._mapping = {
-                            str(k): str(v) for k, v in mapping_config.items()
-                        }
+                        self._mapping = {str(k): str(v) for k, v in mapping_config.items()}
                         logger.debug(
-                            f"RegimeMapper: loaded {len(self._mapping)} mappings, "
-                            f"fallback={self._fallback}"
+                            f"RegimeMapper: loaded {len(self._mapping)} mappings, " f"fallback={self._fallback}"
                         )
                         return
             except Exception as e:
@@ -96,15 +90,13 @@ class RegimeMapper:
 
         if mapped is None:
             logger.warning(
-                f"RegimeMapper: unmapped realtime regime '{realtime_regime}', "
-                f"using fallback '{self._fallback}'"
+                f"RegimeMapper: unmapped realtime regime '{realtime_regime}', " f"using fallback '{self._fallback}'"
             )
             return self._fallback
 
         if mapped not in self.BACKTEST_REGIMES:
             logger.warning(
-                f"RegimeMapper: mapped value '{mapped}' not in backtest regimes, "
-                f"using fallback '{self._fallback}'"
+                f"RegimeMapper: mapped value '{mapped}' not in backtest regimes, " f"using fallback '{self._fallback}'"
             )
             return self._fallback
 
@@ -124,15 +116,13 @@ class RegimeMapper:
 
         if mapped is None:
             logger.warning(
-                f"RegimeMapper: unmapped backtest regime '{backtest_regime}', "
-                f"using fallback '{self._fallback}'"
+                f"RegimeMapper: unmapped backtest regime '{backtest_regime}', " f"using fallback '{self._fallback}'"
             )
             return self._fallback
 
         if mapped not in self.REALTIME_REGIMES:
             logger.warning(
-                f"RegimeMapper: mapped value '{mapped}' not in realtime regimes, "
-                f"using fallback '{self._fallback}'"
+                f"RegimeMapper: mapped value '{mapped}' not in realtime regimes, " f"using fallback '{self._fallback}'"
             )
             return self._fallback
 

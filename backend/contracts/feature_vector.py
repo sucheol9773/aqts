@@ -50,9 +50,14 @@ class FeatureVector(BaseModel):
     def validate_at_least_one_feature(self) -> "FeatureVector":
         """최소 1개 팩터/기술적 지표/감성 점수가 존재해야 합니다."""
         feature_fields = [
-            self.factor_value, self.factor_momentum, self.factor_quality,
-            self.factor_low_vol, self.factor_size,
-            self.tech_rsi, self.tech_macd_signal, self.tech_bollinger_pctb,
+            self.factor_value,
+            self.factor_momentum,
+            self.factor_quality,
+            self.factor_low_vol,
+            self.factor_size,
+            self.tech_rsi,
+            self.tech_macd_signal,
+            self.tech_bollinger_pctb,
             self.sentiment,
         ]
         if all(f is None for f in feature_fields):

@@ -18,21 +18,19 @@
 """
 
 import asyncio
-import json
-from dataclasses import dataclass, asdict, field
-from datetime import datetime, timezone, timedelta
-from typing import Optional, Any
-from enum import Enum
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any, Optional
 
 from sqlalchemy import text
 
-from config.constants import Market, OrderSide, OrderType, OrderStatus
+from config.constants import Market, OrderSide, OrderStatus, OrderType
 from config.logging import logger
 from config.settings import get_settings
 from contracts.converters import order_request_to_contract
+from core.data_collector.kis_client import KISClient
 from db.database import async_session_factory
 from db.repositories.audit_log import AuditLogger
-from core.data_collector.kis_client import KISClient
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -244,9 +242,7 @@ class OrderExecutor:
             await self._store_order(result)
             raise
 
-    async def execute_batch_orders(
-        self, requests: list[OrderRequest]
-    ) -> list[OrderResult]:
+    async def execute_batch_orders(self, requests: list[OrderRequest]) -> list[OrderResult]:
         """
         배치 주문 실행
 
@@ -402,8 +398,7 @@ class OrderExecutor:
             raise ValueError("지정가 주문에는 유효한 limit_price가 필요합니다")
 
         logger.info(
-            f"지정가 주문 실행: {request.ticker} {request.side.value} "
-            f"{request.quantity}@{request.limit_price}"
+            f"지정가 주문 실행: {request.ticker} {request.side.value} " f"{request.quantity}@{request.limit_price}"
         )
 
         try:
@@ -524,8 +519,7 @@ class OrderExecutor:
                         side=request.side,
                         quantity=remaining,
                         order_type=OrderType.MARKET,
-                        reason=f"TWAP {i+1}/{num_intervals}"
-                               + (f" retry-{attempt}" if attempt > 0 else ""),
+                        reason=f"TWAP {i+1}/{num_intervals}" + (f" retry-{attempt}" if attempt > 0 else ""),
                     )
 
                     try:
@@ -534,9 +528,7 @@ class OrderExecutor:
                         filled_in_slice += result.filled_quantity
                         total_cost += result.filled_quantity * result.avg_price
                     except Exception as e:
-                        logger.warning(
-                            f"TWAP 구간 {i+1} attempt {attempt} 실패: {e}"
-                        )
+                        logger.warning(f"TWAP 구간 {i+1} attempt {attempt} 실패: {e}")
 
                 total_filled += filled_in_slice
                 carryover = slice_qty - filled_in_slice  # 미체결 → 다음 구간 이월
@@ -556,9 +548,9 @@ class OrderExecutor:
                 filled_quantity=total_filled,
                 avg_price=avg_price,
                 status=(
-                    OrderStatus.FILLED if total_filled >= request.quantity
-                    else OrderStatus.PARTIAL if total_filled > 0
-                    else OrderStatus.FAILED
+                    OrderStatus.FILLED
+                    if total_filled >= request.quantity
+                    else OrderStatus.PARTIAL if total_filled > 0 else OrderStatus.FAILED
                 ),
                 executed_at=datetime.now(timezone.utc),
             )
@@ -634,9 +626,7 @@ class OrderExecutor:
                 profile = [p / profile_sum for p in profile]
 
             # 구간별 수량 계산 (비균등 분할)
-            slice_quantities = [
-                max(1, round(request.quantity * p)) for p in profile
-            ]
+            slice_quantities = [max(1, round(request.quantity * p)) for p in profile]
 
             # 총합 보정 (반올림 오차 → 최대 비중 구간에서 조정)
             total_allocated = sum(slice_quantities)
@@ -645,10 +635,7 @@ class OrderExecutor:
                 max_idx = profile.index(max(profile))
                 slice_quantities[max_idx] += diff
 
-            logger.info(
-                f"VWAP 구간별 수량: {slice_quantities} "
-                f"(프로필: {[f'{p:.0%}' for p in profile]})"
-            )
+            logger.info(f"VWAP 구간별 수량: {slice_quantities} " f"(프로필: {[f'{p:.0%}' for p in profile]})")
 
             total_filled = 0
             total_cost = 0.0
@@ -694,17 +681,14 @@ class OrderExecutor:
                 filled_quantity=total_filled,
                 avg_price=avg_price,
                 status=(
-                    OrderStatus.FILLED if total_filled >= request.quantity
-                    else OrderStatus.PARTIAL if total_filled > 0
-                    else OrderStatus.FAILED
+                    OrderStatus.FILLED
+                    if total_filled >= request.quantity
+                    else OrderStatus.PARTIAL if total_filled > 0 else OrderStatus.FAILED
                 ),
                 executed_at=datetime.now(timezone.utc),
             )
 
-            logger.info(
-                f"VWAP 주문 완료: {total_filled}/{request.quantity} 체결, "
-                f"평균가 {avg_price:,.0f}"
-            )
+            logger.info(f"VWAP 주문 완료: {total_filled}/{request.quantity} 체결, " f"평균가 {avg_price:,.0f}")
             return final_result
 
         except Exception as e:

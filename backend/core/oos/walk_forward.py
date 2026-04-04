@@ -27,15 +27,12 @@ import numpy as np
 import pandas as pd
 
 from config.logging import logger
-from core.backtest_engine.engine import BacktestEngine, BacktestConfig, BacktestResult
-from core.backtest_engine.metrics_calculator import MetricsCalculator
+from core.backtest_engine.engine import BacktestConfig, BacktestEngine, BacktestResult
 from core.backtest_engine.regime_analyzer import RegimeAnalyzer
 from core.oos.gate_evaluator import GateEvaluator
 from core.oos.models import (
-    OOSMetric,
     OOSRun,
     OOSRunType,
-    OOSShadowAction,
     OOSStatus,
     OOSWindowResult,
 )
@@ -102,9 +99,7 @@ class WalkForwardEngine:
 
         try:
             # ── 1. 기간 분할 ──
-            windows = self._split_windows(
-                signals.index, train_months, test_months
-            )
+            windows = self._split_windows(signals.index, train_months, test_months)
 
             if len(windows) == 0:
                 oos_run.status = OOSStatus.ERROR
@@ -290,9 +285,7 @@ class WalkForwardEngine:
 
             # ── 레짐별 성과 분해 ──
             if len(result.equity_curve) > 10 and market_data is not None:
-                window_result.regime_metrics = self._compute_regime_metrics(
-                    result, market_data
-                )
+                window_result.regime_metrics = self._compute_regime_metrics(result, market_data)
 
         except Exception as e:
             logger.warning(f"Window {window_index} execution error: {e}")
@@ -320,7 +313,7 @@ class WalkForwardEngine:
 
             for i in range(len(daily_returns)):
                 # 최근 126일(또는 가능한 만큼)의 수익률로 레짐 판단
-                lookback = returns_list[max(0, i - 126):i + 1]
+                lookback = returns_list[max(0, i - 126) : i + 1]
                 regime = RegimeAnalyzer.classify_regime(
                     market_returns=lookback,
                     volatility=volatility,
@@ -362,17 +355,11 @@ class WalkForwardEngine:
         # 양수 수익 윈도우 수
         oos_run.passed_windows = sum(1 for w in windows if w.total_return > 0)
 
-    def _compute_data_hash(
-        self, signals: pd.DataFrame, prices: pd.DataFrame
-    ) -> str:
+    def _compute_data_hash(self, signals: pd.DataFrame, prices: pd.DataFrame) -> str:
         """데이터 재현성을 위한 해시 생성"""
         try:
-            sig_hash = hashlib.md5(
-                pd.util.hash_pandas_object(signals).values.tobytes()
-            ).hexdigest()[:8]
-            price_hash = hashlib.md5(
-                pd.util.hash_pandas_object(prices).values.tobytes()
-            ).hexdigest()[:8]
+            sig_hash = hashlib.md5(pd.util.hash_pandas_object(signals).values.tobytes()).hexdigest()[:8]
+            price_hash = hashlib.md5(pd.util.hash_pandas_object(prices).values.tobytes()).hexdigest()[:8]
             return f"{sig_hash}_{price_hash}"
         except Exception:
             return "unknown"

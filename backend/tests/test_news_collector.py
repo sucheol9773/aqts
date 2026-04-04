@@ -2,8 +2,6 @@
 Phase 3 테스트: 뉴스/공시 수집기 (NewsCollector)
 """
 
-import pytest
-
 from core.data_collector.news_collector import (
     NewsArticle,
     RSSNewsCollector,

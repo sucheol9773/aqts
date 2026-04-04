@@ -16,18 +16,17 @@ PostgreSQL에 저장된 유니버스 데이터를 관리합니다.
 user_sector_filter → designated_tickers → auto_filter(liquidity, cap, status)
 """
 
-import asyncio
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Optional, Any
+from typing import Any, Optional
 
 from sqlalchemy import text
 
-from config.constants import Market, AssetType
+from config.constants import AssetType, Market
 from config.logging import logger
 from config.settings import get_settings
-from db.database import async_session_factory
 from core.portfolio_manager.profile import InvestorProfile
+from db.database import async_session_factory
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -196,9 +195,7 @@ class UniverseManager:
             logger.error(f"유니버스 갱신 실패: {e}")
             raise
 
-    def _apply_sector_filter(
-        self, items: list[UniverseItem], sectors: list[str]
-    ) -> list[UniverseItem]:
+    def _apply_sector_filter(self, items: list[UniverseItem], sectors: list[str]) -> list[UniverseItem]:
         """
         섹터 필터 적용
 
@@ -219,9 +216,7 @@ class UniverseManager:
 
         return filtered
 
-    def _apply_designated_tickers(
-        self, items: list[UniverseItem], tickers: list[str]
-    ) -> list[UniverseItem]:
+    def _apply_designated_tickers(self, items: list[UniverseItem], tickers: list[str]) -> list[UniverseItem]:
         """
         지정 종목 강제 포함
 
@@ -280,18 +275,11 @@ class UniverseManager:
 
         # 1. 유동성 필터: 거래량 하위 20% 제외
         if items:
-            volumes = [
-                item.avg_daily_volume
-                for item in items
-                if item.avg_daily_volume is not None
-            ]
+            volumes = [item.avg_daily_volume for item in items if item.avg_daily_volume is not None]
             if volumes:
                 volume_threshold = sorted(volumes)[int(len(volumes) * 0.2)]
                 items = [
-                    item
-                    for item in items
-                    if item.avg_daily_volume is None
-                    or item.avg_daily_volume >= volume_threshold
+                    item for item in items if item.avg_daily_volume is None or item.avg_daily_volume >= volume_threshold
                 ]
                 logger.debug(f"유동성 필터 후: {len(items)}개")
 
@@ -392,7 +380,7 @@ class UniverseManager:
                     )
 
                 await db_session.commit()
-                logger.debug(f"유니버스 저장 완료")
+                logger.debug("유니버스 저장 완료")
 
         except Exception as e:
             logger.error(f"유니버스 저장 실패: {e}")
