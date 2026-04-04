@@ -14,6 +14,21 @@ System Routes API 종합 단위 테스트
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from starlette.requests import Request
+
+
+def _make_request(path: str = "/api/system/pipeline") -> Request:
+    """테스트용 Starlette Request 생성"""
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": path,
+        "query_string": b"",
+        "headers": [],
+        "server": ("127.0.0.1", 8000),
+        "client": ("127.0.0.1", 12345),
+    }
+    return Request(scope)
 
 
 @pytest.mark.asyncio
@@ -285,12 +300,8 @@ class TestSystemRoutes:
             mock_audit.return_value = mock_audit_instance
 
             # Execute
-            mock_request = MagicMock()
-            mock_request.client.host = "127.0.0.1"
-            mock_request.url.path = "/api/system/pipeline"
-
             response = await run_analysis_pipeline(
-                request=mock_request,
+                request=_make_request(),
                 tickers="005930,000660",
                 force_refresh=False,
                 current_user="analyst",
@@ -357,12 +368,8 @@ class TestSystemRoutes:
             mock_audit.return_value = mock_audit_instance
 
             # Execute with spaces
-            mock_request = MagicMock()
-            mock_request.client.host = "127.0.0.1"
-            mock_request.url.path = "/api/system/pipeline"
-
             response = await run_analysis_pipeline(
-                request=mock_request,
+                request=_make_request(),
                 tickers="005930, 000660 , 360750",
                 force_refresh=False,
                 current_user="admin",
@@ -393,12 +400,8 @@ class TestSystemRoutes:
             mock_pipeline.return_value = mock_pipeline_instance
 
             # Execute
-            mock_request = MagicMock()
-            mock_request.client.host = "127.0.0.1"
-            mock_request.url.path = "/api/system/pipeline"
-
             response = await run_analysis_pipeline(
-                request=mock_request,
+                request=_make_request(),
                 tickers="005930",
                 force_refresh=False,
                 current_user="admin",
