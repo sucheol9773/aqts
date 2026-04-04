@@ -12,10 +12,10 @@
 |--------|-------|
 | Not Started | 2 |
 | Implemented | 6 |
-| Tested | 98 |
+| Tested | 101 |
 | Production-ready | 0 |
 | Blocked | 0 |
-| **TOTAL** | **106** |
+| **TOTAL** | **109** |
 
 ---
 
@@ -118,6 +118,9 @@
 |--------|---------|--------|-----------|-------|-------|
 | alert_manager | 알림 생성·관리·이력 (템플릿 기반) | Tested | core/notification/alert_manager.py | test_notification.py (72) | 레벨 필터링, MongoDB/메모리 이중 저장 |
 | telegram_notifier | 텔레그램 봇 알림 발송 | Tested | core/notification/telegram_notifier.py | test_notification.py (72) | 레벨 필터(ALL/IMPORTANT/ERROR), 재시도 3회 |
+| fallback_notifier | 백업 알림 채널 (File/Console 폴백) | Tested | core/notification/fallback_notifier.py | test_gate_c_notification.py (46) | FileNotifier+ConsoleNotifier, ChannelHealth 추적 |
+| telegram_adapter | Telegram 채널 어댑터 (프로토콜 적합) | Tested | core/notification/telegram_adapter.py | test_gate_c_notification.py (46) | NotificationChannel 프로토콜 래핑 |
+| notification_router | 알림 라우터 (1차→백업 자동 폴백) | Tested | core/notification/fallback_notifier.py | test_gate_c_notification.py (46) | Telegram→File→Console 순차 폴백 |
 | audit_log | 감사 로그 (결정 추적) | Implemented | db/repositories/audit_log.py | (no tests) | 결정 감사 추적 |
 
 ---
@@ -274,7 +277,7 @@
 ## Test Coverage Summary
 
 ```
-Total Tests: 2,180 tests (413 smoke-marked) — ALL PASS, Coverage 82%
+Total Tests: 2,226 tests (413 smoke-marked) — ALL PASS, Coverage 82%
 ├── Core Features: 40+ modules with passing tests
 ├── Data Contracts: 154 tests (9 contracts) [smoke]
 ├── Pipeline Gates: 59 tests (12 components)
@@ -301,6 +304,7 @@ Total Tests: 2,180 tests (413 smoke-marked) — ALL PASS, Coverage 82%
 ├── Gate C Loss Simulation: 22 tests [NEW]
 ├── Gate C Halt/Resume: 20 tests [NEW]
 ├── Parameter Sensitivity: 40 tests [NEW]
+├── Gate C Notification: 46 tests [NEW]
 ├── Integration Tests: 30 tests (E2E scenarios)
 ├── API Tests: 73 tests (all endpoints)
 ├── Smoke Tests: 413 tests (< 13초, CI 필수)
