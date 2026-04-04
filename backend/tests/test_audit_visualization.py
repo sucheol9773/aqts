@@ -48,12 +48,14 @@ def _make_record(
         "step5_portfolio": {"AAPL": 0.4, "MSFT": 0.3},
         "step6_risk_check": {"result": "PASS", "daily_loss": False},
         "step7_execution": [{"ticker": "AAPL", "filled": 10}],
-        "gate_results": gate_results
-        if gate_results is not None
-        else [
-            {"gate_name": "DataGate", "result": "PASS"},
-            {"gate_name": "SignalGate", "result": "PASS"},
-        ],
+        "gate_results": (
+            gate_results
+            if gate_results is not None
+            else [
+                {"gate_name": "DataGate", "result": "PASS"},
+                {"gate_name": "SignalGate", "result": "PASS"},
+            ]
+        ),
     }
     if steps:
         record.update(steps)

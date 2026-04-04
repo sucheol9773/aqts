@@ -11,8 +11,8 @@
 | Status | Count |
 |--------|-------|
 | Not Started | 0 |
-| Implemented | 6 |
-| Tested | 109 |
+| Implemented | 1 |
+| Tested | 114 |
 | Production-ready | 0 |
 | Blocked | 0 |
 | **TOTAL** | **115** |
@@ -121,7 +121,7 @@
 | fallback_notifier | 백업 알림 채널 (File/Console 폴백) | Tested | core/notification/fallback_notifier.py | test_gate_c_notification.py (46) | FileNotifier+ConsoleNotifier, ChannelHealth 추적 |
 | telegram_adapter | Telegram 채널 어댑터 (프로토콜 적합) | Tested | core/notification/telegram_adapter.py | test_gate_c_notification.py (46) | NotificationChannel 프로토콜 래핑 |
 | notification_router | 알림 라우터 (1차→백업 자동 폴백) | Tested | core/notification/fallback_notifier.py | test_gate_c_notification.py (46) | Telegram→File→Console 순차 폴백 |
-| audit_log | 감사 로그 (결정 추적) | Implemented | db/repositories/audit_log.py | (no tests) | 결정 감사 추적 |
+| audit_log | 감사 로그 (결정 추적) | Tested | db/repositories/audit_log.py | test_infrastructure.py (70) | 결정 감사 추적 |
 
 ---
 
@@ -129,10 +129,10 @@
 
 | Module | Feature | Status | Code Path | Tests | Notes |
 |--------|---------|--------|-----------|-------|-------|
-| database | DB 연결 관리 (PostgreSQL·MongoDB·Redis) | Implemented | db/database.py | (no tests) | 3개 데이터베이스 통합 |
-| settings | 환경변수 기반 설정 (pydantic-settings) | Implemented | config/settings.py | (no tests) | Pydantic-settings 기반 설정 |
-| constants | 상수·Enum 정의 | Implemented | config/constants.py | (no tests) | 시스템 상수 정의 |
-| logging | Loguru 로깅 설정 | Implemented | config/logging.py | (no tests) | 중앙 로깅 설정 |
+| database | DB 연결 관리 (PostgreSQL·MongoDB·Redis) | Tested | db/database.py | test_infrastructure.py (70) | 3개 데이터베이스 통합 |
+| settings | 환경변수 기반 설정 (pydantic-settings) | Tested | config/settings.py | test_infrastructure.py (70) | Pydantic-settings 기반 설정 |
+| constants | 상수·Enum 정의 | Tested | config/constants.py | test_infrastructure.py (70) | 시스템 상수 정의 |
+| logging | Loguru 로깅 설정 | Tested | config/logging.py | test_infrastructure.py (70) | 중앙 로깅 설정 |
 | main | FastAPI 엔트리포인트 | Tested | main.py | test_integration.py (30) | Lifespan, GracefulShutdownManager 통합 |
 
 ---
@@ -293,7 +293,7 @@
 ## Test Coverage Summary
 
 ```
-Total Tests: 2,407 tests (413 smoke-marked) — ALL PASS, Coverage 84%
+Total Tests: 2,477 tests (413 smoke-marked) — ALL PASS, Coverage 84%
 ├── Core Features: 40+ modules with passing tests
 ├── Data Contracts: 154 tests (9 contracts) [smoke]
 ├── Pipeline Gates: 59 tests (12 components)
@@ -325,11 +325,13 @@ Total Tests: 2,407 tests (413 smoke-marked) — ALL PASS, Coverage 84%
 ├── Gate D Report+Secret: 40 tests [NEW]
 ├── Gate E Monitoring: 53 tests [NEW]
 ├── Audit Visualization: 31 tests [NEW]
+├── Infrastructure: 70 tests [NEW] (database/settings/constants/logging/audit_log)
 ├── Integration Tests: 30 tests (E2E scenarios)
 ├── API Tests: 73 tests (all endpoints)
 ├── Smoke Tests: 413 tests (< 13초, CI 필수)
 └── Remaining Uncovered:
     └── 0 Not Started items (ALL FEATURES IMPLEMENTED)
+    └── 1 Implemented item (operational_thresholds.yaml — N/A, 설정 파일)
 ```
 
 ---
