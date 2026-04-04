@@ -1,8 +1,8 @@
 # 릴리스 승인 게이트 (Release Approval Gates)
 
 **문서 번호**: OPS-004
-**버전**: 1.0
-**최종 수정**: 2026-04-04
+**버전**: 1.1
+**최종 수정**: 2026-04-05
 
 ## 1. 목적
 
@@ -25,12 +25,12 @@ Gate A (개발/QA) → Gate B (보안) → Gate C (리스크/운영) → Gate D 
 
 | 항목 | 기준 | 현재 상태 |
 |------|------|----------|
-| 단위 테스트 전체 통과 | pytest 0 failures | PASS (1,978건 통과) |
+| 단위 테스트 전체 통과 | pytest 0 failures | PASS (2,088건 통과) |
 | 코드 커버리지 | >= 80% | PASS (82%) |
 | 린트/포맷 검사 | ruff/black 위반 0건 | 미설정 |
 | 의존성 취약점 | pip-audit critical 0건 | 미실행 |
 | API 계약 테스트 | Pydantic 스키마 검증 | PASS (9개 계약) |
-| 통합 테스트 | 주요 플로우 E2E | 미구현 |
+| 통합 테스트 | 주요 플로우 E2E | PASS (30건 + OOS 55건) |
 | 문서 동기화 | FEATURE_STATUS 최신화 | PASS |
 
 **승인자**: 개발 리드
@@ -41,8 +41,8 @@ Gate A (개발/QA) → Gate B (보안) → Gate C (리스크/운영) → Gate D 
 |------|------|----------|
 | .env 시크릿 미노출 | git log에 시크릿 없음 | 확인 필요 |
 | CORS 설정 | 와일드카드(*) 미사용 | PASS |
-| 인증/인가 | JWT 토큰 검증 | 구현됨 |
-| Rate Limiting | 로그인/API 제한 | 미구현 |
+| 인증/인가 | JWT 토큰 검증 | PASS (구현+테스트) |
+| Rate Limiting | 로그인/API 제한 | PASS (slowapi, 4개 엔드포인트, 7 tests) |
 | 컨테이너 보안 | non-root 실행 | PASS |
 | 의존성 스캔 | 알려진 CVE 없음 | 미실행 |
 | API 키 만료/재발급 시나리오 | 정상 갱신 확인 | 미검증 |
@@ -57,8 +57,9 @@ Gate A (개발/QA) → Gate B (보안) → Gate C (리스크/운영) → Gate D 
 | 매매 중단/재개 테스트 | HALTED 전이 + 미체결 취소 확인 | 미검증 |
 | 알림 채널 검증 | Telegram 발송 성공 | 미검증 |
 | 백업 알림 | 1차 채널 장애 시 대체 동작 | 미구현 |
-| Circuit Breaker | 외부 API 장애 시 자동 차단 | 미구현 |
-| 온콜/인수인계 | 운영 매뉴얼 + 런북 완비 | 작성 중 |
+| Circuit Breaker | 외부 API 장애 시 자동 차단 | PASS (4개 서비스, 24 tests) |
+| OOS 검증 파이프라인 | walk-forward OOS + Gate 판정 | PASS (55 tests) |
+| 온콜/인수인계 | 운영 매뉴얼 + 런북 완비 | PASS (5종 문서 완비) |
 
 **승인자**: 운영책임자
 
@@ -88,11 +89,15 @@ Gate A (개발/QA) → Gate B (보안) → Gate C (리스크/운영) → Gate D 
 ## 8. 현재 게이트 통과 현황
 
 ```
-Gate A: CONDITIONAL (린트/의존성/E2E 보완 필요)
-Gate B: BLOCK (Rate Limiting 미구현, 시크릿 검증 필요)
-Gate C: BLOCK (Circuit Breaker, 중단 시뮬레이션 미완)
+Gate A: CONDITIONAL (린트 설정 + pip-audit 미실행)
+Gate B: CONDITIONAL (시크릿 스캔 + 의존성 CVE 스캔 필요)
+Gate C: CONDITIONAL (손실 한도 시뮬레이션 + 매매 중단/재개 검증 필요)
 Gate D: BLOCK (컴플라이언스 리포트 미구현)
 Gate E: BLOCK (사전 요건 미충족)
 ```
 
-**결론: 현재 프로덕션 배포 불가. Gate A CONDITIONAL 해소 + Gate B/C 기술 구현이 우선.**
+**결론: Gate A/B/C는 CONDITIONAL (검증/도구 실행만 남음). Gate D 컴플라이언스가 실질적 차단.**
+
+### 변경 이력
+- v1.1 (2026-04-05): Rate Limiting PASS, Circuit Breaker PASS, OOS 파이프라인 PASS, 런북 완비, 테스트 2,088건 반영
+- v1.0 (2026-04-04): 초판 작성

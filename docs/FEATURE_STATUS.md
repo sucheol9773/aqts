@@ -4,18 +4,18 @@
 >
 > **성숙도 레벨**: Not Started → In Progress → Implemented → Tested → Production-ready → Blocked
 >
-> Last updated: 2026-04-04
+> Last updated: 2026-04-05
 
 ## Status Summary
 
 | Status | Count |
 |--------|-------|
-| Not Started | 4 |
+| Not Started | 3 |
 | Implemented | 6 |
-| Tested | 88 |
+| Tested | 92 |
 | Production-ready | 0 |
 | Blocked | 0 |
-| **TOTAL** | **98** |
+| **TOTAL** | **101** |
 
 ---
 
@@ -57,6 +57,7 @@
 | Module | Feature | Status | Code Path | Tests | Notes |
 |--------|---------|--------|-----------|-------|-------|
 | ensemble | 가중 앙상블 (Quant 4 + AI 감성 + Sharpe 재보정) | Tested | core/strategy_ensemble/engine.py | test_ensemble.py (13) | 4개 전략 통합 가중평균 |
+| regime_detector | 실시간 시장 레짐 탐지 (4 regimes) | Tested | core/strategy_ensemble/regime.py | test_regime.py (31) | TRENDING_UP/DOWN/SIDEWAYS/HIGH_VOLATILITY |
 | profile | 투자자 프로필 (위험성향·스타일·손실허용도) | Tested | core/portfolio_manager/profile.py | test_profile.py (22) | 5단계 위험성향 분류 |
 | construction | 포트폴리오 구성 (MVO·Risk Parity·Black-Litterman) | Tested | core/portfolio_manager/construction.py | test_construction.py (77) | 3중 엔진, Ledoit-Wolf 축소, USD 하드캡 |
 | rebalancing | 리밸런싱 (정기·긴급·방어) | Tested | core/portfolio_manager/rebalancing.py | test_rebalancing.py (36) | 3가지 리밸런싱 모드 |
@@ -89,6 +90,7 @@
 | periodic_reporter | 주간/월간 리포트 | Tested | core/periodic_reporter.py | test_periodic_reporter.py (27) | MDD/Sharpe 분석, 벤치마크 비교 |
 | market_calendar | 마켓 캘린더 (KRX + NYSE) | Tested | core/market_calendar.py | test_market_calendar.py (44) | 미국 공휴일 자동 산출, DST 판별 |
 | graceful_shutdown | 그레이스풀 셧다운 매니저 | Tested | core/graceful_shutdown.py | test_graceful_shutdown.py (25) | 3단계 셧다운, 주문 드레이닝 |
+| circuit_breaker | 외부 API 장애 자동 차단 (4 서비스) | Tested | core/circuit_breaker.py | test_circuit_breaker.py (24) | KIS/FRED/DART/Claude, half-open 복구 |
 
 ---
 
@@ -106,6 +108,7 @@
 | routes/alerts | 알림 (이력·통계·확인) | Tested | api/routes/alerts.py | test_api.py (59) | 알림 관리 |
 | routes/system | 시스템 (설정·백테스트·리밸런싱) | Tested | api/routes/system.py | test_api.py (59) | 시스템 관리 엔드포인트 |
 | schemas | Pydantic 요청/응답 모델 | Tested | api/schemas/common.py | test_api.py (59) | 18개 클래스, 6개 스키마 모듈 |
+| middleware/rate_limiter | API Rate Limiting (slowapi) | Tested | api/middleware/rate_limiter.py | test_rate_limiter.py (7) | 로그인/API 엔드포인트 4개 제한 |
 
 ---
 
@@ -222,15 +225,25 @@
 | reproducibility | ReproducibilityTest | Tested | core/ai_analyzer/reproducibility.py | test_llm_promotion.py (49) | 결정 재현성 검증 |
 | promotion | PromotionChecklist (PROMOTE/HOLD/DEMOTE) | Tested | core/ai_analyzer/promotion_checklist.py | test_llm_promotion.py (49) | 2-tier 승격 체계 |
 
+### Stage 8: OOS Validation ✅
+
+| Item | Feature | Status | Code Path | Tests | Notes |
+|------|---------|--------|-----------|-------|-------|
+| oos_models | OOS 데이터 모델 (Run/Metric/Window/Gate) | Tested | core/oos/models.py | test_oos.py (55) | OOSRun, 6 Enum, Shadow 확장 필드 |
+| walk_forward | Walk-Forward 엔진 (BacktestEngine 재사용) | Tested | core/oos/walk_forward.py | test_oos.py (55) | 기간 분할, 윈도우별 백테스트, 집계 |
+| gate_evaluator | 3단계 Gate 평가 (A/B/C) | Tested | core/oos/gate_evaluator.py | test_oos.py (55) | MDD/Sharpe/Calmar/Variance 임계값 |
+| regime_mapping | 레짐 매핑 레이어 (실시간↔백테스트) | Tested | core/oos/regime_mapping.py | test_oos.py (55) | dict 기반 양방향 매핑, 폴백 정책 |
+| job_manager | OOS 작업 관리자 (싱글톤, 멱등성) | Tested | core/oos/job_manager.py | test_oos.py (55) | 파라미터 해시 기반 중복 방지 |
+| oos_api | OOS REST API (4 엔드포인트) | Tested | api/routes/oos.py | test_oos.py (55) | run/latest/gate-status/detail |
+
 ---
 
-## Remaining Not Started Items (4)
+## Remaining Not Started Items (3)
 
 | Item | Feature | Notes |
 |------|---------|-------|
 | audit_visualization | Audit Trail Visualization | 감사 추적 시각화 대시보드 |
 | compliance_report | Regulatory Compliance Reports | 규제 준수 리포트 자동 생성 |
-| oos_validation | Out-of-Sample Validation | Walk-Forward 분석 자동화 |
 | param_sensitivity | Parameter Sensitivity Analysis | 파라미터 민감도 분석 |
 
 ---
@@ -251,30 +264,34 @@
 ## Test Coverage Summary
 
 ```
-Total Tests: 1,978 tests (413 smoke-marked) — ALL PASS, Coverage 83%
+Total Tests: 2,088 tests (413 smoke-marked) — ALL PASS, Coverage 82%
 ├── Core Features: 40+ modules with passing tests
 ├── Data Contracts: 154 tests (9 contracts) [smoke]
 ├── Pipeline Gates: 59 tests (12 components)
-├── Pipeline ↔ Gate Integration: 20 tests [NEW]
-├── Contract Converters: 20 tests [NEW, smoke]
-├── Request Logging Middleware: 10 tests [NEW, smoke]
-├── Startup Health: 6 tests [NEW]
-├── Health Checker: 19 tests [NEW, smoke]
-├── System API Routes: 14 tests [NEW, smoke]
-├── Financial Collector: 36 tests [NEW, smoke]
-├── Social Collector: 59 tests [NEW, smoke]
-├── Opinion Generator: 38 tests [NEW, smoke]
-├── Prompt Manager: 43 tests [NEW, smoke]
+├── Pipeline ↔ Gate Integration: 20 tests
+├── Contract Converters: 20 tests [smoke]
+├── Request Logging Middleware: 10 tests [smoke]
+├── Startup Health: 6 tests
+├── Health Checker: 19 tests [smoke]
+├── System API Routes: 14 tests [smoke]
+├── Financial Collector: 36 tests [smoke]
+├── Social Collector: 59 tests [smoke]
+├── Opinion Generator: 38 tests [smoke]
+├── Prompt Manager: 43 tests [smoke]
 ├── Backtest Integrity: 153 tests (integrity + advanced)
 ├── Audit Trail: 37 tests
 ├── Capital Protection: 98 tests
 ├── Performance Validation: 73 tests
 ├── LLM Promotion: 49 tests
+├── Rate Limiting: 7 tests [NEW]
+├── Circuit Breaker: 24 tests [NEW]
+├── Regime Detection: 31 tests [NEW]
+├── OOS Validation: 55 tests [NEW]
 ├── Integration Tests: 30 tests (E2E scenarios)
 ├── API Tests: 73 tests (all endpoints)
 ├── Smoke Tests: 413 tests (< 13초, CI 필수)
 └── Remaining Uncovered:
-    └── 4 Not Started items (visualization, compliance, OOS, sensitivity)
+    └── 3 Not Started items (visualization, compliance, sensitivity)
 ```
 
 ---
@@ -304,4 +321,4 @@ Total Tests: 1,978 tests (413 smoke-marked) — ALL PASS, Coverage 83%
 
 ---
 
-Last reviewed: 2026-04-04 | Maintained by: AQTS Team
+Last reviewed: 2026-04-05 | Maintained by: AQTS Team
