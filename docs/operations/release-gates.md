@@ -1,7 +1,7 @@
 # 릴리스 승인 게이트 (Release Approval Gates)
 
 **문서 번호**: OPS-004
-**버전**: 1.3
+**버전**: 1.4
 **최종 수정**: 2026-04-05
 
 ## 1. 목적
@@ -25,12 +25,12 @@ Gate A (개발/QA) → Gate B (보안) → Gate C (리스크/운영) → Gate D 
 
 | 항목 | 기준 | 현재 상태 |
 |------|------|----------|
-| 단위 테스트 전체 통과 | pytest 0 failures | PASS (2,140건 통과) |
+| 단위 테스트 전체 통과 | pytest 0 failures | PASS (2,180건 통과) |
 | 코드 커버리지 | >= 80% | PASS (82%) |
 | 린트/포맷 검사 | ruff/black 위반 0건 | PASS (ruff 0.15.9 + black 26.3.1, 위반 0건) |
 | 의존성 취약점 | pip-audit critical 0건 | CONDITIONAL (3건 해소, 잔여: starlette 2건 FastAPI 업그레이드 필요, torch 4건 메이저 업그레이드 필요) |
 | API 계약 테스트 | Pydantic 스키마 검증 | PASS (9개 계약) |
-| 통합 테스트 | 주요 플로우 E2E | PASS (30건 + OOS 55건) |
+| 통합 테스트 | 주요 플로우 E2E | PASS (30건 + OOS 55건 + 민감도 40건) |
 | 문서 동기화 | FEATURE_STATUS 최신화 | PASS |
 
 **승인자**: 개발 리드
@@ -59,6 +59,7 @@ Gate A (개발/QA) → Gate B (보안) → Gate C (리스크/운영) → Gate D 
 | 백업 알림 | 1차 채널 장애 시 대체 동작 | 미구현 |
 | Circuit Breaker | 외부 API 장애 시 자동 차단 | PASS (4개 서비스, 24 tests) |
 | OOS 검증 파이프라인 | walk-forward OOS + Gate 판정 | PASS (55 tests) |
+| 파라미터 민감도 분석 | OAT/Grid 스윕 + 탄성치 + 토네이도 차트 | PASS (40 tests, 6 모듈) |
 | 온콜/인수인계 | 운영 매뉴얼 + 런북 완비 | PASS (5종 문서 완비) |
 
 **승인자**: 운영책임자
@@ -99,6 +100,7 @@ Gate E: BLOCK (사전 요건 미충족)
 **결론: Gate A/B/C는 CONDITIONAL (검증/도구 실행만 남음). Gate D 컴플라이언스가 실질적 차단.**
 
 ### 변경 이력
+- v1.4 (2026-04-05): 파라미터 민감도 분석 모듈 PASS (OAT/Grid 스윕, 탄성치, 토네이도 차트, 40 tests), 테스트 2,180건
 - v1.3 (2026-04-05): Gate B 시크릿 스캔 PASS, API 키 갱신 테스트 PASS, Gate C 손실 시뮬레이션 PASS, 매매 중단/재개 PASS, 테스트 2,140건
 - v1.2 (2026-04-05): ruff/black 린트 PASS, pip-audit 실행 (aiohttp/jose/multipart CVE 해소, starlette/torch 잔여)
 - v1.1 (2026-04-05): Rate Limiting PASS, Circuit Breaker PASS, OOS 파이프라인 PASS, 런북 완비, 테스트 2,088건 반영

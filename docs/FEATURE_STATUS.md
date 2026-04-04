@@ -10,12 +10,12 @@
 
 | Status | Count |
 |--------|-------|
-| Not Started | 3 |
+| Not Started | 2 |
 | Implemented | 6 |
-| Tested | 92 |
+| Tested | 98 |
 | Production-ready | 0 |
 | Blocked | 0 |
-| **TOTAL** | **101** |
+| **TOTAL** | **106** |
 
 ---
 
@@ -225,6 +225,17 @@
 | reproducibility | ReproducibilityTest | Tested | core/ai_analyzer/reproducibility.py | test_llm_promotion.py (49) | 결정 재현성 검증 |
 | promotion | PromotionChecklist (PROMOTE/HOLD/DEMOTE) | Tested | core/ai_analyzer/promotion_checklist.py | test_llm_promotion.py (49) | 2-tier 승격 체계 |
 
+### Stage 8-B: Parameter Sensitivity Analysis ✅
+
+| Item | Feature | Status | Code Path | Tests | Notes |
+|------|---------|--------|-----------|-------|-------|
+| models | 민감도 분석 데이터 모델 (ParamRange/Trial/Elasticity/Run) | Tested | core/param_sensitivity/models.py | test_param_sensitivity.py (40) | SweepMethod, ParamCategory Enum, impact_score 가중평균 |
+| sweep_generator | 파라미터 스윕 생성기 (Grid/Random/OAT) | Tested | core/param_sensitivity/sweep_generator.py | test_param_sensitivity.py (40) | 10개 기본 파라미터, max_trials 캡, OAT 스윕 |
+| analyzer | 민감도 분석기 (탄성치/토네이도/안정구간) | Tested | core/param_sensitivity/analyzer.py | test_param_sensitivity.py (40) | 탄성치 계산, 단조성, 토네이도 랭킹 |
+| engine | ParamSensitivityEngine (BacktestEngine 래핑) | Tested | core/param_sensitivity/engine.py | test_param_sensitivity.py (40) | OAT/Grid 스윕, 최적 파라미터 탐색 |
+| api | 민감도 분석 REST API (3 엔드포인트) | Tested | api/routes/param_sensitivity.py | test_param_sensitivity.py (40) | run/latest/tornado |
+| integration | E2E 파이프라인 + 비용 민감도 직관 검증 | Tested | (integrated) | test_param_sensitivity.py (40) | 전체 워크플로, 비용 파라미터 영향도 |
+
 ### Stage 8: OOS Validation ✅
 
 | Item | Feature | Status | Code Path | Tests | Notes |
@@ -238,13 +249,12 @@
 
 ---
 
-## Remaining Not Started Items (3)
+## Remaining Not Started Items (2)
 
 | Item | Feature | Notes |
 |------|---------|-------|
 | audit_visualization | Audit Trail Visualization | 감사 추적 시각화 대시보드 |
 | compliance_report | Regulatory Compliance Reports | 규제 준수 리포트 자동 생성 |
-| param_sensitivity | Parameter Sensitivity Analysis | 파라미터 민감도 분석 |
 
 ---
 
@@ -264,7 +274,7 @@
 ## Test Coverage Summary
 
 ```
-Total Tests: 2,140 tests (413 smoke-marked) — ALL PASS, Coverage 82%
+Total Tests: 2,180 tests (413 smoke-marked) — ALL PASS, Coverage 82%
 ├── Core Features: 40+ modules with passing tests
 ├── Data Contracts: 154 tests (9 contracts) [smoke]
 ├── Pipeline Gates: 59 tests (12 components)
@@ -290,11 +300,12 @@ Total Tests: 2,140 tests (413 smoke-marked) — ALL PASS, Coverage 82%
 ├── Gate B Security: 10 tests [NEW]
 ├── Gate C Loss Simulation: 22 tests [NEW]
 ├── Gate C Halt/Resume: 20 tests [NEW]
+├── Parameter Sensitivity: 40 tests [NEW]
 ├── Integration Tests: 30 tests (E2E scenarios)
 ├── API Tests: 73 tests (all endpoints)
 ├── Smoke Tests: 413 tests (< 13초, CI 필수)
 └── Remaining Uncovered:
-    └── 3 Not Started items (visualization, compliance, sensitivity)
+    └── 2 Not Started items (visualization, compliance)
 ```
 
 ---
