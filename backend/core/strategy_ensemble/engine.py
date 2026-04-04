@@ -6,12 +6,13 @@ Phase 3 - F-03-03 구현:
 - 프로필별 가중 평균 앙상블 시그널 생성
 - 하이브리드 가중치 관리: 정적 기본 + 월 1회 자동 재계산
 - Backtest Engine 연동 → 성과 기반 가중치 피드백 루프
+- 시장 레짐 감지 기반 동적 임계값 + 신뢰도 캘리브레이션 + 가중치 라우팅
 
 아키텍처 흐름 (Investment Decision Pipeline 참조):
-  Quant Engine  ──┐
-  AI Mode A     ──┼──→ Strategy Ensemble → 최종 시그널
-  AI Mode B     ──┘        ↑
-                    Backtest Engine (Weight feedback)
+  Quant Engine  ──┐                    ┌── RegimeDetector
+  AI Mode A     ──┼──→ Ensemble ←──────┤── DynamicThreshold
+  AI Mode B     ──┘        ↑           ├── ConfidenceCalibrator
+                    Backtest Engine     └── RegimeWeightRouter
 
 사용 라이브러리: pandas 2.2.2, numpy 1.26.4
 """
@@ -30,6 +31,14 @@ from config.constants import (
     StrategyType,
 )
 from config.logging import logger
+from core.strategy_ensemble.regime import (
+    ConfidenceCalibrator,
+    DynamicThreshold,
+    MarketRegimeDetector,
+    MarketRegime,
+    RegimeInfo,
+    RegimeWeightRouter,
+)
 from db.database import RedisManager
 
 
@@ -57,13 +66,18 @@ class EnsembleSignal:
     weights_used: dict[str, float] = field(default_factory=dict)
     risk_profile: str = "BALANCED"
     generated_at: Optional[datetime] = None
+    # 레짐 기반 동적 판단
+    regime: str = "SIDEWAYS"                       # MarketRegime.value
+    buy_threshold: float = 0.3
+    sell_threshold: float = 0.3
+    raw_confidence: float = 0.0                    # 캘리브레이션 전 원본
 
     @property
     def action(self) -> str:
-        """시그널 기반 행동 분류"""
-        if self.final_signal > 0.3:
+        """레짐 기반 동적 임계값으로 행동 분류"""
+        if self.final_signal > self.buy_threshold:
             return "BUY"
-        elif self.final_signal < -0.3:
+        elif self.final_signal < -self.sell_threshold:
             return "SELL"
         return "HOLD"
 
@@ -78,6 +92,18 @@ class EnsembleSignal:
             "weights_used": json.dumps(self.weights_used),
             "risk_profile": self.risk_profile,
         }
+
+    def to_detailed_dict(self) -> dict:
+        """상세 정보 (API 응답/모니터링용)"""
+        d = self.to_dict()
+        d.update({
+            "regime": self.regime,
+            "buy_threshold": self.buy_threshold,
+            "sell_threshold": self.sell_threshold,
+            "raw_confidence": self.raw_confidence,
+            "action": self.action,
+        })
+        return d
 
 
 # ══════════════════════════════════════
@@ -101,6 +127,10 @@ class StrategyEnsembleEngine:
     def __init__(self, risk_profile: RiskProfile = RiskProfile.BALANCED):
         self._risk_profile = risk_profile
         self._weights: Optional[dict[str, float]] = None
+        self._regime_detector = MarketRegimeDetector()
+        self._dynamic_threshold = DynamicThreshold()
+        self._confidence_calibrator = ConfidenceCalibrator()
+        self._regime_router = RegimeWeightRouter()
 
     @property
     def risk_profile(self) -> RiskProfile:
@@ -140,13 +170,17 @@ class StrategyEnsembleEngine:
         self,
         ticker: str,
         signals: list[StrategySignalInput],
+        ohlcv: Optional[pd.DataFrame] = None,
     ) -> EnsembleSignal:
         """
         단일 종목 앙상블 시그널 생성
 
+        레짐 감지 → 가중치 라우팅 → 가중 평균 → 동적 임계값 → 신뢰도 캘리브레이션
+
         Args:
             ticker: 종목코드
             signals: 전략별 시그널 리스트
+            ohlcv: 시세 데이터 (있으면 레짐 감지에 사용, 없으면 기본 레짐)
 
         Returns:
             EnsembleSignal
@@ -163,18 +197,33 @@ class StrategyEnsembleEngine:
                 generated_at=now,
             )
 
+        # ── 1. 레짐 감지 ──
+        if ohlcv is not None and len(ohlcv) >= 60:
+            regime_info = self._regime_detector.detect(ohlcv)
+        else:
+            regime_info = RegimeInfo(
+                regime=MarketRegime.SIDEWAYS,
+                confidence=0.3,
+                volatility_percentile=0.5,
+                trend_strength=0.0,
+                details={"reason": "no_ohlcv"},
+            )
+
+        # ── 2. 레짐 기반 가중치 라우팅 ──
+        routed_weights = self._regime_router.adjust_weights(weights, regime_info)
+
         # 시그널 매핑
         signal_map: dict[str, StrategySignalInput] = {}
         for sig in signals:
             signal_map[sig.strategy] = sig
 
-        # 가중 평균 계산
+        # ── 3. 가중 평균 계산 ──
         weighted_sum = 0.0
         confidence_sum = 0.0
         total_weight = 0.0
         component_signals: dict[str, float] = {}
 
-        for strategy_key, weight in weights.items():
+        for strategy_key, weight in routed_weights.items():
             if weight <= 0:
                 continue
 
@@ -192,23 +241,37 @@ class StrategyEnsembleEngine:
         # 정규화
         if total_weight > 0:
             final_signal = weighted_sum / total_weight
-            final_confidence = confidence_sum / total_weight
+            raw_confidence = confidence_sum / total_weight
         else:
             final_signal = 0.0
-            final_confidence = 0.0
+            raw_confidence = 0.0
 
         # 클리핑
         final_signal = max(-1.0, min(1.0, final_signal))
-        final_confidence = max(0.0, min(1.0, final_confidence))
+        raw_confidence = max(0.0, min(1.0, raw_confidence))
+
+        # ── 4. 신뢰도 캘리브레이션 ──
+        calibrated_confidence = self._confidence_calibrator.calibrate(
+            raw_confidence=raw_confidence,
+            component_signals=component_signals,
+            regime_info=regime_info,
+        )
+
+        # ── 5. 동적 임계값 ──
+        buy_threshold, sell_threshold = self._dynamic_threshold.compute(regime_info)
 
         result = EnsembleSignal(
             ticker=ticker,
             final_signal=round(final_signal, 4),
-            final_confidence=round(final_confidence, 4),
+            final_confidence=round(calibrated_confidence, 4),
             component_signals=component_signals,
-            weights_used={k: round(v, 4) for k, v in weights.items() if v > 0},
+            weights_used={k: round(v, 4) for k, v in routed_weights.items() if v > 0},
             risk_profile=self._risk_profile.value,
             generated_at=now,
+            regime=regime_info.regime.value,
+            buy_threshold=buy_threshold,
+            sell_threshold=sell_threshold,
+            raw_confidence=round(raw_confidence, 4),
         )
 
         # DB 저장
@@ -216,27 +279,33 @@ class StrategyEnsembleEngine:
 
         logger.debug(
             f"Ensemble signal: {ticker}, final={result.final_signal:.4f}, "
-            f"action={result.action}, confidence={result.final_confidence:.4f}"
+            f"action={result.action}, confidence={result.final_confidence:.4f} "
+            f"(raw={raw_confidence:.4f}), regime={regime_info.regime.value}, "
+            f"thresholds=±{buy_threshold:.3f}"
         )
         return result
 
     async def generate_batch_signals(
         self,
         ticker_signals: dict[str, list[StrategySignalInput]],
+        ticker_ohlcv: Optional[dict[str, pd.DataFrame]] = None,
     ) -> dict[str, EnsembleSignal]:
         """
         복수 종목 배치 앙상블 시그널 생성
 
         Args:
             ticker_signals: {ticker: [StrategySignalInput]} 딕셔너리
+            ticker_ohlcv: {ticker: OHLCV DataFrame} (레짐 감지용, optional)
 
         Returns:
             {ticker: EnsembleSignal} 딕셔너리
         """
         results: dict[str, EnsembleSignal] = {}
+        ohlcv_map = ticker_ohlcv or {}
 
         for ticker, signals in ticker_signals.items():
-            result = await self.generate_ensemble_signal(ticker, signals)
+            ohlcv = ohlcv_map.get(ticker)
+            result = await self.generate_ensemble_signal(ticker, signals, ohlcv=ohlcv)
             results[ticker] = result
 
         logger.info(
