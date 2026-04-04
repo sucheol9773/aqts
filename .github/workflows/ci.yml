@@ -38,10 +38,10 @@ jobs:
         run: pip install ruff==0.5.0 black==24.4.2
 
       - name: Ruff lint
-        run: ruff check backend/ --config backend/pyproject.toml
+        run: cd backend && ruff check . --config pyproject.toml
 
       - name: Black format check
-        run: black --check backend/ --config backend/pyproject.toml
+        run: cd backend && black --check . --config pyproject.toml
 
   # ──────────────────────────────────
   # Stage 2: Smoke Tests (빠른 핵심 검증)
