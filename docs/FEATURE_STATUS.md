@@ -12,10 +12,10 @@
 |--------|-------|
 | Not Started | 2 |
 | Implemented | 6 |
-| Tested | 101 |
+| Tested | 104 |
 | Production-ready | 0 |
 | Blocked | 0 |
-| **TOTAL** | **109** |
+| **TOTAL** | **112** |
 
 ---
 
@@ -137,7 +137,17 @@
 
 ---
 
-## 10. Roadmap Items (Completed - Stage 1)
+## 10. Compliance (Gate D)
+
+| Module | Feature | Status | Code Path | Tests | Notes |
+|--------|---------|--------|-----------|-------|-------|
+| audit_integrity | 감사 로그 무결성 검증 (SHA-256 해시 체인) | Tested | core/compliance/audit_integrity.py | test_gate_d_compliance.py (57) | 변조 탐지, 조회, 통계 |
+| retention_policy | 거래 기록 보존 정책 (5년/10년 보존) | Tested | core/compliance/retention_policy.py | test_gate_d_compliance.py (57) | 8개 카테고리, 조기 삭제 방지 |
+| pii_masking | 개인정보 마스킹 검증 (7종 PII 탐지) | Tested | core/compliance/pii_masking.py | test_gate_d_compliance.py (57) | 주민번호/전화/이메일/계좌/카드/IP/API키 |
+
+---
+
+## 11. Roadmap Items (Completed - Stage 1)
 
 | Module | Feature | Status | Code Path | Tests | Notes |
 |--------|---------|--------|-----------|-------|-------|
@@ -145,7 +155,7 @@
 
 ---
 
-## 11. Roadmap Items (Stages 2-7)
+## 12. Roadmap Items (Stages 2-8)
 
 ### Stage 2-A: Data Contracts ✅
 
@@ -277,7 +287,7 @@
 ## Test Coverage Summary
 
 ```
-Total Tests: 2,226 tests (413 smoke-marked) — ALL PASS, Coverage 82%
+Total Tests: 2,283 tests (413 smoke-marked) — ALL PASS, Coverage 82%
 ├── Core Features: 40+ modules with passing tests
 ├── Data Contracts: 154 tests (9 contracts) [smoke]
 ├── Pipeline Gates: 59 tests (12 components)
@@ -305,6 +315,7 @@ Total Tests: 2,226 tests (413 smoke-marked) — ALL PASS, Coverage 82%
 ├── Gate C Halt/Resume: 20 tests [NEW]
 ├── Parameter Sensitivity: 40 tests [NEW]
 ├── Gate C Notification: 46 tests [NEW]
+├── Gate D Compliance: 57 tests [NEW]
 ├── Integration Tests: 30 tests (E2E scenarios)
 ├── API Tests: 73 tests (all endpoints)
 ├── Smoke Tests: 413 tests (< 13초, CI 필수)
