@@ -68,3 +68,38 @@ performance:
   max_turnover_pass: 3.0                   # 연간 회전율 < 300% → PASS
   max_turnover_review: 5.0                 # 연간 회전율 < 500% → REVIEW
   significance_ci: 0.95                    # 부트스트랩 95% CI
+
+# ── OOS 검증 게이트 (Out-of-Sample Validation) ──
+oos_gate:
+  # Gate-A: 절대 기준
+  mdd_hard_limit: 0.25                     # MDD > 25% → FAIL (절대 상한)
+  max_turnover: 5.0                        # 연간 회전율 > 500% → FAIL
+
+  # Gate-B: 상대 기준 (baseline 대비)
+  min_sharpe_ratio: 0.3                    # OOS Sharpe < 0.3 → REVIEW
+  min_calmar_ratio: 0.2                    # OOS Calmar < 0.2 → REVIEW
+  regime_worst_mdd: 0.30                   # 레짐별 최악 MDD > 30% → REVIEW
+
+  # Gate-C: 안정성 기준
+  max_window_variance: 0.5                 # 윈도우 간 Sharpe 분산 > 0.5 → REVIEW
+  min_positive_windows_ratio: 0.5          # 양수 수익 윈도우 비율 < 50% → REVIEW
+
+  # Walk-forward 기본 설정
+  default_train_months: 24                 # 기본 학습 기간 (개월)
+  default_test_months: 3                   # 기본 평가 기간 (개월)
+  min_windows: 4                           # 최소 윈도우 수
+
+# ── 레짐 매핑 (실시간 ↔ 백테스트 분류 체계) ──
+regime_mapping:
+  # MarketRegimeDetector (실시간) → RegimeAnalyzer (백테스트)
+  TRENDING_UP: BULL
+  TRENDING_DOWN: BEAR
+  SIDEWAYS: BULL                           # 횡보는 BULL 쪽으로 매핑 (fallback)
+  HIGH_VOLATILITY: HIGH_VOL
+  # RegimeAnalyzer → MarketRegimeDetector (역매핑)
+  BULL: TRENDING_UP
+  BEAR: TRENDING_DOWN
+  HIGH_VOL: HIGH_VOLATILITY
+  RISING_RATE: SIDEWAYS                    # 금리 상승은 실시간 체계에 없으므로 SIDEWAYS로 fallback
+  # unmapped 시 기본값
+  fallback: SIDEWAYS

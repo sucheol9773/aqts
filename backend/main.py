@@ -24,7 +24,7 @@ from core.trading_scheduler import TradingScheduler
 from core.data_collector.kis_client import KISClient
 
 # Phase 5: API 라우터 & 미들웨어
-from api.routes import auth, portfolio, orders, profile, market, alerts, system, audit
+from api.routes import auth, portfolio, orders, profile, market, alerts, system, audit, oos
 from api.middleware.request_logger import RequestLoggingMiddleware
 from api.middleware.rate_limiter import limiter, rate_limit_exceeded_handler
 
@@ -269,4 +269,5 @@ app.include_router(profile.router, prefix="/api/profile", tags=["Profile"])
 app.include_router(market.router, prefix="/api/market", tags=["Market"])
 app.include_router(alerts.router, prefix="/api/alerts", tags=["Alerts"])
 app.include_router(system.router, prefix="/api/system", tags=["System"])
+app.include_router(oos.router, prefix="/api/system/oos", tags=["OOS Validation"])
 app.include_router(audit.router)
