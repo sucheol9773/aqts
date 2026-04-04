@@ -1,7 +1,7 @@
 # 릴리스 승인 게이트 (Release Approval Gates)
 
 **문서 번호**: OPS-004
-**버전**: 1.8
+**버전**: 1.9
 **최종 수정**: 2026-04-05
 
 ## 1. 목적
@@ -25,10 +25,10 @@ Gate A (개발/QA) → Gate B (보안) → Gate C (리스크/운영) → Gate D 
 
 | 항목 | 기준 | 현재 상태 |
 |------|------|----------|
-| 단위 테스트 전체 통과 | pytest 0 failures | PASS (2,376건 통과) |
+| 단위 테스트 전체 통과 | pytest 0 failures | PASS (2,407건 통과) |
 | 코드 커버리지 | >= 80% | PASS (82%) |
 | 린트/포맷 검사 | ruff/black 위반 0건 | PASS (ruff 0.15.9 + black 26.3.1, 위반 0건) |
-| 의존성 취약점 | pip-audit critical 0건 | CONDITIONAL (3건 해소, 잔여: starlette 2건 FastAPI 업그레이드 필요, torch 4건 메이저 업그레이드 필요) |
+| 의존성 취약점 | pip-audit critical 0건 | CONDITIONAL (starlette CVE 전부 해소, torch 잔여: CPU 인덱스 배포 환경에서 2.6.0+ 업그레이드 필요) |
 | API 계약 테스트 | Pydantic 스키마 검증 | PASS (9개 계약) |
 | 통합 테스트 | 주요 플로우 E2E | PASS (30건 + OOS 55건 + 민감도 40건) |
 | 문서 동기화 | FEATURE_STATUS 최신화 | PASS |
@@ -44,7 +44,7 @@ Gate A (개발/QA) → Gate B (보안) → Gate C (리스크/운영) → Gate D 
 | 인증/인가 | JWT 토큰 검증 | PASS (구현+테스트) |
 | Rate Limiting | 로그인/API 제한 | PASS (slowapi, 4개 엔드포인트, 7 tests) |
 | 컨테이너 보안 | non-root 실행 | PASS |
-| 의존성 스캔 | 알려진 CVE 없음 | CONDITIONAL (aiohttp/jose/multipart 해소, starlette/torch 잔여) |
+| 의존성 스캔 | 알려진 CVE 없음 | CONDITIONAL (starlette 해소, torch 잔여: 배포 환경에서 2.6.0+ 업그레이드 필요) |
 | API 키 만료/재발급 시나리오 | 정상 갱신 확인 | PASS (만료/갱신/경계값 10 tests) |
 
 **승인자**: 보안 담당
@@ -90,16 +90,17 @@ Gate A (개발/QA) → Gate B (보안) → Gate C (리스크/운영) → Gate D 
 ## 8. 현재 게이트 통과 현황
 
 ```
-Gate A: CONDITIONAL (의존성 취약점 잔여: starlette/torch 업그레이드 필요)
-Gate B: CONDITIONAL (의존성 CVE 잔여: starlette/torch)
+Gate A: CONDITIONAL (starlette CVE 해소, torch 잔여: 배포 환경에서 2.6.0+ 업그레이드)
+Gate B: CONDITIONAL (starlette CVE 해소, torch 잔여: 배포 환경에서 2.6.0+ 업그레이드)
 Gate C: PASS (알림 채널 검증 + 백업 알림 구현 완료)
 Gate D: PASS (감사/보존/PII/리포트/비밀키 전 항목 통과, 97 tests)
 Gate E: CONDITIONAL (고객 공지/롤백/대시보드 완료, 운영책임자 최종 승인 대기)
 ```
 
-**결론: Gate C PASS. Gate D PASS. Gate E CONDITIONAL (최종 승인 대기). Gate A/B CONDITIONAL (starlette/torch CVE).**
+**결론: Gate C PASS. Gate D PASS. Gate E CONDITIONAL (최종 승인 대기). Gate A/B CONDITIONAL (torch CVE 잔여, 배포 환경에서 해소).**
 
 ### 변경 이력
+- v1.9 (2026-04-05): FastAPI 0.135.3 + starlette 1.0.0 CVE 해소, audit_visualization 구현 (31 tests), Not Started 0건, 테스트 2,407건
 - v1.8 (2026-04-05): Gate E 고객 공지 PASS + 롤백 계획 PASS + 모니터링 대시보드 PASS (53 tests), 테스트 2,376건, Gate E → CONDITIONAL
 - v1.7 (2026-04-05): Gate D 규제 리포트 PASS + 비밀키 관리 PASS (40 tests), 테스트 2,323건, Gate D → PASS
 - v1.6 (2026-04-05): Gate D 감사 로그 무결성 PASS + 거래 기록 보존 PASS + PII 마스킹 PASS (57 tests), 테스트 2,283건, Gate D → CONDITIONAL
