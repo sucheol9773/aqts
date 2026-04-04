@@ -75,6 +75,7 @@
 
 - `core/state_machine.py`: `PipelineState.HALTED` 전이 로직
 - `core/pipeline.py`: 게이트 BLOCK 시 HALTED 전이
-- `core/order_executor.py`: 미체결 주문 취소 메서드
+- `core/order_executor/executor.py`: 미체결 주문 취소 메서드
 - `api/routes/system.py`: `/api/system/halt`, `/api/system/resume` 엔드포인트
 - `config/settings.py`: 손실 한도 임계값 설정
+- `config/operational_thresholds.yaml`: 중단 임계값 운영 설정 (환율 변동폭, 손실 한도 등)
