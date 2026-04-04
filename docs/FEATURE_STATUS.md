@@ -11,11 +11,11 @@
 | Status | Count |
 |--------|-------|
 | Not Started | 4 |
-| Implemented | 12 |
-| Tested | 72 |
+| Implemented | 6 |
+| Tested | 88 |
 | Production-ready | 0 |
 | Blocked | 0 |
-| **TOTAL** | **88** |
+| **TOTAL** | **98** |
 
 ---
 
@@ -224,7 +224,7 @@
 
 ---
 
-## Remaining Not Started Items (5)
+## Remaining Not Started Items (4)
 
 | Item | Feature | Notes |
 |------|---------|-------|
@@ -232,7 +232,6 @@
 | compliance_report | Regulatory Compliance Reports | 규제 준수 리포트 자동 생성 |
 | oos_validation | Out-of-Sample Validation | Walk-Forward 분석 자동화 |
 | param_sensitivity | Parameter Sensitivity Analysis | 파라미터 민감도 분석 |
-| pipeline_gate_integration | Pipeline ↔ Gate 실행 경로 연결 | InvestmentDecisionPipeline에 GateRegistry/StateMachine 직접 연결 |
 
 ---
 

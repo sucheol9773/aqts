@@ -230,12 +230,9 @@ class InvestmentDecisionPipeline:
             )
 
         # ── 상태: ANALYZING → COMPLETED ──
-        # 분석 파이프라인이므로 CONSTRUCTING까지 가지 않고 완료 처리
-        # (CONSTRUCTING → VALIDATING → TRADING 은 주문 실행 파이프라인 범위)
-        self._sm.transition(PipelineState.CONSTRUCTING, "분석 완료, 포트폴리오 구성 대기")
-        self._sm.transition(PipelineState.VALIDATING, "포트폴리오 검증 대기")
-        self._sm.transition(PipelineState.TRADING, "분석 사이클 마무리")
-        self._sm.transition(PipelineState.RECONCILING, "대사 대기")
+        # 분석 파이프라인은 ANALYZING에서 바로 COMPLETED로 전이합니다.
+        # CONSTRUCTING → VALIDATING → TRADING → RECONCILING은 주문 실행 파이프라인 전용 상태이며,
+        # 분석 전용 흐름에서는 의미적으로 거치지 않습니다.
         self._sm.transition(PipelineState.COMPLETED, f"{ticker} 분석 사이클 완료")
 
         logger.info(

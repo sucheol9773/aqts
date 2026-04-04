@@ -144,10 +144,16 @@ app = FastAPI(
 )
 
 # ── 미들웨어 등록 ──
-# CORS 설정 (단일 사용자, 개발 환경)
+# CORS 설정: 환경변수 CORS_ALLOWED_ORIGINS에서 허용 Origin 목록 로드
+_settings = get_settings()
+_cors_origins = [
+    origin.strip()
+    for origin in _settings.cors_allowed_origins.split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 운영 시 특정 도메인으로 제한
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

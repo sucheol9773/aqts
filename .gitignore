@@ -37,3 +37,14 @@ EOF
 # ── Logs ──
 logs/
 *.log
+
+
+
+*.docx
+*.png
+*.coverage
+*.html
+*.js
+CI_ANALYSIS_REPORT.md
+.tmp.drivedownload/
+.tmp.driveupload/

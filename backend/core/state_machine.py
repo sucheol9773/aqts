@@ -27,7 +27,7 @@ class PipelineState(str, Enum):
 VALID_TRANSITIONS: Dict[PipelineState, Set[PipelineState]] = {
     PipelineState.IDLE: {PipelineState.COLLECTING},
     PipelineState.COLLECTING: {PipelineState.ANALYZING, PipelineState.ERROR, PipelineState.HALTED},
-    PipelineState.ANALYZING: {PipelineState.CONSTRUCTING, PipelineState.IDLE, PipelineState.ERROR, PipelineState.HALTED},
+    PipelineState.ANALYZING: {PipelineState.CONSTRUCTING, PipelineState.COMPLETED, PipelineState.IDLE, PipelineState.ERROR, PipelineState.HALTED},
     PipelineState.CONSTRUCTING: {PipelineState.VALIDATING, PipelineState.ERROR, PipelineState.HALTED},
     PipelineState.VALIDATING: {PipelineState.TRADING, PipelineState.IDLE, PipelineState.ERROR, PipelineState.HALTED},
     PipelineState.TRADING: {PipelineState.RECONCILING, PipelineState.HALTED, PipelineState.ERROR},

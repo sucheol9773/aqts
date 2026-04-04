@@ -314,6 +314,11 @@ class AppSettings(BaseSettings):
 
     environment: str = Field(default="development", alias="ENVIRONMENT")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+    cors_allowed_origins: str = Field(
+        default="http://localhost:3000,http://localhost:8000",
+        alias="CORS_ALLOWED_ORIGINS",
+        description="허용 Origin 목록 (콤마 구분). 예: http://localhost:3000,https://aqts.example.com",
+    )
 
     # 하위 설정 그룹
     kis: KISSettings = Field(default_factory=KISSettings)
