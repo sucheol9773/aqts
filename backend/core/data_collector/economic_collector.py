@@ -645,14 +645,50 @@ class EconomicCollectorService:
 
     async def _store_to_db(self, indicators: list[EconomicIndicator]) -> None:
         """
-        TimescaleDB에 경제지표 저장 (추후 구현)
+        TimescaleDB에 경제지표 저장 (UPSERT)
+
+        economic_indicators 테이블에 수집된 지표를 저장합니다.
+        동일 (indicator_name, date, source) 조합이 이미 존재하면 값을 갱신합니다.
 
         Args:
             indicators: 경제지표 리스트
         """
-        # TODO: DB 테이블 생성 후 구현
-        # from db.database import async_session_factory
-        # async with async_session_factory() as session:
-        #     # INSERT 로직
-        #     pass
-        pass
+        if not indicators:
+            return
+
+        try:
+            from sqlalchemy import text as sa_text
+            from db.database import async_session_factory
+
+            async with async_session_factory() as session:
+                query = sa_text("""
+                    INSERT INTO economic_indicators (
+                        indicator_name, value, date, source, country,
+                        unit, change_pct, collected_at
+                    ) VALUES (
+                        :indicator_name, :value, :date, :source, :country,
+                        :unit, :change_pct, :collected_at
+                    )
+                    ON CONFLICT (indicator_name, date, source)
+                    DO UPDATE SET
+                        value = EXCLUDED.value,
+                        change_pct = EXCLUDED.change_pct,
+                        collected_at = EXCLUDED.collected_at
+                """)
+
+                for ind in indicators:
+                    await session.execute(query, {
+                        "indicator_name": ind.indicator_name,
+                        "value": ind.value,
+                        "date": ind.date,
+                        "source": ind.source,
+                        "country": ind.country,
+                        "unit": ind.unit,
+                        "change_pct": ind.change_pct,
+                        "collected_at": ind.collected_at,
+                    })
+                await session.commit()
+
+            logger.info(f"Stored {len(indicators)} indicators to TimescaleDB")
+        except Exception as e:
+            logger.warning(f"DB storage error (indicators still in cache): {e}")

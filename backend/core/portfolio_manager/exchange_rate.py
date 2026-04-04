@@ -173,9 +173,18 @@ class ExchangeRateManager:
         try:
             result = await self._kis_client.get_exchange_rate()
 
-            # API 응답에서 환율 추출
-            # TODO: 실제 응답 형식에 맞게 파싱
-            rate = float(result.get("exchange_rate", 1300.0))  # 기본값: 1300
+            # KIS API 해외잔고 응답에서 환율 추출
+            # output2 배열의 frst_bltn_exrt(최초 공시 환율) 또는
+            # output1의 exrt(환율) 필드를 우선 참조
+            rate = 0.0
+            output2 = result.get("output2", [])
+            if output2 and isinstance(output2, list):
+                rate = float(output2[0].get("frst_bltn_exrt", 0))
+            if rate <= 0:
+                output1 = result.get("output1", result)
+                rate = float(output1.get("exrt", 0))
+            if rate <= 0:
+                rate = float(result.get("exchange_rate", 0))
 
             if rate <= 0:
                 raise ValueError(f"유효하지 않은 환율: {rate}")

@@ -79,8 +79,6 @@ services:
       - .env
     ports:
       - "${BACKEND_PORT:-8000}:8000"
-    volumes:
-      - ./backend:/app
     depends_on:
       postgres:
         condition: service_healthy
@@ -91,6 +89,8 @@ services:
     networks:
       - aqts-network
     stop_grace_period: 60s
+    # 프로덕션 시 read_only: true 추가, volumes 제거
+    # 개발 시 아래 docker-compose.override.yml 사용
 
 volumes:
   postgres_data:
