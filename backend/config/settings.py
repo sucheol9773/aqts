@@ -11,6 +11,7 @@ KIS 설정은 LIVE/DEMO/BACKTEST 3단계 모드를 지원하며,
 from enum import Enum
 from functools import lru_cache
 from typing import Optional
+from urllib.parse import quote_plus
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -182,11 +183,11 @@ class DatabaseSettings(BaseSettings):
 
     @property
     def async_url(self) -> str:
-        return f"postgresql+asyncpg://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
+        return f"postgresql+asyncpg://{self.user}:{quote_plus(self.password)}@{self.host}:{self.port}/{self.name}"
 
     @property
     def sync_url(self) -> str:
-        return f"postgresql+psycopg2://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
+        return f"postgresql+psycopg2://{self.user}:{quote_plus(self.password)}@{self.host}:{self.port}/{self.name}"
 
 
 class MongoSettings(BaseSettings):
@@ -202,7 +203,7 @@ class MongoSettings(BaseSettings):
 
     @property
     def uri(self) -> str:
-        return f"mongodb://{self.user}:{self.password}@{self.host}:{self.port}/{self.db}?authSource=admin"
+        return f"mongodb://{self.user}:{quote_plus(self.password)}@{self.host}:{self.port}/{self.db}?authSource=admin"
 
 
 class RedisSettings(BaseSettings):
@@ -217,7 +218,7 @@ class RedisSettings(BaseSettings):
 
     @property
     def url(self) -> str:
-        return f"redis://:{self.password}@{self.host}:{self.port}/{self.db}"
+        return f"redis://:{quote_plus(self.password)}@{self.host}:{self.port}/{self.db}"
 
 
 # ══════════════════════════════════════
