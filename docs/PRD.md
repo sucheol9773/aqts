@@ -58,10 +58,12 @@ FastAPI + PostgreSQL/TimescaleDB + MongoDB + Redis + KIS OpenAPI + Anthropic Cla
 
 ## 로드맵
 
-| 마일스톤 | 내용 | 목표 시점 |
-|----------|------|----------|
-| M1: 코어 완성 | 엔진 + API + 테스트 88건 ✅ | 완료 |
-| M2: 운영 인프라 | Rate Limiting, Circuit Breaker, 모니터링 | 2주 |
-| M3: 프리라이브 | 페이퍼 트레이딩 + 리스크 시뮬레이션 | 1개월 |
-| M4: 라이브 베타 | 실전 자가매매 (소규모) | 2개월 |
-| M5: 서비스화 | 프론트엔드 + 사용자 관리 | 4개월 |
+| 마일스톤 | 내용 | 상태 |
+|----------|------|------|
+| M1: 코어 완성 | 엔진 + API + 테스트 2,477건 | ✅ 완료 |
+| M2: 운영 인프라 | Rate Limiting, Circuit Breaker, 모니터링, Release Gates | ✅ 완료 |
+| M3: 프리라이브 | DEMO 모의투자 + 리스크 시뮬레이션 | ⏳ 다음 단계 |
+| M4: 라이브 베타 | 실전 자가매매 (소규모) | 대기 |
+| M5: 서비스화 | 프론트엔드 + 사용자 관리 | 대기 |
+
+> 상세 절차: docs/operations/deployment-roadmap.md (OPS-008) 참조

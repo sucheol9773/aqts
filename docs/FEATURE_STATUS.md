@@ -277,6 +277,21 @@
 
 ---
 
+## Operations Documents
+
+| Doc ID | Document | Path | Description |
+|--------|----------|------|-------------|
+| OPS-001 | 릴리즈 게이트 | docs/operations/release-gates.md | Gate A~E 통과 기준 |
+| OPS-002 | 인시던트 런북 | docs/operations/incident-runbook.md | 장애 진단 및 복구 절차 |
+| OPS-003 | 거래 중지 정책 | docs/operations/trading-halt-policy.md | 자동/수동 중지 조건 |
+| OPS-004 | 모델 변경 정책 | docs/operations/model-change-policy.md | ML/LLM 모델 변경 절차 |
+| OPS-005 | 롤백 계획 | docs/operations/rollback-plan.md | 장애 시 롤백 절차 |
+| OPS-006 | 고객 공지 | docs/operations/customer-notice.md | 투자 위험 고지 |
+| OPS-007 | Docker 환경 세팅 | docs/operations/docker-setup-guide.md | 개발/스테이징/프로덕션 환경 구성 |
+| OPS-008 | 배포 및 검증 로드맵 | docs/operations/deployment-roadmap.md | Phase 0~4 단계별 배포/검증/확장 절차 |
+
+---
+
 ## Known Technical Debt
 
 | Item | Description | Priority | Status |
