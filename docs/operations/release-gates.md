@@ -1,7 +1,7 @@
 # 릴리스 승인 게이트 (Release Approval Gates)
 
 **문서 번호**: OPS-004
-**버전**: 1.7
+**버전**: 1.8
 **최종 수정**: 2026-04-05
 
 ## 1. 목적
@@ -25,7 +25,7 @@ Gate A (개발/QA) → Gate B (보안) → Gate C (리스크/운영) → Gate D 
 
 | 항목 | 기준 | 현재 상태 |
 |------|------|----------|
-| 단위 테스트 전체 통과 | pytest 0 failures | PASS (2,323건 통과) |
+| 단위 테스트 전체 통과 | pytest 0 failures | PASS (2,376건 통과) |
 | 코드 커버리지 | >= 80% | PASS (82%) |
 | 린트/포맷 검사 | ruff/black 위반 0건 | PASS (ruff 0.15.9 + black 26.3.1, 위반 0건) |
 | 의존성 취약점 | pip-audit critical 0건 | CONDITIONAL (3건 해소, 잔여: starlette 2건 FastAPI 업그레이드 필요, torch 4건 메이저 업그레이드 필요) |
@@ -80,10 +80,10 @@ Gate A (개발/QA) → Gate B (보안) → Gate C (리스크/운영) → Gate D 
 
 | 항목 | 기준 | 현재 상태 |
 |------|------|----------|
-| 고객 공지 문안 | 서비스 약관/면책 고지 준비 | 미작성 |
-| 롤백 계획 | 배포 실패 시 복구 절차 문서화 | 작성 중 |
-| 모니터링 대시보드 | 핵심 지표 실시간 확인 가능 | 미구현 |
-| 운영책임자 최종 승인 | 서명/승인 기록 | 미진행 |
+| 고객 공지 문안 | 서비스 약관/면책 고지 준비 | PASS (투자 위험 고지, 데이터 처리 안내, SLA 정의) |
+| 롤백 계획 | 배포 실패 시 복구 절차 문서화 | PASS (6단계 트리거, 앱/DB/설정 롤백, 검증 체크리스트) |
+| 모니터링 대시보드 | 핵심 지표 실시간 확인 가능 | PASS (서비스 상태/메트릭/알림 통합, 53 tests) |
+| 운영책임자 최종 승인 | 서명/승인 기록 | 대기 중 (Gate A~D PASS 후 진행) |
 
 **승인자**: 경영진
 
@@ -94,12 +94,13 @@ Gate A: CONDITIONAL (의존성 취약점 잔여: starlette/torch 업그레이드
 Gate B: CONDITIONAL (의존성 CVE 잔여: starlette/torch)
 Gate C: PASS (알림 채널 검증 + 백업 알림 구현 완료)
 Gate D: PASS (감사/보존/PII/리포트/비밀키 전 항목 통과, 97 tests)
-Gate E: BLOCK (사전 요건 미충족)
+Gate E: CONDITIONAL (고객 공지/롤백/대시보드 완료, 운영책임자 최종 승인 대기)
 ```
 
-**결론: Gate C PASS. Gate D PASS. Gate A/B CONDITIONAL (starlette/torch CVE). Gate E BLOCK.**
+**결론: Gate C PASS. Gate D PASS. Gate E CONDITIONAL (최종 승인 대기). Gate A/B CONDITIONAL (starlette/torch CVE).**
 
 ### 변경 이력
+- v1.8 (2026-04-05): Gate E 고객 공지 PASS + 롤백 계획 PASS + 모니터링 대시보드 PASS (53 tests), 테스트 2,376건, Gate E → CONDITIONAL
 - v1.7 (2026-04-05): Gate D 규제 리포트 PASS + 비밀키 관리 PASS (40 tests), 테스트 2,323건, Gate D → PASS
 - v1.6 (2026-04-05): Gate D 감사 로그 무결성 PASS + 거래 기록 보존 PASS + PII 마스킹 PASS (57 tests), 테스트 2,283건, Gate D → CONDITIONAL
 - v1.5 (2026-04-05): Gate C 알림 채널 검증 PASS + 백업 알림 구현 (NotificationRouter: Telegram→File→Console 폴백, ChannelHealth 추적, 46 tests), 테스트 2,226건, Gate C → PASS
