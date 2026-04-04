@@ -315,7 +315,12 @@ class TestDatabaseSettings:
 # settings.py — MongoSettings
 # ============================================================
 class TestMongoSettings:
-    def test_default_values(self):
+    def test_default_values(self, monkeypatch):
+        """코드 기본값 검증 (CI 환경변수 오염 방지)"""
+        monkeypatch.delenv("MONGO_HOST", raising=False)
+        monkeypatch.delenv("MONGO_PORT", raising=False)
+        monkeypatch.delenv("MONGO_DB", raising=False)
+        monkeypatch.delenv("MONGO_USER", raising=False)
         s = MongoSettings(password="test_pass")
         assert s.host == "mongodb"
         assert s.port == 27017
@@ -330,7 +335,12 @@ class TestMongoSettings:
 # settings.py — RedisSettings
 # ============================================================
 class TestRedisSettings:
-    def test_default_values(self):
+    def test_default_values(self, monkeypatch):
+        """코드 기본값 검증 (CI 환경변수 오염 방지)"""
+        monkeypatch.delenv("REDIS_HOST", raising=False)
+        monkeypatch.delenv("REDIS_PORT", raising=False)
+        monkeypatch.delenv("REDIS_DB", raising=False)
+        monkeypatch.delenv("REDIS_PASSWORD", raising=False)
         s = RedisSettings(password="test_pass")
         assert s.host == "redis"
         assert s.port == 6379
