@@ -57,7 +57,7 @@ Gate A (개발/QA) → Gate B (보안) → Gate C (리스크/운영) → Gate D 
 | 매매 중단/재개 테스트 | HALTED 전이 + 미체결 차단 확인 | PASS (전이/킬스위치 연동/복구 20 tests) |
 | 알림 채널 검증 | Telegram 발송 성공 | 미검증 |
 | 백업 알림 | 1차 채널 장애 시 대체 동작 | 미구현 |
-| Circuit Breaker | 외부 API 장애 시 자동 차단 | PASS (4개 서비스, 24 tests) |
+| Circuit Breaker | 외부 API 장애 시 자동 차단 | PASS (4개 서비스, 17 tests) |
 | OOS 검증 파이프라인 | walk-forward OOS + Gate 판정 | PASS (55 tests) |
 | 파라미터 민감도 분석 | OAT/Grid 스윕 + 탄성치 + 토네이도 차트 | PASS (40 tests, 6 모듈) |
 | 온콜/인수인계 | 운영 매뉴얼 + 런북 완비 | PASS (5종 문서 완비) |

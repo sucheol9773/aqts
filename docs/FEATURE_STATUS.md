@@ -90,7 +90,7 @@
 | periodic_reporter | 주간/월간 리포트 | Tested | core/periodic_reporter.py | test_periodic_reporter.py (27) | MDD/Sharpe 분석, 벤치마크 비교 |
 | market_calendar | 마켓 캘린더 (KRX + NYSE) | Tested | core/market_calendar.py | test_market_calendar.py (44) | 미국 공휴일 자동 산출, DST 판별 |
 | graceful_shutdown | 그레이스풀 셧다운 매니저 | Tested | core/graceful_shutdown.py | test_graceful_shutdown.py (25) | 3단계 셧다운, 주문 드레이닝 |
-| circuit_breaker | 외부 API 장애 자동 차단 (4 서비스) | Tested | core/circuit_breaker.py | test_circuit_breaker.py (24) | KIS/FRED/DART/Claude, half-open 복구 |
+| circuit_breaker | 외부 API 장애 자동 차단 (4 서비스) | Tested | core/circuit_breaker.py | test_circuit_breaker.py (17) | KIS/FRED/DART/Claude, half-open 복구 |
 
 ---
 
@@ -234,7 +234,7 @@
 | analyzer | 민감도 분석기 (탄성치/토네이도/안정구간) | Tested | core/param_sensitivity/analyzer.py | test_param_sensitivity.py (40) | 탄성치 계산, 단조성, 토네이도 랭킹 |
 | engine | ParamSensitivityEngine (BacktestEngine 래핑) | Tested | core/param_sensitivity/engine.py | test_param_sensitivity.py (40) | OAT/Grid 스윕, 최적 파라미터 탐색 |
 | api | 민감도 분석 REST API (3 엔드포인트) | Tested | api/routes/param_sensitivity.py | test_param_sensitivity.py (40) | run/latest/tornado |
-| integration | E2E 파이프라인 + 비용 민감도 직관 검증 | Tested | (integrated) | test_param_sensitivity.py (40) | 전체 워크플로, 비용 파라미터 영향도 |
+| integration | E2E 파이프라인 + 비용 민감도 직관 검증 | Tested | core/param_sensitivity/engine.py | test_param_sensitivity.py (40) | 전체 워크플로, 비용 파라미터 영향도 |
 
 ### Stage 8: OOS Validation ✅
 
@@ -294,7 +294,7 @@ Total Tests: 2,180 tests (413 smoke-marked) — ALL PASS, Coverage 82%
 ├── Performance Validation: 73 tests
 ├── LLM Promotion: 49 tests
 ├── Rate Limiting: 7 tests [NEW]
-├── Circuit Breaker: 24 tests [NEW]
+├── Circuit Breaker: 17 tests [NEW]
 ├── Regime Detection: 31 tests [NEW]
 ├── OOS Validation: 55 tests [NEW]
 ├── Gate B Security: 10 tests [NEW]
