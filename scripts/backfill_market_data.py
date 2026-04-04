@@ -93,10 +93,100 @@ DEFAULT_UNIVERSE = [
     ("326030", "SK바이오팜", "KRX", "Healthcare"),
 ]
 
+# ══════════════════════════════════════
+# KOSDAQ 대형주 유니버스
+# ══════════════════════════════════════
+KOSDAQ_UNIVERSE = [
+    # ticker, name, market, sector
+    ("247540", "에코프로비엠", "KRX", "Materials"),  # KOSPI 이전 종목이면 중복 UPSERT
+    ("383220", "에코프로", "KRX", "Materials"),
+    ("028300", "HLB", "KRX", "Healthcare"),
+    ("403870", "HPSP", "KRX", "IT"),
+    ("086520", "에코프로에이치엔", "KRX", "Materials"),
+    ("196170", "알테오젠", "KRX", "Healthcare"),
+    ("005290", "동진쎄미켐", "KRX", "Materials"),
+    ("145020", "휴젤", "KRX", "Healthcare"),
+    ("112040", "위메이드", "KRX", "IT"),
+    ("293490", "카카오게임즈", "KRX", "IT"),
+    ("263750", "펄어비스", "KRX", "IT"),
+    ("041510", "에스엠", "KRX", "Consumer"),
+    ("035900", "JYP Ent.", "KRX", "Consumer"),
+    ("122870", "와이지엔터테인먼트", "KRX", "Consumer"),
+    ("328130", "루닛", "KRX", "Healthcare"),
+    ("039030", "이오테크닉스", "KRX", "IT"),
+    ("067310", "하나마이크론", "KRX", "IT"),
+    ("095340", "ISC", "KRX", "IT"),
+    ("336260", "두산테스나", "KRX", "IT"),
+    ("357780", "솔브레인", "KRX", "Materials"),
+    ("237690", "에스티팜", "KRX", "Healthcare"),
+    ("214150", "클래시스", "KRX", "Healthcare"),
+    ("253450", "스튜디오드래곤", "KRX", "Consumer"),
+    ("060310", "3S", "KRX", "IT"),
+    ("240810", "원익IPS", "KRX", "IT"),
+    ("131970", "테스나", "KRX", "IT"),
+    ("058470", "리노공업", "KRX", "IT"),
+    ("042700", "한미반도체", "KRX", "IT"),
+    ("078600", "대주전자재료", "KRX", "Materials"),
+    ("140860", "파크시스템스", "KRX", "IT"),
+]
 
-def ticker_to_yahoo(ticker: str) -> str:
-    """KRX 종목코드를 Yahoo Finance 심볼로 변환"""
-    return f"{ticker}.KS"
+# ══════════════════════════════════════
+# 미국 대형주 + ETF 유니버스
+# ══════════════════════════════════════
+US_UNIVERSE = [
+    # ticker, name, market, sector
+    # — 대형 기술주 —
+    ("AAPL", "Apple", "NASDAQ", "IT"),
+    ("MSFT", "Microsoft", "NASDAQ", "IT"),
+    ("GOOGL", "Alphabet", "NASDAQ", "IT"),
+    ("AMZN", "Amazon", "NASDAQ", "IT"),
+    ("NVDA", "NVIDIA", "NASDAQ", "IT"),
+    ("META", "Meta Platforms", "NASDAQ", "IT"),
+    ("TSLA", "Tesla", "NASDAQ", "Consumer"),
+    ("TSM", "TSMC", "NYSE", "IT"),
+    ("AVGO", "Broadcom", "NASDAQ", "IT"),
+    ("AMD", "AMD", "NASDAQ", "IT"),
+    # — 주요 산업 —
+    ("JPM", "JPMorgan Chase", "NYSE", "Finance"),
+    ("V", "Visa", "NYSE", "Finance"),
+    ("UNH", "UnitedHealth", "NYSE", "Healthcare"),
+    ("JNJ", "Johnson & Johnson", "NYSE", "Healthcare"),
+    ("WMT", "Walmart", "NYSE", "Consumer"),
+    ("PG", "Procter & Gamble", "NYSE", "Consumer"),
+    ("XOM", "ExxonMobil", "NYSE", "Energy"),
+    ("HD", "Home Depot", "NYSE", "Consumer"),
+    ("BAC", "Bank of America", "NYSE", "Finance"),
+    ("KO", "Coca-Cola", "NYSE", "Consumer"),
+    # — 주요 ETF —
+    ("SPY", "SPDR S&P 500 ETF", "NYSE", "ETF"),
+    ("QQQ", "Invesco NASDAQ 100 ETF", "NASDAQ", "ETF"),
+    ("IWM", "iShares Russell 2000 ETF", "NYSE", "ETF"),
+    ("EEM", "iShares MSCI Emerging Markets", "NYSE", "ETF"),
+    ("GLD", "SPDR Gold Shares", "NYSE", "ETF"),
+    ("TLT", "iShares 20+ Treasury Bond", "NASDAQ", "ETF"),
+    ("VIX", "iPath Series B S&P 500 VIX", "NYSE", "ETF"),
+    # — 국내 ETF (KRX) —
+    ("069500", "KODEX 200", "KRX", "ETF"),
+    ("114800", "KODEX 인버스", "KRX", "ETF"),
+    ("122630", "KODEX 레버리지", "KRX", "ETF"),
+    ("252670", "KODEX 200선물인버스2X", "KRX", "ETF"),
+    ("371460", "TIGER 차이나전기차SOLACTIVE", "KRX", "ETF"),
+    ("133690", "TIGER 미국나스닥100", "KRX", "ETF"),
+    ("360750", "TIGER 미국S&P500", "KRX", "ETF"),
+    ("261240", "TIGER 미국테크TOP10 INDXX", "KRX", "ETF"),
+    ("381180", "TIGER 미국필라델피아반도체나스닥", "KRX", "ETF"),
+]
+
+
+def ticker_to_yahoo(ticker: str, market: str) -> str:
+    """종목코드를 Yahoo Finance 심볼로 변환"""
+    if market == "KRX":
+        # 숫자로만 된 코드 → KOSPI(.KS) 또는 KOSDAQ(.KQ)
+        # yfinance에서는 .KS로 대부분 조회 가능 (KOSDAQ도 .KS로 조회됨)
+        return f"{ticker}.KS"
+    else:
+        # 미국 종목: 심볼 그대로 사용
+        return ticker
 
 
 def get_db_connection():
@@ -122,17 +212,20 @@ def init_universe(conn, universe: list[tuple]) -> int:
 
     for ticker, name, market, sector in universe:
         try:
+            country = "KR" if market == "KRX" else "US"
+            asset_type = "ETF" if sector == "ETF" else "STOCK"
             cur.execute(
                 """
                 INSERT INTO universe (ticker, name, market, country, asset_type, sector, is_active)
-                VALUES (%s, %s, %s, 'KR', 'STOCK', %s, TRUE)
+                VALUES (%s, %s, %s, %s, %s, %s, TRUE)
                 ON CONFLICT (ticker, market) DO UPDATE SET
                     name = EXCLUDED.name,
                     sector = EXCLUDED.sector,
+                    asset_type = EXCLUDED.asset_type,
                     is_active = TRUE,
                     updated_at = NOW()
                 """,
-                (ticker, name, market, sector),
+                (ticker, name, market, country, asset_type, sector),
             )
             inserted += 1
         except Exception as e:
@@ -144,9 +237,9 @@ def init_universe(conn, universe: list[tuple]) -> int:
     return inserted
 
 
-def backfill_ticker(conn, ticker: str, name: str, start: str, end: str) -> int:
+def backfill_ticker(conn, ticker: str, name: str, market: str, start: str, end: str) -> int:
     """단일 종목 과거 데이터 수집"""
-    yahoo_ticker = ticker_to_yahoo(ticker)
+    yahoo_ticker = ticker_to_yahoo(ticker, market)
 
     try:
         data = yf.download(
@@ -189,7 +282,7 @@ def backfill_ticker(conn, ticker: str, name: str, start: str, end: str) -> int:
             (
                 dt,
                 ticker,
-                "KRX",
+                market,
                 float(row["Open"]),
                 float(row["High"]),
                 float(row["Low"]),
@@ -228,34 +321,62 @@ def backfill_ticker(conn, ticker: str, name: str, start: str, end: str) -> int:
     return len(records)
 
 
+def get_universe_by_group(groups: list[str]) -> list[tuple]:
+    """그룹 이름으로 유니버스 목록 반환"""
+    all_groups = {
+        "kospi": DEFAULT_UNIVERSE,
+        "kosdaq": KOSDAQ_UNIVERSE,
+        "us": US_UNIVERSE,
+    }
+
+    if "all" in groups:
+        groups = ["kospi", "kosdaq", "us"]
+
+    result = []
+    seen = set()
+    for g in groups:
+        for item in all_groups.get(g, []):
+            key = (item[0], item[2])  # (ticker, market)
+            if key not in seen:
+                result.append(item)
+                seen.add(key)
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description="AQTS 과거 시장 데이터 백필")
     parser.add_argument("--start", default="2024-01-01", help="시작일 (YYYY-MM-DD)")
     parser.add_argument("--end", default=datetime.now().strftime("%Y-%m-%d"), help="종료일")
-    parser.add_argument("--tickers", nargs="*", help="특정 종목코드 (미지정 시 기본 유니버스)")
+    parser.add_argument("--tickers", nargs="*", help="특정 종목코드 (미지정 시 그룹 기반)")
+    parser.add_argument(
+        "--group",
+        nargs="*",
+        default=["all"],
+        help="종목 그룹: kospi, kosdaq, us, all (기본: all)",
+    )
     parser.add_argument("--init-universe", action="store_true", help="유니버스 테이블 초기화")
     args = parser.parse_args()
+
+    # 유니버스 결정
+    if args.tickers:
+        targets = [(t, t, "KRX", "") for t in args.tickers]
+    else:
+        targets = get_universe_by_group(args.group)
 
     print(f"{'='*60}")
     print(f" AQTS 과거 데이터 백필")
     print(f" 기간: {args.start} ~ {args.end}")
+    print(f" 그룹: {', '.join(args.group)}")
+    print(f" 종목 수: {len(targets)}개")
     print(f"{'='*60}")
 
     conn = get_db_connection()
 
     # 유니버스 초기화
     if args.init_universe:
-        init_universe(conn, DEFAULT_UNIVERSE)
+        init_universe(conn, targets)
 
-    # 종목 결정
-    if args.tickers:
-        # 지정된 종목
-        targets = [(t, t, "KRX", "") for t in args.tickers]
-    else:
-        # 기본 유니버스
-        targets = [(t, n, m, s) for t, n, m, s in DEFAULT_UNIVERSE]
-
-    print(f"\n 수집 대상: {len(targets)}개 종목")
+    print(f"\n 수집 시작: {len(targets)}개 종목")
     print(f"{'-'*60}")
 
     total_records = 0
@@ -263,7 +384,7 @@ def main():
     fail = 0
 
     for ticker, name, market, sector in targets:
-        count = backfill_ticker(conn, ticker, name, args.start, args.end)
+        count = backfill_ticker(conn, ticker, name, market, args.start, args.end)
         total_records += count
         if count > 0:
             success += 1
