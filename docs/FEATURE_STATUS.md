@@ -264,7 +264,7 @@
 ## Test Coverage Summary
 
 ```
-Total Tests: 2,088 tests (413 smoke-marked) — ALL PASS, Coverage 82%
+Total Tests: 2,140 tests (413 smoke-marked) — ALL PASS, Coverage 82%
 ├── Core Features: 40+ modules with passing tests
 ├── Data Contracts: 154 tests (9 contracts) [smoke]
 ├── Pipeline Gates: 59 tests (12 components)
@@ -287,6 +287,9 @@ Total Tests: 2,088 tests (413 smoke-marked) — ALL PASS, Coverage 82%
 ├── Circuit Breaker: 24 tests [NEW]
 ├── Regime Detection: 31 tests [NEW]
 ├── OOS Validation: 55 tests [NEW]
+├── Gate B Security: 10 tests [NEW]
+├── Gate C Loss Simulation: 22 tests [NEW]
+├── Gate C Halt/Resume: 20 tests [NEW]
 ├── Integration Tests: 30 tests (E2E scenarios)
 ├── API Tests: 73 tests (all endpoints)
 ├── Smoke Tests: 413 tests (< 13초, CI 필수)

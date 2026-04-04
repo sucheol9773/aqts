@@ -1,7 +1,7 @@
 # 릴리스 승인 게이트 (Release Approval Gates)
 
 **문서 번호**: OPS-004
-**버전**: 1.2
+**버전**: 1.3
 **최종 수정**: 2026-04-05
 
 ## 1. 목적
@@ -25,7 +25,7 @@ Gate A (개발/QA) → Gate B (보안) → Gate C (리스크/운영) → Gate D 
 
 | 항목 | 기준 | 현재 상태 |
 |------|------|----------|
-| 단위 테스트 전체 통과 | pytest 0 failures | PASS (2,088건 통과) |
+| 단위 테스트 전체 통과 | pytest 0 failures | PASS (2,140건 통과) |
 | 코드 커버리지 | >= 80% | PASS (82%) |
 | 린트/포맷 검사 | ruff/black 위반 0건 | PASS (ruff 0.15.9 + black 26.3.1, 위반 0건) |
 | 의존성 취약점 | pip-audit critical 0건 | CONDITIONAL (3건 해소, 잔여: starlette 2건 FastAPI 업그레이드 필요, torch 4건 메이저 업그레이드 필요) |
@@ -39,13 +39,13 @@ Gate A (개발/QA) → Gate B (보안) → Gate C (리스크/운영) → Gate D 
 
 | 항목 | 기준 | 현재 상태 |
 |------|------|----------|
-| .env 시크릿 미노출 | git log에 시크릿 없음 | 확인 필요 |
+| .env 시크릿 미노출 | git log에 시크릿 없음 | PASS (git history 스캔 완료, 모든 시크릿은 mock 값) |
 | CORS 설정 | 와일드카드(*) 미사용 | PASS |
 | 인증/인가 | JWT 토큰 검증 | PASS (구현+테스트) |
 | Rate Limiting | 로그인/API 제한 | PASS (slowapi, 4개 엔드포인트, 7 tests) |
 | 컨테이너 보안 | non-root 실행 | PASS |
 | 의존성 스캔 | 알려진 CVE 없음 | CONDITIONAL (aiohttp/jose/multipart 해소, starlette/torch 잔여) |
-| API 키 만료/재발급 시나리오 | 정상 갱신 확인 | 미검증 |
+| API 키 만료/재발급 시나리오 | 정상 갱신 확인 | PASS (만료/갱신/경계값 10 tests) |
 
 **승인자**: 보안 담당
 
@@ -53,8 +53,8 @@ Gate A (개발/QA) → Gate B (보안) → Gate C (리스크/운영) → Gate D 
 
 | 항목 | 기준 | 현재 상태 |
 |------|------|----------|
-| 손실 한도 시뮬레이션 | 일일 -3%, 주간 -5% 중단 동작 확인 | 미검증 |
-| 매매 중단/재개 테스트 | HALTED 전이 + 미체결 취소 확인 | 미검증 |
+| 손실 한도 시뮬레이션 | 일일 -3%, 주간 -5% 중단 동작 확인 | PASS (일일/MDD/연속/복합 22 tests) |
+| 매매 중단/재개 테스트 | HALTED 전이 + 미체결 차단 확인 | PASS (전이/킬스위치 연동/복구 20 tests) |
 | 알림 채널 검증 | Telegram 발송 성공 | 미검증 |
 | 백업 알림 | 1차 채널 장애 시 대체 동작 | 미구현 |
 | Circuit Breaker | 외부 API 장애 시 자동 차단 | PASS (4개 서비스, 24 tests) |
@@ -90,8 +90,8 @@ Gate A (개발/QA) → Gate B (보안) → Gate C (리스크/운영) → Gate D 
 
 ```
 Gate A: CONDITIONAL (의존성 취약점 잔여: starlette/torch 업그레이드 필요)
-Gate B: CONDITIONAL (시크릿 스캔 필요, 의존성 CVE 부분 해소)
-Gate C: CONDITIONAL (손실 한도 시뮬레이션 + 매매 중단/재개 검증 필요)
+Gate B: CONDITIONAL (의존성 CVE 잔여: starlette/torch)
+Gate C: CONDITIONAL (알림 채널 검증 + 백업 알림 미구현)
 Gate D: BLOCK (컴플라이언스 리포트 미구현)
 Gate E: BLOCK (사전 요건 미충족)
 ```
@@ -99,6 +99,7 @@ Gate E: BLOCK (사전 요건 미충족)
 **결론: Gate A/B/C는 CONDITIONAL (검증/도구 실행만 남음). Gate D 컴플라이언스가 실질적 차단.**
 
 ### 변경 이력
+- v1.3 (2026-04-05): Gate B 시크릿 스캔 PASS, API 키 갱신 테스트 PASS, Gate C 손실 시뮬레이션 PASS, 매매 중단/재개 PASS, 테스트 2,140건
 - v1.2 (2026-04-05): ruff/black 린트 PASS, pip-audit 실행 (aiohttp/jose/multipart CVE 해소, starlette/torch 잔여)
 - v1.1 (2026-04-05): Rate Limiting PASS, Circuit Breaker PASS, OOS 파이프라인 PASS, 런북 완비, 테스트 2,088건 반영
 - v1.0 (2026-04-04): 초판 작성
