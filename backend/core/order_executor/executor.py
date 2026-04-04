@@ -732,7 +732,8 @@ class OrderExecutor:
         """
         try:
             async with async_session_factory() as db_session:
-                query = text("""
+                query = text(
+                    """
                     INSERT INTO orders (
                         order_id, ticker, market, side, quantity,
                         filled_qty, avg_price, status, created_at, error_message
@@ -740,7 +741,8 @@ class OrderExecutor:
                         :order_id, :ticker, :market, :side, :quantity,
                         :filled_qty, :avg_price, :status, :created_at, :error_message
                     )
-                """)
+                """
+                )
 
                 await db_session.execute(
                     query,

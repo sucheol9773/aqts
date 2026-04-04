@@ -308,21 +308,25 @@ async def get_audit_logs(
     try:
         # 쿼리 생성
         if module:
-            query = text("""
+            query = text(
+                """
                 SELECT id, time, action_type, module, description, before_state, after_state, metadata
                 FROM audit_logs
                 WHERE module = :module
                 ORDER BY time DESC
                 LIMIT :limit
-            """)
+            """
+            )
             result = await db.execute(query, {"module": module, "limit": limit})
         else:
-            query = text("""
+            query = text(
+                """
                 SELECT id, time, action_type, module, description, before_state, after_state, metadata
                 FROM audit_logs
                 ORDER BY time DESC
                 LIMIT :limit
-            """)
+            """
+            )
             result = await db.execute(query, {"limit": limit})
 
         rows = result.fetchall()

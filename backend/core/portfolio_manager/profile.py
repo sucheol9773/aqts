@@ -148,7 +148,8 @@ class InvestorProfileManager:
 
         try:
             async with async_session_factory() as session:
-                query = text("""
+                query = text(
+                    """
                     INSERT INTO user_profiles (
                         user_id, risk_profile, seed_capital, investment_purpose,
                         investment_style, loss_tolerance, sector_filters,
@@ -159,7 +160,8 @@ class InvestorProfileManager:
                         :investment_style, :loss_tolerance, :sector_filters,
                         :designated_tickers, :rebalancing_frequency, :created_at, :updated_at
                     )
-                """)
+                """
+                )
                 await session.execute(query, profile.to_dict())
                 await session.commit()
 
@@ -187,13 +189,15 @@ class InvestorProfileManager:
         """
         try:
             async with async_session_factory() as session:
-                query = text("""
+                query = text(
+                    """
                     SELECT user_id, risk_profile, seed_capital, investment_purpose,
                            investment_style, loss_tolerance, sector_filters,
                            designated_tickers, rebalancing_frequency, created_at, updated_at
                     FROM user_profiles
                     WHERE user_id = :user_id
-                """)
+                """
+                )
                 result = await session.execute(query, {"user_id": user_id})
                 row = result.fetchone()
 
@@ -250,7 +254,8 @@ class InvestorProfileManager:
 
             # DB 갱신
             async with async_session_factory() as session:
-                query = text("""
+                query = text(
+                    """
                     UPDATE user_profiles
                     SET risk_profile = :risk_profile,
                         seed_capital = :seed_capital,
@@ -262,7 +267,8 @@ class InvestorProfileManager:
                         rebalancing_frequency = :rebalancing_frequency,
                         updated_at = :updated_at
                     WHERE user_id = :user_id
-                """)
+                """
+                )
                 await session.execute(query, profile.to_dict())
                 await session.commit()
 

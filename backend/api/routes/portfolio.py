@@ -43,7 +43,8 @@ async def get_portfolio_summary(
         total_position_value = 0.0
 
         try:
-            query = text("""
+            query = text(
+                """
                 SELECT ticker, market,
                        SUM(CASE WHEN side = 'BUY' THEN filled_qty ELSE -filled_qty END) AS net_qty,
                        SUM(CASE WHEN side = 'BUY' THEN filled_qty * avg_price ELSE 0 END) AS total_cost,
@@ -52,7 +53,8 @@ async def get_portfolio_summary(
                 WHERE status IN ('FILLED', 'PARTIAL')
                 GROUP BY ticker, market
                 HAVING SUM(CASE WHEN side = 'BUY' THEN filled_qty ELSE -filled_qty END) > 0
-            """)
+            """
+            )
             result = await db.execute(query)
             rows = result.fetchall()
 
@@ -120,7 +122,8 @@ async def get_positions(
         positions: list[PositionResponse] = []
 
         try:
-            query = text("""
+            query = text(
+                """
                 SELECT ticker, market,
                        SUM(CASE WHEN side = 'BUY' THEN filled_qty ELSE -filled_qty END) AS net_qty,
                        SUM(CASE WHEN side = 'BUY' THEN filled_qty * avg_price ELSE 0 END) AS total_cost,
@@ -129,7 +132,8 @@ async def get_positions(
                 WHERE status IN ('FILLED', 'PARTIAL')
                 GROUP BY ticker, market
                 HAVING SUM(CASE WHEN side = 'BUY' THEN filled_qty ELSE -filled_qty END) > 0
-            """)
+            """
+            )
             result = await db.execute(query)
             rows = result.fetchall()
 
@@ -189,7 +193,8 @@ async def get_performance(
         return_pct = 0.0
 
         try:
-            query = text("""
+            query = text(
+                """
                 SELECT
                     COALESCE(SUM(
                         CASE WHEN side = 'SELL'
@@ -202,7 +207,8 @@ async def get_performance(
                 FROM orders
                 WHERE status IN ('FILLED', 'PARTIAL')
                   AND created_at >= NOW() - MAKE_INTERVAL(days => :days)
-            """)
+            """
+            )
             result = await db.execute(query, {"days": days})
             row = result.fetchone()
 
@@ -255,7 +261,8 @@ async def get_value_history(
             settings = get_settings()
             initial_capital = float(settings.risk.initial_capital_krw)
 
-            query = text("""
+            query = text(
+                """
                 SELECT DATE(created_at) AS trade_date,
                        SUM(CASE WHEN side = 'BUY'
                                 THEN -filled_qty * avg_price
@@ -265,7 +272,8 @@ async def get_value_history(
                   AND created_at >= NOW() - MAKE_INTERVAL(days => :days)
                 GROUP BY DATE(created_at)
                 ORDER BY trade_date
-            """)
+            """
+            )
             result = await db.execute(query, {"days": days})
             rows = result.fetchall()
 

@@ -379,13 +379,15 @@ class EmergencyRebalancingMonitor:
         """DB에서 최근 포지션 스냅샷을 로드합니다 (폴백)"""
         try:
             async with async_session_factory() as session:
-                query = text("""
+                query = text(
+                    """
                     SELECT ticker, market, quantity, avg_purchase_price,
                            current_price, sector
                     FROM positions
                     WHERE quantity > 0
                     ORDER BY current_price * quantity DESC
-                """)
+                """
+                )
                 result = await session.execute(query)
                 rows = result.fetchall()
                 return [
@@ -765,7 +767,8 @@ class EmergencyRebalancingMonitor:
             import json
 
             async with async_session_factory() as session:
-                query = text("""
+                query = text(
+                    """
                     INSERT INTO rebalancing_history (
                         user_id, rebalancing_type, trigger_reason,
                         orders, old_summary, new_summary, executed_at
@@ -774,7 +777,8 @@ class EmergencyRebalancingMonitor:
                         :user_id, :type, :reason,
                         :orders, :old_summary, :new_summary, :executed_at
                     )
-                """)
+                """
+                )
                 await session.execute(
                     query,
                     {

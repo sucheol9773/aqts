@@ -222,9 +222,11 @@ class FinancialCollectorService:
         DART 고유번호로부터 종목코드와 회사명을 조회합니다.
         (실제 구현시 별도 매핑 테이블이 필요하거나 KIS API 활용)
         """
-        query = text("""
+        query = text(
+            """
             SELECT ticker, corp_name FROM company_info WHERE corp_code = :corp_code LIMIT 1
-        """)
+        """
+        )
         result = await self._db.execute(query, {"corp_code": corp_code})
         row = result.fetchone()
 
@@ -439,7 +441,8 @@ class FinancialCollectorService:
 
         logger.info(f"Saving {len(statements)} financial statements to DB")
 
-        query = text("""
+        query = text(
+            """
             INSERT INTO financial_statements
             (corp_code, ticker, corp_name, bsns_year, reprt_code, fs_div,
              revenue, operating_income, net_income, total_assets, total_liabilities,
@@ -459,7 +462,8 @@ class FinancialCollectorService:
                 total_equity = EXCLUDED.total_equity,
                 eps = EXCLUDED.eps,
                 collected_at = EXCLUDED.collected_at
-        """)
+        """
+        )
 
         try:
             records = [stmt.to_dict() for stmt in statements]
@@ -578,7 +582,8 @@ class FinancialCollectorService:
         for ticker in tickers:
             try:
                 # 최신 재무제표 조회
-                stmt_query = text("""
+                stmt_query = text(
+                    """
                     SELECT
                         ticker, revenue, operating_income, net_income,
                         total_assets, total_liabilities, total_equity, eps
@@ -586,7 +591,8 @@ class FinancialCollectorService:
                     WHERE ticker = :ticker
                     ORDER BY bsns_year DESC, reprt_code DESC
                     LIMIT 1
-                """)
+                """
+                )
 
                 result = await self._db.execute(stmt_query, {"ticker": ticker})
                 stmt_row = result.fetchone()
@@ -608,12 +614,14 @@ class FinancialCollectorService:
                 }
 
                 # 현재가 조회 (DB에서)
-                price_query = text("""
+                price_query = text(
+                    """
                     SELECT close FROM market_ohlcv
                     WHERE ticker = :ticker AND market = 'KRX' AND interval = '1d'
                     ORDER BY time DESC
                     LIMIT 1
-                """)
+                """
+                )
                 price_result = await self._db.execute(price_query, {"ticker": ticker})
                 price_row = price_result.fetchone()
                 current_price = float(price_row[0]) if price_row else None
@@ -647,7 +655,8 @@ class FinancialCollectorService:
 
                 # 시장 데이터 포함시
                 if include_market_data:
-                    market_query = text("""
+                    market_query = text(
+                        """
                         SELECT
                             close,
                             (SELECT (close / LAG(close, 252) OVER (ORDER BY time) - 1)
@@ -666,7 +675,8 @@ class FinancialCollectorService:
                         WHERE ticker = :ticker AND interval = '1d'
                         ORDER BY time DESC
                         LIMIT 1
-                    """)
+                    """
+                    )
 
                     market_result = await self._db.execute(market_query, {"ticker": ticker})
                     market_row = market_result.fetchone()

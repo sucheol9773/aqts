@@ -661,7 +661,8 @@ class EconomicCollectorService:
             from db.database import async_session_factory
 
             async with async_session_factory() as session:
-                query = sa_text("""
+                query = sa_text(
+                    """
                     INSERT INTO economic_indicators (
                         indicator_name, value, date, source, country,
                         unit, change_pct, collected_at
@@ -674,7 +675,8 @@ class EconomicCollectorService:
                         value = EXCLUDED.value,
                         change_pct = EXCLUDED.change_pct,
                         collected_at = EXCLUDED.collected_at
-                """)
+                """
+                )
 
                 for ind in indicators:
                     await session.execute(

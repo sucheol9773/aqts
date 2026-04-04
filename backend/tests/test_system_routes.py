@@ -421,21 +421,25 @@ class TestSystemRoutes:
         from sqlalchemy import text
 
         # module=None인 경우
-        query_without_module = text("""
+        query_without_module = text(
+            """
             SELECT id, time, action_type, module, description, before_state, after_state, metadata
             FROM audit_logs
             ORDER BY time DESC
             LIMIT :limit
-        """)
+        """
+        )
 
         # module이 있는 경우
-        query_with_module = text("""
+        query_with_module = text(
+            """
             SELECT id, time, action_type, module, description, before_state, after_state, metadata
             FROM audit_logs
             WHERE module = :module
             ORDER BY time DESC
             LIMIT :limit
-        """)
+        """
+        )
 
         # Assert: 쿼리 구조 검증
         assert "WHERE module = :module" in str(query_with_module)
