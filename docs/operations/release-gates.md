@@ -1,7 +1,7 @@
 # 릴리스 승인 게이트 (Release Approval Gates)
 
 **문서 번호**: OPS-004
-**버전**: 1.6
+**버전**: 1.7
 **최종 수정**: 2026-04-05
 
 ## 1. 목적
@@ -25,7 +25,7 @@ Gate A (개발/QA) → Gate B (보안) → Gate C (리스크/운영) → Gate D 
 
 | 항목 | 기준 | 현재 상태 |
 |------|------|----------|
-| 단위 테스트 전체 통과 | pytest 0 failures | PASS (2,283건 통과) |
+| 단위 테스트 전체 통과 | pytest 0 failures | PASS (2,323건 통과) |
 | 코드 커버리지 | >= 80% | PASS (82%) |
 | 린트/포맷 검사 | ruff/black 위반 0건 | PASS (ruff 0.15.9 + black 26.3.1, 위반 0건) |
 | 의존성 취약점 | pip-audit critical 0건 | CONDITIONAL (3건 해소, 잔여: starlette 2건 FastAPI 업그레이드 필요, torch 4건 메이저 업그레이드 필요) |
@@ -70,9 +70,9 @@ Gate A (개발/QA) → Gate B (보안) → Gate C (리스크/운영) → Gate D 
 |------|------|----------|
 | 감사 로그 무결성 | 모든 주문/변경 기록 확인 | PASS (SHA-256 해시 체인, 변조 탐지, 57 tests) |
 | 거래 기록 보존 | 5년 보존 설정 확인 | PASS (8개 카테고리, 5년/10년 보존, 조기 삭제 방지) |
-| 리포트 템플릿 검증 | 규제 리포트 자동 생성 | Not Started |
+| 리포트 템플릿 검증 | 규제 리포트 자동 생성 | PASS (4개 섹션 생성기, 종합 등급 산출, 40 tests) |
 | 개인정보 점검 | 민감 데이터 암호화/마스킹 | PASS (7종 PII 탐지+마스킹, Settings 민감 필드 검증) |
-| 비밀키 관리 | 키 로테이션/볼트 사용 | 미구현 |
+| 비밀키 관리 | 키 로테이션/볼트 사용 | PASS (등록/로테이션/폐기/건강검사, 6종 시크릿 타입, 40 tests) |
 
 **승인자**: 컴플라이언스 담당
 
@@ -93,13 +93,14 @@ Gate A (개발/QA) → Gate B (보안) → Gate C (리스크/운영) → Gate D 
 Gate A: CONDITIONAL (의존성 취약점 잔여: starlette/torch 업그레이드 필요)
 Gate B: CONDITIONAL (의존성 CVE 잔여: starlette/torch)
 Gate C: PASS (알림 채널 검증 + 백업 알림 구현 완료)
-Gate D: CONDITIONAL (감사/보존/PII 통과, 잔여: 규제 리포트 + 비밀키 볼트)
+Gate D: PASS (감사/보존/PII/리포트/비밀키 전 항목 통과, 97 tests)
 Gate E: BLOCK (사전 요건 미충족)
 ```
 
-**결론: Gate C PASS. Gate A/B CONDITIONAL (starlette/torch CVE). Gate D CONDITIONAL (규제 리포트 + 비밀키 볼트 잔여). Gate E BLOCK.**
+**결론: Gate C PASS. Gate D PASS. Gate A/B CONDITIONAL (starlette/torch CVE). Gate E BLOCK.**
 
 ### 변경 이력
+- v1.7 (2026-04-05): Gate D 규제 리포트 PASS + 비밀키 관리 PASS (40 tests), 테스트 2,323건, Gate D → PASS
 - v1.6 (2026-04-05): Gate D 감사 로그 무결성 PASS + 거래 기록 보존 PASS + PII 마스킹 PASS (57 tests), 테스트 2,283건, Gate D → CONDITIONAL
 - v1.5 (2026-04-05): Gate C 알림 채널 검증 PASS + 백업 알림 구현 (NotificationRouter: Telegram→File→Console 폴백, ChannelHealth 추적, 46 tests), 테스트 2,226건, Gate C → PASS
 - v1.4 (2026-04-05): 파라미터 민감도 분석 모듈 PASS (OAT/Grid 스윕, 탄성치, 토네이도 차트, 40 tests), 테스트 2,180건

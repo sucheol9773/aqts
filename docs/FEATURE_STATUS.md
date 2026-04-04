@@ -10,12 +10,12 @@
 
 | Status | Count |
 |--------|-------|
-| Not Started | 2 |
+| Not Started | 1 |
 | Implemented | 6 |
-| Tested | 104 |
+| Tested | 107 |
 | Production-ready | 0 |
 | Blocked | 0 |
-| **TOTAL** | **112** |
+| **TOTAL** | **114** |
 
 ---
 
@@ -144,6 +144,8 @@
 | audit_integrity | 감사 로그 무결성 검증 (SHA-256 해시 체인) | Tested | core/compliance/audit_integrity.py | test_gate_d_compliance.py (57) | 변조 탐지, 조회, 통계 |
 | retention_policy | 거래 기록 보존 정책 (5년/10년 보존) | Tested | core/compliance/retention_policy.py | test_gate_d_compliance.py (57) | 8개 카테고리, 조기 삭제 방지 |
 | pii_masking | 개인정보 마스킹 검증 (7종 PII 탐지) | Tested | core/compliance/pii_masking.py | test_gate_d_compliance.py (57) | 주민번호/전화/이메일/계좌/카드/IP/API키 |
+| compliance_report | 규제 준수 리포트 자동 생성 | Tested | core/compliance/compliance_report.py | test_gate_d_report_secret.py (40) | 4개 섹션 생성기, 종합 등급 산출 |
+| secret_manager | 비밀키 관리 (로테이션/볼트) | Tested | core/compliance/secret_manager.py | test_gate_d_report_secret.py (40) | 등록/로테이션/폐기/건강검사, 6종 시크릿 타입 |
 
 ---
 
@@ -208,7 +210,6 @@
 | audit | 5 Collectors (Input/Feature/Signal/Risk/Gate) | Tested | core/audit/collectors.py | test_audit_trail.py (37) | 파이프라인 단계별 수집기 |
 | audit | REST API Endpoints (4개) | Tested | api/routes/audit.py | test_audit_trail.py (37) | 감사 기록 조회/필터 API |
 | audit | Audit Trail Visualization | Not Started | (pending) | N/A | 감사 추적 시각화 대시보드 |
-| audit | Regulatory Compliance Reports | Not Started | (pending) | N/A | 규제 준수 리포트 자동 생성 |
 
 ### Stage 5: Capital Protection ✅
 
@@ -262,12 +263,11 @@
 
 ---
 
-## Remaining Not Started Items (2)
+## Remaining Not Started Items (1)
 
 | Item | Feature | Notes |
 |------|---------|-------|
 | audit_visualization | Audit Trail Visualization | 감사 추적 시각화 대시보드 |
-| compliance_report | Regulatory Compliance Reports | 규제 준수 리포트 자동 생성 |
 
 ---
 
@@ -287,7 +287,7 @@
 ## Test Coverage Summary
 
 ```
-Total Tests: 2,283 tests (413 smoke-marked) — ALL PASS, Coverage 82%
+Total Tests: 2,323 tests (413 smoke-marked) — ALL PASS, Coverage 82%
 ├── Core Features: 40+ modules with passing tests
 ├── Data Contracts: 154 tests (9 contracts) [smoke]
 ├── Pipeline Gates: 59 tests (12 components)
@@ -316,11 +316,12 @@ Total Tests: 2,283 tests (413 smoke-marked) — ALL PASS, Coverage 82%
 ├── Parameter Sensitivity: 40 tests [NEW]
 ├── Gate C Notification: 46 tests [NEW]
 ├── Gate D Compliance: 57 tests [NEW]
+├── Gate D Report+Secret: 40 tests [NEW]
 ├── Integration Tests: 30 tests (E2E scenarios)
 ├── API Tests: 73 tests (all endpoints)
 ├── Smoke Tests: 413 tests (< 13초, CI 필수)
 └── Remaining Uncovered:
-    └── 2 Not Started items (visualization, compliance)
+    └── 1 Not Started item (visualization)
 ```
 
 ---
