@@ -229,10 +229,76 @@ avg_calmar=oos_run.avg_calmar,  # 윈도우별 calmar_ratio의 평균
 - `core/oos/walk_forward.py`: avg_calmar 계산 추가 + Gate 호출 수정
 - `core/oos/models.py`: OOSRun에 avg_calmar 필드 추가
 
-## 11. 다음 단계
+### v4c 버그 수정 후 재실행 결과 — ENSEMBLE PASS 달성
 
-1. v4 MDD 방어 적용 후 OOS 재실행 → MDD 억제 효과 확인
-2. MEAN_REVERSION MDD -45.8% FAIL 해결 여부 확인
-3. RISK_PARITY Sharpe 분산(6.04) 원인 분석 및 개선
-4. 앙상블 가중치 최적화 (부진 전략 가중치 동적 축소)
-5. 실전 파이프라인에 동적 앙상블 통합
+**KR OOS (전종목 88개)**
+
+| 전략 | 양수 윈도우 | 평균 Sharpe | Worst MDD | Sharpe 분산 | Gate-A | Gate-B | Gate-C | 최종 Gate |
+|---|---|---|---|---|---|---|---|---|
+| **ENSEMBLE** | 58.3% | **0.59** | -39.6% | **3.82** | PASS | **PASS** | **PASS** | **PASS** ✅ |
+| MEAN_REVERSION | 56.2% | 0.50 | -32.1% | 4.78 | PASS | PASS | PASS | **PASS** ✅ |
+| TREND_FOLLOWING | 56.2% | 0.16 | -24.5% | 5.26 | PASS | REVIEW | REVIEW | REVIEW |
+| RISK_PARITY | 59.4% | -0.08 | -26.6% | 7.77 | PASS | REVIEW | REVIEW | REVIEW |
+
+**KR 백테스트 (전체 기간 2000-01 ~ 2026-04)**
+
+| 전략 | 수익률 | CAGR | MDD | Sharpe | 거래 |
+|---|---|---|---|---|---|
+| RISK_PARITY | +1,576% | 11.3% | -35.5% | 0.42 | 370 |
+| ENSEMBLE | +1,402% | 10.9% | -50.3% | 0.39 | 892 |
+| MEAN_REVERSION | +425% | 6.5% | -56.3% | 0.25 | 7,494 |
+| TREND_FOLLOWING | +188% | 4.1% | -47.2% | 0.11 | 11,826 |
+
+avg_calmar 버그 수정으로 Gate-B가 올바른 calmar_ratio 평균값을 받게 되면서
+ENSEMBLE과 MEAN_REVERSION이 3단계 Gate를 모두 통과.
+
+TREND_FOLLOWING은 avg_sharpe(0.16) < min_sharpe(0.2)로 Gate-B REVIEW,
+Sharpe 분산(5.26) > max_variance(5.0)으로 Gate-C REVIEW.
+
+RISK_PARITY는 avg_sharpe(-0.08) < 0으로 Gate-B REVIEW,
+Sharpe 분산(7.77) > 5.0으로 Gate-C REVIEW.
+
+**US OOS (전종목) — 4개 전략 전부 PASS**
+
+| 전략 | 양수 윈도우 | 평균 Sharpe | Worst MDD | Sharpe 분산 | Gate |
+|---|---|---|---|---|---|
+| **ENSEMBLE** | **74.0%** | **0.87** | -27.0% | **2.76** | **PASS** ✅ |
+| RISK_PARITY | 69.8% | 0.81 | -13.2% | 3.43 | **PASS** ✅ |
+| TREND_FOLLOWING | 65.6% | 0.40 | -30.9% | 3.74 | **PASS** ✅ |
+| MEAN_REVERSION | 60.4% | 0.56 | -35.7% | 3.26 | **PASS** ✅ |
+
+**US 백테스트 (전체 기간 2000-01 ~ 2026-04)**
+
+| 전략 | 수익률 | CAGR | MDD | Sharpe | 거래 |
+|---|---|---|---|---|---|
+| ENSEMBLE | +1,152% | 10.1% | -31.1% | 0.48 | 317 |
+| RISK_PARITY | +719% | 8.3% | -31.9% | 0.39 | 304 |
+| TREND_FOLLOWING | +133% | 3.3% | -46.3% | 0.04 | 4,432 |
+| MEAN_REVERSION | -28% | -1.2% | -55.7% | -0.15 | 3,115 |
+
+US 시장에서는 모든 전략이 Gate를 통과. ENSEMBLE이 OOS Sharpe(0.87),
+양수 윈도우(74%), Sharpe 분산(2.76) 모든 지표에서 1위.
+KR에서는 TREND_FOLLOWING과 RISK_PARITY가 REVIEW이지만
+핵심 전략인 ENSEMBLE이 PASS이므로 실전 배포 기준 충족.
+
+## 11. v4c 최종 요약
+
+| 시장 | ENSEMBLE Gate | ENSEMBLE OOS Sharpe | 양수 윈도우 | Worst MDD |
+|---|---|---|---|---|
+| KR | **PASS** ✅ | 0.59 | 58.3% | -39.6% |
+| US | **PASS** ✅ | 0.87 | 74.0% | -27.0% |
+
+v1(고정 가중치) → v4c(동적 레짐+성과보정+MDD방어+버그수정) 진행 경과:
+- OOS 평균 Sharpe: 0.14 → 0.59 (KR), 0.87 (US) — **+321~521%**
+- Sharpe 분산: 6.06 → 3.82 (KR), 2.76 (US) — **-37~54%**
+- Gate 판정: FAIL → **PASS**
+
+## 12. 다음 단계
+
+1. ~~v4 MDD 방어 적용 후 OOS 재실행~~ ✅ 완료
+2. ~~MEAN_REVERSION MDD FAIL 해결~~ ✅ PASS 달성
+3. ~~US 시장 v4c 결과 확인~~ ✅ 전 전략 PASS
+4. KR TREND_FOLLOWING Sharpe 개선 (현재 0.16, 목표 > 0.2)
+5. KR RISK_PARITY Sharpe 분산(7.77) 원인 분석 및 개선
+6. 앙상블 가중치 최적화 (부진 전략 가중치 동적 축소)
+7. 실전 파이프라인에 동적 앙상블 통합
