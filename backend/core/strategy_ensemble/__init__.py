@@ -9,6 +9,11 @@ Quant Engine + AI Analyzer 시그널을 통합하여
 - regime: 시장 레짐 감지 + 동적 임계값 + 신뢰도 캘리브레이션
 """
 
+from core.strategy_ensemble.dynamic_ensemble import (
+    DynamicEnsembleResult,
+    DynamicEnsembleService,
+    DynamicRegime,
+)
 from core.strategy_ensemble.engine import (
     EnsembleSignal,
     StrategyEnsembleEngine,
@@ -22,8 +27,14 @@ from core.strategy_ensemble.regime import (
     RegimeInfo,
     RegimeWeightRouter,
 )
+from core.strategy_ensemble.runner import DynamicEnsembleRunner, RunnerResult
 
 __all__ = [
+    "DynamicEnsembleService",
+    "DynamicEnsembleResult",
+    "DynamicRegime",
+    "DynamicEnsembleRunner",
+    "RunnerResult",
     "StrategyEnsembleEngine",
     "StrategySignalInput",
     "EnsembleSignal",

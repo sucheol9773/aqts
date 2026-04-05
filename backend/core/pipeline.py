@@ -21,6 +21,9 @@ BLOCK 시 FallbackHandler가 안전한 상태 전이를 적용합니다.
 from dataclasses import dataclass, field
 from typing import Optional
 
+import pandas as pd
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from config.constants import RiskProfile, StrategyType
 from config.logging import logger
 from core.ai_analyzer.opinion import OpinionGenerator
@@ -42,6 +45,7 @@ from core.strategy_ensemble.engine import (
     StrategyEnsembleEngine,
     StrategySignalInput,
 )
+from core.strategy_ensemble.runner import DynamicEnsembleRunner, RunnerResult
 
 
 @dataclass
@@ -49,6 +53,7 @@ class PipelineResult:
     """파이프라인 실행 결과 (Gate 평가 포함).
 
     ensemble_signal: 앙상블 결과 (BLOCK 시 None)
+    dynamic_ensemble: 동적 앙상블 결과 (DynamicEnsembleResult, 사용 시)
     gate_results: 실행된 Gate 판정 기록 목록
     final_state: 파이프라인 최종 상태
     blocked: Gate 차단으로 중단됐는지 여부
@@ -56,6 +61,7 @@ class PipelineResult:
     """
 
     ensemble_signal: Optional[EnsembleSignal] = None
+    dynamic_ensemble: Optional[RunnerResult] = None
     gate_results: list[GateResult] = field(default_factory=list)
     final_state: PipelineState = PipelineState.IDLE
     blocked: bool = False
@@ -401,6 +407,137 @@ class InvestmentDecisionPipeline:
             strategy_performances,
             method="sharpe",
         )
+
+    # ══════════════════════════════════════
+    # 동적 앙상블 (Dynamic Ensemble)
+    # ══════════════════════════════════════
+    async def run_dynamic_ensemble(
+        self,
+        ticker: str,
+        country: str = "KR",
+        ohlcv: Optional[pd.DataFrame] = None,
+        db_session: Optional[AsyncSession] = None,
+        lookback_days: int = 300,
+    ) -> PipelineResult:
+        """
+        동적 앙상블 시그널 생성 (백테스트 검증 완료 알고리즘)
+
+        ADX + 모멘텀 + 변동성 → 레짐 판정 → 전략별 가중치 동적 할당
+        → 롤링 성과 softmax 보정 → 변동성 타겟팅
+
+        OHLCV를 직접 전달하거나 DB에서 조회할 수 있습니다.
+
+        Args:
+            ticker: 종목코드
+            country: 국가 코드 ("KR" 또는 "US")
+            ohlcv: OHLCV DataFrame (직접 전달 시). None이면 DB 조회.
+            db_session: DB 세션 (ohlcv가 None일 때 필수)
+            lookback_days: DB 조회 시 과거 일수
+
+        Returns:
+            PipelineResult (dynamic_ensemble 필드에 결과 포함)
+        """
+        gate_results: list[GateResult] = []
+
+        self._sm.reset("동적 앙상블 시작")
+        self._sm.transition(PipelineState.ANALYZING, f"종목 {ticker} 동적 앙상블 분석")
+
+        logger.info(f"[DynamicEnsemble] Pipeline started: {ticker} ({country})")
+
+        try:
+            runner = DynamicEnsembleRunner(
+                db_session=db_session,
+            )
+
+            if ohlcv is not None:
+                result = runner.run_with_ohlcv(ohlcv, ticker, country)
+            else:
+                result = await runner.run(ticker, country, lookback_days)
+
+            # Gate: EnsembleGate (앙상블 결과 검증)
+            block = await self._evaluate_gate(
+                "EnsembleGate",
+                result.weights,
+                gate_results,
+            )
+            if block:
+                return PipelineResult(
+                    gate_results=gate_results,
+                    final_state=self._sm.state,
+                    blocked=True,
+                    blocked_by="EnsembleGate",
+                )
+
+            self._sm.transition(
+                PipelineState.COMPLETED,
+                f"{ticker} 동적 앙상블 완료: " f"regime={result.regime.value}, " f"signal={result.ensemble_signal:.4f}",
+            )
+
+            logger.info(
+                f"[DynamicEnsemble] Pipeline complete: {ticker}, "
+                f"regime={result.regime.value}, "
+                f"signal={result.ensemble_signal:.4f}, "
+                f"weights={result.weights}"
+            )
+
+            return PipelineResult(
+                dynamic_ensemble=result,
+                gate_results=gate_results,
+                final_state=PipelineState.COMPLETED,
+            )
+
+        except Exception as e:
+            logger.error(f"[DynamicEnsemble] Pipeline failed for {ticker}: {e}")
+            self._sm.transition(PipelineState.ERROR, f"{ticker} 동적 앙상블 실패: {e}")
+            return PipelineResult(
+                gate_results=gate_results,
+                final_state=PipelineState.ERROR,
+                blocked=True,
+                blocked_by="DynamicEnsemble:Error",
+            )
+
+    async def run_dynamic_ensemble_batch(
+        self,
+        tickers: list[str],
+        country: str = "KR",
+        db_session: Optional[AsyncSession] = None,
+        lookback_days: int = 300,
+    ) -> dict[str, PipelineResult]:
+        """
+        복수 종목 동적 앙상블 배치 실행
+
+        Args:
+            tickers: 종목코드 리스트
+            country: 국가 코드
+            db_session: DB 세션
+            lookback_days: 조회 과거 일수
+
+        Returns:
+            {ticker: PipelineResult}
+        """
+        results: dict[str, PipelineResult] = {}
+
+        for ticker in tickers:
+            try:
+                result = await self.run_dynamic_ensemble(
+                    ticker=ticker,
+                    country=country,
+                    db_session=db_session,
+                    lookback_days=lookback_days,
+                )
+                results[ticker] = result
+            except Exception as e:
+                logger.error(f"[DynamicEnsemble] Batch failed for {ticker}: {e}")
+                continue
+
+        succeeded = sum(1 for r in results.values() if not r.blocked)
+        blocked = sum(1 for r in results.values() if r.blocked)
+        logger.info(
+            f"[DynamicEnsemble] Batch complete: {succeeded} succeeded, "
+            f"{blocked} blocked/errors, "
+            f"{len(tickers) - len(results)} skipped"
+        )
+        return results
 
     # ══════════════════════════════════════
     # 내부 유틸리티
