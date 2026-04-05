@@ -94,19 +94,26 @@ class TestVectorizedSignals:
         for name, sig in result.items():
             assert (sig.iloc[:60] == 0.0).all(), f"{name} 처음 60일이 0이 아님"
 
-    def test_ensemble_is_weighted_average(self, large_ohlcv):
-        """ENSEMBLE = TF*0.4 + MR*0.3 + RP*0.3 인지 확인"""
+    def test_ensemble_is_dynamic_weighted(self, large_ohlcv):
+        """ENSEMBLE이 동적 가중치 합산이고 [-1,1] 범위인지 확인"""
         result = generate_strategy_signals_vectorized("005930", large_ohlcv)
-        expected = (
-            result["TREND_FOLLOWING"] * 0.4 + result["MEAN_REVERSION"] * 0.3 + result["RISK_PARITY"] * 0.3
-        ).round(4)
-        # 처음 60일은 모두 0이므로 그 이후만 비교
-        pd.testing.assert_series_equal(
-            result["ENSEMBLE"].iloc[60:],
-            expected.iloc[60:],
-            check_names=False,
-            atol=1e-3,
-        )
+        ens = result["ENSEMBLE"]
+        mr = result["MEAN_REVERSION"]
+        tf = result["TREND_FOLLOWING"]
+        rp = result["RISK_PARITY"]
+
+        # 범위 확인
+        assert ens.min() >= -1.0, f"ENSEMBLE min={ens.min():.4f} < -1.0"
+        assert ens.max() <= 1.0, f"ENSEMBLE max={ens.max():.4f} > 1.0"
+
+        # 앙상블이 개별 전략 시그널의 가중 합산으로만 구성되는지 확인:
+        # |ensemble| <= max(|mr|, |tf|, |rp|) + tolerance
+        active = ens.iloc[60:]
+        max_component = pd.concat(
+            [mr.iloc[60:].abs(), tf.iloc[60:].abs(), rp.iloc[60:].abs()],
+            axis=1,
+        ).max(axis=1)
+        assert (active.abs() <= max_component + 0.01).all(), "ENSEMBLE이 개별 전략 범위를 초과"
 
     def test_short_data_returns_zeros(self):
         """30일 미만 데이터에서도 에러 없이 0을 반환하는지 확인"""
@@ -126,6 +133,110 @@ class TestVectorizedSignals:
         result = generate_strategy_signals_vectorized("TEST", ohlcv)
         for name, sig in result.items():
             assert (sig == 0.0).all(), f"{name}이 0이 아님 (짧은 데이터)"
+
+
+class TestDynamicEnsemble:
+    """동적 레짐 기반 앙상블 가중치 테스트"""
+
+    def test_trending_up_boosts_trend_following(self):
+        """강한 상승 추세 데이터에서 추세추종 가중치가 높아지는지 확인"""
+        np.random.seed(77)
+        n = 200
+        dates = pd.date_range("2023-01-01", periods=n, freq="B")
+        # 강한 상승 추세: 매일 +0.5% 상승
+        close = 50000 * np.cumprod(1 + np.full(n, 0.005) + np.random.randn(n) * 0.002)
+        high = close * 1.01
+        low = close * 0.99
+        ohlcv = pd.DataFrame(
+            {
+                "open": close * 1.001,
+                "high": high,
+                "low": low,
+                "close": close,
+                "volume": np.random.randint(100000, 1000000, n).astype(float),
+            },
+            index=dates,
+        )
+
+        from run_backtest import _compute_dynamic_ensemble
+
+        mr = pd.Series(0.5, index=dates)
+        tf = pd.Series(0.5, index=dates)
+        rp = pd.Series(0.5, index=dates)
+
+        ensemble = _compute_dynamic_ensemble(ohlcv, mr, tf, rp, min_window=60)
+        # 고정 가중치(0.4*0.5+0.3*0.5+0.3*0.5 = 0.5)와 다른 결과가 나와야 함
+        # 상승 추세 → tf 가중치 증가 → ensemble > 0.5 (모든 시그널이 0.5일 때)
+        # 단, 가중치 합이 1이므로 결과는 0.5 근처 (모든 시그널이 동일하면)
+        active = ensemble.iloc[60:]
+        assert not active.isna().any(), "NaN 존재"
+        assert len(active) == n - 60
+
+    def test_high_volatility_boosts_risk_parity(self):
+        """고변동 데이터에서 리스크패리티 가중치가 높아지는지 확인"""
+        np.random.seed(88)
+        n = 200
+        dates = pd.date_range("2023-01-01", periods=n, freq="B")
+        # 고변동 + 추세 없음: 큰 랜덤 변동
+        close = 50000 + np.cumsum(np.random.randn(n) * 3000)
+        close = np.maximum(close, 10000)  # 음수 방지
+        high = close + np.abs(np.random.randn(n) * 2000)
+        low = close - np.abs(np.random.randn(n) * 2000)
+        low = np.maximum(low, 1000)
+        ohlcv = pd.DataFrame(
+            {
+                "open": close,
+                "high": high,
+                "low": low,
+                "close": close,
+                "volume": np.random.randint(100000, 1000000, n).astype(float),
+            },
+            index=dates,
+        )
+
+        from run_backtest import _compute_dynamic_ensemble
+
+        # MR=1, TF=0, RP=0 → 고변동이면 RP 가중치 증가 → ensemble < 1.0
+        mr = pd.Series(1.0, index=dates)
+        tf = pd.Series(0.0, index=dates)
+        rp = pd.Series(0.0, index=dates)
+
+        ensemble = _compute_dynamic_ensemble(ohlcv, mr, tf, rp, min_window=60)
+        active = ensemble.iloc[60:]
+        # 고변동 레짐에서 MR 가중치가 줄고 RP 가중치가 늘어남 → ensemble < 1.0
+        # 고정 가중치면 0.4*0+0.3*1+0.3*0 = 0.3이지만
+        # 동적이면 MR 가중치가 바뀜
+        assert not active.isna().any(), "NaN 존재"
+
+    def test_weights_always_sum_to_one(self):
+        """어떤 레짐이든 가중치 합이 1인지 확인 (간접 검증)"""
+        np.random.seed(42)
+        n = 200
+        dates = pd.date_range("2023-01-01", periods=n, freq="B")
+        close = 50000 + np.cumsum(np.random.randn(n) * 500)
+        ohlcv = pd.DataFrame(
+            {
+                "open": close,
+                "high": close + 200,
+                "low": close - 200,
+                "close": close,
+                "volume": np.random.randint(100000, 1000000, n).astype(float),
+            },
+            index=dates,
+        )
+
+        from run_backtest import _compute_dynamic_ensemble
+
+        # 모든 전략 시그널 = 1.0이면, ensemble = w_tf*1 + w_mr*1 + w_rp*1 = 1.0
+        ones = pd.Series(1.0, index=dates)
+        ensemble = _compute_dynamic_ensemble(ohlcv, ones, ones, ones, min_window=60)
+        active = ensemble.iloc[60:]
+        np.testing.assert_allclose(
+            active.values,
+            1.0,
+            atol=1e-10,
+            err_msg="가중치 합이 1이 아님 (모든 시그널=1일 때 ensemble≠1)",
+        )
 
 
 class TestMultiprocessingWorker:

@@ -217,8 +217,8 @@ def generate_strategy_signals_vectorized(ticker: str, ohlcv: pd.DataFrame) -> di
 
     rp_signal = (vol_trend * 0.6 + vol_level * 0.4).clip(-1.0, 1.0)
 
-    # ── ENSEMBLE: 가중 평균 ──
-    ensemble_signal = tf_signal * 0.4 + mr_signal * 0.3 + rp_signal * 0.3
+    # ── ENSEMBLE: 동적 레짐 기반 가중치 ──
+    ensemble_signal = _compute_dynamic_ensemble(ohlcv, mr_signal, tf_signal, rp_signal, min_window)
 
     # 최소 윈도우 이전은 0으로
     for sig in [mr_signal, tf_signal, rp_signal, ensemble_signal]:
@@ -236,6 +236,105 @@ def generate_strategy_signals_vectorized(ticker: str, ohlcv: pd.DataFrame) -> di
         "RISK_PARITY": rp_signal,
         "ENSEMBLE": ensemble_signal,
     }
+
+
+def _compute_dynamic_ensemble(
+    ohlcv: pd.DataFrame,
+    mr_signal: pd.Series,
+    tf_signal: pd.Series,
+    rp_signal: pd.Series,
+    min_window: int = 60,
+) -> pd.Series:
+    """
+    레짐 기반 동적 앙상블 가중치 계산 (벡터화)
+
+    매일 최근 데이터로 시장 레짐(추세/횡보/고변동)을 판단하고,
+    레짐에 따라 전략 가중치를 자동 조절합니다.
+
+    레짐 판정 기준:
+        - ADX > 25 + 양(+) 모멘텀 → TRENDING_UP   (추세추종 강화)
+        - ADX > 25 + 음(-) 모멘텀 → TRENDING_DOWN  (리스크패리티 강화)
+        - vol_pct > 0.75 + ADX < 25 → HIGH_VOL     (리스크패리티 대폭 강화)
+        - 그 외 → SIDEWAYS                          (평균회귀 강화)
+
+    Returns:
+        pd.Series: 동적 가중 앙상블 시그널
+    """
+    import numpy as np
+
+    close = ohlcv["close"].astype(float)
+    high = ohlcv["high"].astype(float)
+    low = ohlcv["low"].astype(float)
+    dates = ohlcv.index
+
+    # ── 1) 롤링 ADX 계산 (벡터화) ──
+    prev_high = high.shift(1)
+    prev_low = low.shift(1)
+    prev_close = close.shift(1)
+
+    tr1 = high - low
+    tr2 = (high - prev_close).abs()
+    tr3 = (low - prev_close).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+    plus_dm = high - prev_high
+    minus_dm = prev_low - low
+    plus_dm = plus_dm.where((plus_dm > minus_dm) & (plus_dm > 0), 0.0)
+    minus_dm = minus_dm.where((minus_dm > plus_dm) & (minus_dm > 0), 0.0)
+
+    alpha = 1.0 / 14
+    atr = tr.ewm(alpha=alpha, min_periods=14, adjust=False).mean()
+    safe_atr = atr.replace(0, np.nan)
+    plus_di = 100.0 * plus_dm.ewm(alpha=alpha, min_periods=14, adjust=False).mean() / safe_atr
+    minus_di = 100.0 * minus_dm.ewm(alpha=alpha, min_periods=14, adjust=False).mean() / safe_atr
+
+    di_sum = (plus_di + minus_di).replace(0, np.nan)
+    dx = 100.0 * (plus_di - minus_di).abs() / di_sum
+    adx = dx.ewm(alpha=alpha, min_periods=14, adjust=False).mean().fillna(0.0)
+
+    # ── 2) 롤링 변동성 백분위 ──
+    returns = close.pct_change()
+    rolling_vol = returns.rolling(20).std() * np.sqrt(252)
+    # 확장 윈도우 백분위: 현재 vol이 과거 대비 몇 % 위치인지
+    vol_percentile = rolling_vol.expanding(min_periods=60).rank(pct=True).fillna(0.5)
+
+    # ── 3) 모멘텀 (20일 수익률) ──
+    momentum = close.pct_change(20).fillna(0.0)
+
+    # ── 4) 레짐별 가중치 매핑 (벡터화) ──
+    # 기본 가중치: TF=0.4, MR=0.3, RP=0.3
+    w_tf = pd.Series(0.40, index=dates)
+    w_mr = pd.Series(0.30, index=dates)
+    w_rp = pd.Series(0.30, index=dates)
+
+    # TRENDING_UP: ADX > 25, 모멘텀 > 0
+    trend_up = (adx > 25) & (momentum > 0)
+    w_tf = w_tf.where(~trend_up, 0.55)  # 추세추종 강화
+    w_mr = w_mr.where(~trend_up, 0.15)  # 평균회귀 약화
+    w_rp = w_rp.where(~trend_up, 0.30)
+
+    # TRENDING_DOWN: ADX > 25, 모멘텀 < 0
+    trend_down = (adx > 25) & (momentum < 0) & (~trend_up)
+    w_tf = w_tf.where(~trend_down, 0.40)
+    w_mr = w_mr.where(~trend_down, 0.15)
+    w_rp = w_rp.where(~trend_down, 0.45)  # 리스크 관리 강화
+
+    # HIGH_VOLATILITY: vol_pct > 0.75, ADX < 25
+    high_vol = (vol_percentile > 0.75) & (adx <= 25) & (~trend_up) & (~trend_down)
+    w_tf = w_tf.where(~high_vol, 0.20)  # 추세추종 약화
+    w_mr = w_mr.where(~high_vol, 0.20)
+    w_rp = w_rp.where(~high_vol, 0.60)  # 리스크패리티 대폭 강화
+
+    # SIDEWAYS: 나머지 (기본 가중치 유지하되 평균회귀 약간 강화)
+    sideways = (~trend_up) & (~trend_down) & (~high_vol)
+    w_tf = w_tf.where(~sideways, 0.25)
+    w_mr = w_mr.where(~sideways, 0.45)  # 횡보장 = 평균회귀
+    w_rp = w_rp.where(~sideways, 0.30)
+
+    # ── 5) 동적 가중 합산 ──
+    ensemble = w_tf * tf_signal + w_mr * mr_signal + w_rp * rp_signal
+
+    return ensemble
 
 
 def _generate_signals_worker(args: tuple) -> tuple[str, dict[str, pd.Series]]:
