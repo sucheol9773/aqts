@@ -298,7 +298,8 @@ class SignalGenerator:
                 reason="Insufficient returns",
             )
 
-        # 60일 연환산 변동성
+        # 단기(20일) / 장기(60일) 연환산 변동성
+        vol_20d = returns.tail(20).std() * np.sqrt(252)
         vol_60d = returns.tail(60).std() * np.sqrt(252)
 
         if vol_60d < 1e-10:
@@ -306,18 +307,23 @@ class SignalGenerator:
                 ticker=ticker, strategy=StrategyType.RISK_PARITY, value=0.0, confidence=0.0, reason="Zero volatility"
             )
 
-        # 목표 변동성 (예: 15%) 대비 역비례 포지션
-        target_vol = 0.15
-        vol_ratio = target_vol / vol_60d
+        # 변동성 추세: 단기 변동성이 장기 대비 감소 → 매수, 증가 → 매도
+        vol_trend = (vol_60d - vol_20d) / vol_60d
 
-        # 시그널: 변동성이 낮으면 양수(비중 확대), 높으면 음수(비중 축소)
-        signal_value = np.clip(vol_ratio - 1.0, -1.0, 1.0)
+        # 절대 변동성 수준: 낮을수록 매수 (역변동성 가중)
+        # 대부분 주식의 연환산 변동성이 15~50% 범위이므로
+        # 중앙값 30%를 기준으로 스케일링
+        vol_median = 0.30
+        vol_level = (vol_median - vol_60d) / vol_median
+
+        # 복합 시그널: 변동성 추세(60%) + 절대 수준(40%)
+        signal_value = np.clip(vol_trend * 0.6 + vol_level * 0.4, -1.0, 1.0)
 
         # 신뢰도: 충분한 데이터 + 안정적 변동성
-        vol_stability = 1.0 - min(returns.tail(20).std() / returns.tail(60).std(), 2.0) / 2.0
+        vol_stability = 1.0 - min(vol_20d / vol_60d, 2.0) / 2.0
         confidence = max(vol_stability, 0.1)
 
-        reason = f"Vol_60d={vol_60d:.4f}, VolRatio={vol_ratio:.2f}"
+        reason = f"Vol_20d={vol_20d:.4f}, Vol_60d={vol_60d:.4f}, Trend={vol_trend:.3f}, Level={vol_level:.3f}"
 
         return Signal(
             ticker=ticker,
