@@ -76,10 +76,40 @@ class DynamicEnsembleService:
 
     백테스트와 동일한 알고리즘으로 라이브 시그널을 생성.
     OHLCV + 3개 전략 시그널을 입력받아 레짐 기반 동적 가중 앙상블을 반환.
+
+    파라미터 로드 순서 (우선순위 높음):
+      1. 함수 파라미터 (params)
+      2. YAML 설정 (ensemble_config.yaml)
+      3. 코드 기본값 (DEFAULT_PARAMS)
     """
 
     def __init__(self, params: dict | None = None):
-        self._params = {**DEFAULT_PARAMS, **(params or {})}
+        from config.ensemble_config_loader import load_ensemble_config
+
+        # 기본값으로 시작
+        base = {**DEFAULT_PARAMS}
+
+        # YAML 설정으로 오버라이드
+        yaml_config = load_ensemble_config()
+        if yaml_config.get("ensemble"):
+            base.update(yaml_config["ensemble"])
+
+        # 함수 파라미터로 최종 오버라이드
+        if params:
+            base.update(params)
+
+        self._params = base
+
+        # 레짐 가중치: YAML에서 로드하거나 기본값 사용
+        self._regime_weights = dict(REGIME_WEIGHTS)
+        if yaml_config.get("regime_weights"):
+            for regime_str, weights in yaml_config["regime_weights"].items():
+                try:
+                    regime = DynamicRegime(regime_str)
+                    self._regime_weights[regime] = weights
+                except ValueError:
+                    # 유효하지 않은 레짐 이름은 무시
+                    pass
 
     def compute(
         self,
@@ -119,7 +149,13 @@ class DynamicEnsembleService:
 
         # ── 4) 레짐별 가중치 매핑 ──
         w_tf, w_mr, w_rp, regime_series = self._assign_regime_weights(
-            adx, momentum, vol_percentile, dates, p["adx_threshold"], p["vol_pct_threshold"]
+            adx,
+            momentum,
+            vol_percentile,
+            dates,
+            p["adx_threshold"],
+            p["vol_pct_threshold"],
+            self._regime_weights,
         )
 
         # ── 5) 롤링 성과 기반 softmax 보정 ──
@@ -204,40 +240,47 @@ class DynamicEnsembleService:
         dates: pd.DatetimeIndex,
         adx_threshold: float,
         vol_pct_threshold: float,
+        regime_weights: dict[DynamicRegime, dict[str, float]] | None = None,
     ) -> tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
-        """레짐 판정 및 가중치 할당"""
-        # 기본 가중치
-        w_tf = pd.Series(0.40, index=dates)
-        w_mr = pd.Series(0.30, index=dates)
-        w_rp = pd.Series(0.30, index=dates)
+        """
+        레짐 판정 및 가중치 할당
+
+        Args:
+            regime_weights: {regime: {TF, MR, RP}} 맵핑 (None이면 기본값 사용)
+        """
+        if regime_weights is None:
+            regime_weights = REGIME_WEIGHTS
+
+        # 기본 가중치 (SIDEWAYS)
+        sideways_weights = regime_weights.get(DynamicRegime.SIDEWAYS, {"TF": 0.25, "MR": 0.45, "RP": 0.30})
+        w_tf = pd.Series(sideways_weights["TF"], index=dates)
+        w_mr = pd.Series(sideways_weights["MR"], index=dates)
+        w_rp = pd.Series(sideways_weights["RP"], index=dates)
         regime_series = pd.Series(DynamicRegime.SIDEWAYS, index=dates)
 
         # TRENDING_UP
         trend_up = (adx > adx_threshold) & (momentum > 0)
-        w_tf = w_tf.where(~trend_up, 0.55)
-        w_mr = w_mr.where(~trend_up, 0.15)
-        w_rp = w_rp.where(~trend_up, 0.30)
+        trending_up_weights = regime_weights.get(DynamicRegime.TRENDING_UP, {"TF": 0.55, "MR": 0.15, "RP": 0.30})
+        w_tf = w_tf.where(~trend_up, trending_up_weights["TF"])
+        w_mr = w_mr.where(~trend_up, trending_up_weights["MR"])
+        w_rp = w_rp.where(~trend_up, trending_up_weights["RP"])
         regime_series = regime_series.where(~trend_up, DynamicRegime.TRENDING_UP)
 
         # TRENDING_DOWN
         trend_down = (adx > adx_threshold) & (momentum < 0) & (~trend_up)
-        w_tf = w_tf.where(~trend_down, 0.40)
-        w_mr = w_mr.where(~trend_down, 0.15)
-        w_rp = w_rp.where(~trend_down, 0.45)
+        trending_down_weights = regime_weights.get(DynamicRegime.TRENDING_DOWN, {"TF": 0.40, "MR": 0.15, "RP": 0.45})
+        w_tf = w_tf.where(~trend_down, trending_down_weights["TF"])
+        w_mr = w_mr.where(~trend_down, trending_down_weights["MR"])
+        w_rp = w_rp.where(~trend_down, trending_down_weights["RP"])
         regime_series = regime_series.where(~trend_down, DynamicRegime.TRENDING_DOWN)
 
         # HIGH_VOLATILITY
         high_vol = (vol_percentile > vol_pct_threshold) & (adx <= adx_threshold) & (~trend_up) & (~trend_down)
-        w_tf = w_tf.where(~high_vol, 0.20)
-        w_mr = w_mr.where(~high_vol, 0.20)
-        w_rp = w_rp.where(~high_vol, 0.60)
+        high_vol_weights = regime_weights.get(DynamicRegime.HIGH_VOLATILITY, {"TF": 0.20, "MR": 0.20, "RP": 0.60})
+        w_tf = w_tf.where(~high_vol, high_vol_weights["TF"])
+        w_mr = w_mr.where(~high_vol, high_vol_weights["MR"])
+        w_rp = w_rp.where(~high_vol, high_vol_weights["RP"])
         regime_series = regime_series.where(~high_vol, DynamicRegime.HIGH_VOLATILITY)
-
-        # SIDEWAYS (나머지)
-        sideways = (~trend_up) & (~trend_down) & (~high_vol)
-        w_tf = w_tf.where(~sideways, 0.25)
-        w_mr = w_mr.where(~sideways, 0.45)
-        w_rp = w_rp.where(~sideways, 0.30)
 
         return w_tf, w_mr, w_rp, regime_series
 

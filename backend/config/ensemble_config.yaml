@@ -1,0 +1,52 @@
+# ══════════════════════════════════════════════════════════════
+# AQTS Dynamic Ensemble Configuration
+# ══════════════════════════════════════════════════════════════
+# Hyperopt 최적화 결과 또는 수동 튜닝 값을 관리합니다.
+# 이 파일이 존재하면 코드 기본값 대신 사용됩니다.
+
+# 메타데이터
+metadata:
+  last_optimized: null           # 마지막 최적화 날짜 (YYYY-MM-DD)
+  oos_sharpe_baseline: null      # 기준 OOS Sharpe 수익률
+  version: "1.0"                 # 구성 버전
+
+# ── 앙상블 하이퍼파라미터 ──
+# 동적 앙상블 엔진의 핵심 파라미터
+ensemble:
+  adx_threshold: 25              # ADX > 25 → 추세 존재 (기본값)
+  vol_pct_threshold: 0.75        # 변동성 상위 25% → HIGH_VOL (기본값)
+  perf_window: 60                # 성과 측정 윈도우 (영업일, 기본값)
+  softmax_temperature: 5.0       # softmax 온도 (높을수록 균등, 기본값)
+  perf_blend: 0.3                # 성과 블렌딩 비율 (0.3 = 30%, 기본값)
+  target_vol: 0.25               # 연환산 목표 변동성 (기본값)
+
+# ── 레짐별 가중치 ──
+# 각 레짐에서의 전략별 가중치 (TF, MR, RP)
+# 주의: 각 레짐 내 가중치 합은 1.0이어야 함
+regime_weights:
+  TRENDING_UP:
+    TF: 0.55                     # Trend Following
+    MR: 0.15                     # Mean Reversion
+    RP: 0.30                     # Risk Parity
+  TRENDING_DOWN:
+    TF: 0.40
+    MR: 0.15
+    RP: 0.45
+  HIGH_VOLATILITY:
+    TF: 0.20
+    MR: 0.20
+    RP: 0.60
+  SIDEWAYS:
+    TF: 0.25
+    MR: 0.45
+    RP: 0.30
+
+# ── 리스크 관리 파라미터 ──
+# 포지션 사이징, 손절, 드로우다운 관리
+risk:
+  stop_loss_atr_multiplier: 2.0       # ATR 기반 손절 배수 (기본값)
+  trailing_stop_atr_multiplier: 3.0   # ATR 기반 트레일링 손절 배수 (기본값)
+  max_drawdown_limit: 0.20            # 포트폴리오 DD 한도 (기본값)
+  drawdown_cooldown_days: 20          # DD 발동 후 대기 영업일 (기본값)
+  dd_cushion_start: 0.08              # DD 비례 축소 시작점 (기본값)
+  dd_cushion_floor: 0.25              # DD 비례 축소 최소 포지션 비율 (기본값)

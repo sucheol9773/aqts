@@ -624,6 +624,60 @@ python scripts/run_hyperopt.py --tickers 005930,000660 --trials 20
 - TestHandleMarketClose: 6 (포트폴리오 요약, 거래 통계, 스냅샷 저장, 감사 로그, KIS 실패, 빈 포지션)
 - TestHandlePostMarket: 6 (리포트 메트릭, Telegram, Redis 저장, Telegram 실패, 초기자본 폴백, 거래 전달)
 
+### 16.6 YAML 설정 파일 관리 체계
+
+최적화된 하이퍼파라미터를 YAML로 관리하는 구성 관리 시스템 구축.
+
+**구조**: `config/ensemble_config.yaml`
+- ensemble: adx_threshold, vol_pct_threshold, perf_window, softmax_temperature, perf_blend, target_vol
+- regime_weights: 4개 레짐 × 3전략(TF/MR/RP)
+- risk: stop_loss_atr, trailing_stop_atr, max_dd, cooldown, dd_cushion
+
+**핵심 모듈**: `config/ensemble_config_loader.py`
+- `load_ensemble_config()` → YAML 로드 (없으면 코드 기본값 폴백)
+- `save_ensemble_config()` → 검증 후 YAML 저장
+- `validate_ensemble_config()` → 범위, 합계, 타입 검증
+- `apply_hyperopt_results()` → Optuna JSON 결과를 YAML에 반영
+
+**파라미터 우선순위**: 함수 인자 > YAML 설정 > 코드 기본값
+- DynamicEnsembleService가 초기화 시 YAML을 자동 로드
+- 기존 코드와 100% 하위 호환 (YAML 없어도 동작)
+
+**테스트**: 23개 신규 (총 2630 pass)
+
+### 16.7 RL 에이전트 2단계: Gymnasium + PPO/SAC
+
+강화학습 기반 트레이딩 에이전트 환경 및 학습 파이프라인 구축.
+
+**TradingEnv (Gymnasium 환경)**:
+- 관찰 공간 (11차원): returns_5d, vol_20d, ADX, vol_percentile, momentum, MR/TF/RP signal, portfolio_return, DD, cash_ratio
+- 행동 공간: 연속 [-1, +1] 앙상블 시그널 스칼라
+- 보상: 일일 수익률 - risk_penalty × max(DD - threshold, 0) - 거래비용
+- VectorizedSignalGenerator 내장으로 시그널 자동 생성
+- 에피소드 시작점 랜덤화 (다양한 학습 경험)
+
+**RLTrainer (학습 파이프라인)**:
+- PPO/SAC 알고리즘 지원 (stable-baselines3)
+- 80/20 train/test 분할, EvalCallback 내장
+- DynamicEnsembleService 베이스라인 대비 성과 비교
+- 모델 저장/로드 기능
+
+**RLConfig**: 25개 설정 파라미터 (환경, 보상, 학습)
+
+**사용법**:
+```bash
+# PPO 학습
+python scripts/run_rl_training.py --algorithm PPO --timesteps 500000
+
+# SAC 학습 (특정 종목)
+python scripts/run_rl_training.py --algorithm SAC --ticker 005930
+
+# 기존 모델 평가
+python scripts/run_rl_training.py --evaluate --model models/rl_agent_v1
+```
+
+**테스트**: 16개 신규 (TradingEnv 8, RLTrainer 4, Gym 호환성 2, RLConfig 2)
+
 ## 17. 다음 단계
 
 1. ~~RL/학습형 에이전트 도입~~ ✅ 1단계 완료 (Optuna 베이지안 최적화)
@@ -633,5 +687,8 @@ python scripts/run_hyperopt.py --tickers 005930,000660 --trials 20
 5. ~~스케줄러 핸들러에 동적 앙상블 배치 실행 연결~~ ✅ 완료
 6. ~~API 엔드포인트 추가 (동적 앙상블 결과 조회)~~ ✅ 완료
 7. ~~MIDDAY_CHECK / MARKET_CLOSE / POST_MARKET 핸들러 확장~~ ✅ 완료
-8. RL 에이전트 2단계: Gym 환경 + PPO/SAC 일별 포지션 학습
-9. 최적화된 하이퍼파라미터 YAML 설정 파일 관리 체계 구축
+8. ~~RL 에이전트 2단계: Gym 환경 + PPO/SAC~~ ✅ 완료
+9. ~~최적화된 하이퍼파라미터 YAML 설정 파일 관리 체계 구축~~ ✅ 완료
+10. RL 에이전트 실전 학습: 전 종목 OHLCV 데이터로 PPO/SAC 학습 및 OOS 비교
+11. 멀티 에셋 RL 환경 확장: 단일 → 포트폴리오 레벨 의사결정
+12. Hyperopt + RL 결합: Optuna로 RL 보상함수 파라미터 최적화
