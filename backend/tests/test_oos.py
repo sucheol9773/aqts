@@ -275,7 +275,7 @@ class TestGateEvaluator:
             windows=window_results_fail,
             avg_sharpe=-0.4,
             avg_calmar=-0.2,
-            worst_mdd=-0.40,  # > 0.25 hard limit
+            worst_mdd=-0.50,  # > 0.40 hard limit
             sharpe_variance=0.02,
         )
         assert result["gate_a"]["result"] == "FAIL"
@@ -297,7 +297,7 @@ class TestGateEvaluator:
         result = gate_evaluator.evaluate_all(
             windows=window_results_pass,
             avg_sharpe=0.5,
-            avg_calmar=0.1,  # < 0.2 minimum
+            avg_calmar=0.05,  # < 0.1 minimum (updated threshold)
             worst_mdd=-0.10,
             sharpe_variance=0.05,
         )
@@ -309,7 +309,7 @@ class TestGateEvaluator:
             avg_sharpe=1.0,
             avg_calmar=1.0,
             worst_mdd=-0.10,
-            sharpe_variance=0.8,  # > 0.5 limit
+            sharpe_variance=6.0,  # > 5.0 limit (updated threshold)
         )
         assert result["gate_c"]["result"] == "REVIEW"
         assert any("variance" in r for r in result["gate_c"]["reasons"])
@@ -381,7 +381,7 @@ class TestGateEvaluator:
                 sharpe_ratio=0.8,
                 total_return=0.02,
                 regime_metrics={
-                    "BULL": {"max_drawdown": -0.35},  # > 0.30 limit
+                    "BULL": {"max_drawdown": -0.40},  # > 0.35 limit (updated threshold)
                 },
             ),
         ]
