@@ -288,7 +288,7 @@ def main():
     parser = argparse.ArgumentParser(description="AQTS 백테스트 실행")
     parser.add_argument("--tickers", type=str, default=None, help="종목코드 콤마 구분 (기본: KOSPI TOP10)")
     parser.add_argument("--market", type=str, default="kr", choices=["kr", "us"], help="시장 (kr/us, 기본: kr)")
-    parser.add_argument("--start", type=str, default="2024-01-02", help="시작일 (기본: 2024-01-02)")
+    parser.add_argument("--start", type=str, default="2000-01-02", help="시작일 (기본: 2000-01-02)")
     parser.add_argument("--end", type=str, default="2026-04-04", help="종료일 (기본: 2026-04-04)")
     parser.add_argument("--capital", type=float, default=50_000_000, help="초기 자본금 (기본: 50,000,000원)")
     parser.add_argument("--output", type=str, default=None, help="결과 CSV 저장 경로")

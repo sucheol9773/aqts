@@ -190,14 +190,20 @@ def ticker_to_yahoo(ticker: str, market: str) -> str:
 
 
 def get_db_connection():
-    """PostgreSQL 연결"""
+    """PostgreSQL 연결 (.env의 TIMESCALE_* 변수 우선 사용)"""
     load_dotenv()
+    host = os.getenv("TIMESCALE_HOST", os.getenv("DB_HOST", "localhost"))
+    port = int(os.getenv("TIMESCALE_PORT", os.getenv("DB_PORT", "5432")))
+    dbname = os.getenv("TIMESCALE_DB", os.getenv("DB_NAME", "aqts"))
+    user = os.getenv("TIMESCALE_USER", os.getenv("DB_USER", "aqts_user"))
+    password = os.getenv("TIMESCALE_PASSWORD", os.getenv("DB_PASSWORD"))
+
+    # Docker 내부 호스트명 → 호스트 머신에서는 localhost로 변환
+    if host in ("postgres", "timescaledb", "timescale"):
+        host = "localhost"
+
     return psycopg2.connect(
-        host=os.getenv("DB_HOST", "localhost"),
-        port=int(os.getenv("DB_PORT", "5432")),
-        dbname=os.getenv("DB_NAME", "aqts"),
-        user=os.getenv("DB_USER", "aqts_user"),
-        password=os.getenv("DB_PASSWORD"),
+        host=host, port=port, dbname=dbname, user=user, password=password,
     )
 
 
@@ -345,7 +351,7 @@ def get_universe_by_group(groups: list[str]) -> list[tuple]:
 
 def main():
     parser = argparse.ArgumentParser(description="AQTS 과거 시장 데이터 백필")
-    parser.add_argument("--start", default="2024-01-01", help="시작일 (YYYY-MM-DD)")
+    parser.add_argument("--start", default="2000-01-01", help="시작일 (YYYY-MM-DD)")
     parser.add_argument("--end", default=datetime.now().strftime("%Y-%m-%d"), help="종료일")
     parser.add_argument("--tickers", nargs="*", help="특정 종목코드 (미지정 시 그룹 기반)")
     parser.add_argument(
