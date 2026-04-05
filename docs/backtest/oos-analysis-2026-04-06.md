@@ -592,6 +592,38 @@ python scripts/run_hyperopt.py --tickers 005930,000660 --trials 20
 
 **테스트**: 20개 신규 (총 2573 pass)
 
+### 16.5 MIDDAY/CLOSE/POST 핸들러 확장
+
+기존 stub 핸들러 3개를 실제 운영 로직으로 구현.
+
+**handle_midday_check (11:30 KST)**:
+- KIS API `get_kr_balance()` 로 실시간 포지션 조회
+- 종목별 -5% 이상 손실 감지 → `loss_alert` 경고
+- TradingGuard 드로다운 갱신 (`check_max_drawdown()` 호출)
+- DD > 15% 시 `dd_warning` 발행
+- Redis 캐시된 앙상블 요약 조회
+
+**handle_market_close (15:30 KST)**:
+- 최종 포지션/포트폴리오 가치 조회
+- DB `orders` 테이블에서 금일 체결 통계 집계 (side별 count, amount)
+- 포트폴리오 스냅샷 Redis 저장 (30일 TTL, key: `portfolio:snapshot:{date}`)
+- AuditLogger로 감사 로그 기록 (action_type: `MARKET_CLOSE`)
+
+**handle_post_market (16:00 KST)**:
+- 금일/전일 Redis 스냅샷 조회 → 시작/종료 가치 계산
+- 전일 스냅샷 없으면 `get_settings().risk.initial_capital_krw` 사용
+- DB에서 금일 체결 내역 조회 → TradeRecord 변환
+- DailyReporter.generate_report() → Telegram 발송
+- 리포트 Redis 저장 (90일 TTL, key: `report:daily:{date}`)
+
+**버그 수정**: `handle_midday_check`에서 존재하지 않는 `guard.update_portfolio_value()` 호출 →
+`guard.state.current_portfolio_value` 직접 설정 + `guard.check_max_drawdown()` 호출로 수정
+
+**테스트**: 18개 신규 (총 2591 pass)
+- TestHandleMiddayCheck: 6 (잔고 조회, 손실 경보, DD 경고, KIS 실패, 캐시 조회)
+- TestHandleMarketClose: 6 (포트폴리오 요약, 거래 통계, 스냅샷 저장, 감사 로그, KIS 실패, 빈 포지션)
+- TestHandlePostMarket: 6 (리포트 메트릭, Telegram, Redis 저장, Telegram 실패, 초기자본 폴백, 거래 전달)
+
 ## 17. 다음 단계
 
 1. ~~RL/학습형 에이전트 도입~~ ✅ 1단계 완료 (Optuna 베이지안 최적화)
@@ -600,5 +632,6 @@ python scripts/run_hyperopt.py --tickers 005930,000660 --trials 20
 4. ~~실시간 데이터 연동~~ ✅ 완료 (KIS API 일봉 자동 수집)
 5. ~~스케줄러 핸들러에 동적 앙상블 배치 실행 연결~~ ✅ 완료
 6. ~~API 엔드포인트 추가 (동적 앙상블 결과 조회)~~ ✅ 완료
-7. MIDDAY_CHECK / MARKET_CLOSE / POST_MARKET 핸들러 확장
+7. ~~MIDDAY_CHECK / MARKET_CLOSE / POST_MARKET 핸들러 확장~~ ✅ 완료
 8. RL 에이전트 2단계: Gym 환경 + PPO/SAC 일별 포지션 학습
+9. 최적화된 하이퍼파라미터 YAML 설정 파일 관리 체계 구축
