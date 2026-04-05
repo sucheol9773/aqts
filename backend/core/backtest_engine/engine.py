@@ -36,6 +36,7 @@ class BacktestConfig:
     # ── 리스크 관리 ──
     stop_loss_pct: Optional[float] = None  # 종목별 손절 (예: 0.15 = -15%에서 청산)
     stop_loss_atr_multiplier: Optional[float] = None  # ATR 기반 동적 손절 (예: 2.0 = 2×ATR)
+    trailing_stop_atr_multiplier: Optional[float] = None  # 고점 대비 ATR 기반 트레일링 손절
     max_drawdown_limit: Optional[float] = None  # 포트폴리오 DD 한도 (예: 0.20 = -20%에서 전량 청산)
     drawdown_cooldown_days: int = 20  # DD 발동 후 거래 재개까지 대기 영업일
     safe_asset_annual_return: float = 0.03  # 쿨다운 중 안전자산 연수익률 (기본: 국채 3%)
@@ -251,6 +252,14 @@ class BacktestEngine:
                     equity_history[date] = portfolio_value
                     continue
 
+            # ── peak_price 업데이트 (trailing stop용) ──
+            for ticker in positions:
+                if ticker in prices.columns:
+                    cp = prices.loc[date, ticker]
+                    if not pd.isna(cp) and cp > 0:
+                        prev_peak = positions[ticker].get("peak_price", cp)
+                        positions[ticker]["peak_price"] = max(prev_peak, cp)
+
             # ── 종목별 Stop-loss 체크 (ATR 동적 or 고정 비율) ──
             if self._config.stop_loss_pct is not None or self._config.stop_loss_atr_multiplier is not None:
                 for ticker in list(positions.keys()):
@@ -276,6 +285,58 @@ class BacktestEngine:
 
                     loss_pct = (current_price - pos["avg_price"]) / pos["avg_price"]
                     if loss_pct < -stop_threshold:
+                        effective_price = current_price * (1 - self._costs["slippage"])
+                        quantity = pos["quantity"]
+                        gross_proceeds = effective_price * quantity
+                        commission = gross_proceeds * self._costs["commission"]
+                        tax = gross_proceeds * self._costs["tax"]
+                        total_cost = commission + tax
+                        net_proceeds = gross_proceeds - total_cost
+                        pnl = net_proceeds - (pos["avg_price"] * quantity)
+                        cash += net_proceeds
+                        trade_records.append(
+                            TradeRecord(
+                                date=date_str,
+                                ticker=ticker,
+                                side="SELL",
+                                quantity=quantity,
+                                price=effective_price,
+                                cost=total_cost,
+                                pnl=pnl,
+                            )
+                        )
+                        del positions[ticker]
+
+            # ── Trailing Stop: 고점 대비 ATR 기반 손절 ──
+            # 진입가 기준 stop-loss와 별도로, 포지션의 최고가 대비 하락폭으로 판단
+            # 수익을 올린 포지션이 반전될 때 빨리 청산하여 MDD를 억제
+            if self._config.trailing_stop_atr_multiplier is not None:
+                for ticker in list(positions.keys()):
+                    pos = positions[ticker]
+                    current_price = prices.loc[date, ticker] if ticker in prices.columns else 0
+                    if pd.isna(current_price) or current_price <= 0:
+                        continue
+
+                    peak = pos.get("peak_price", pos["avg_price"])
+                    # 고점 대비 하락만 체크 (peak > avg_price일 때만 trailing 의미 있음)
+                    if peak <= pos["avg_price"]:
+                        continue
+
+                    # ATR 계산 (진입가 기준이 아니라 peak 기준)
+                    trailing_threshold = 0.10  # 기본 10%
+                    lookback = min(i, 20)
+                    if lookback >= 5 and ticker in prices.columns:
+                        recent_prices = prices[ticker].iloc[max(0, i - lookback) : i + 1]
+                        high_low = recent_prices.max() - recent_prices.min()
+                        atr = high_low / lookback if lookback > 0 else 0
+                        atr_pct = atr / peak if peak > 0 else 0
+                        trailing_threshold = max(
+                            atr_pct * self._config.trailing_stop_atr_multiplier,
+                            0.05,  # 최소 5%
+                        )
+
+                    drop_from_peak = (current_price - peak) / peak
+                    if drop_from_peak < -trailing_threshold:
                         effective_price = current_price * (1 - self._costs["slippage"])
                         quantity = pos["quantity"]
                         gross_proceeds = effective_price * quantity
@@ -398,6 +459,7 @@ class BacktestEngine:
                         positions[ticker] = {
                             "quantity": quantity,
                             "avg_price": effective_price,
+                            "peak_price": effective_price,
                         }
 
                         trade_records.append(

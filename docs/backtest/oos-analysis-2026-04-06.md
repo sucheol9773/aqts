@@ -337,7 +337,51 @@ MDD를 줄이려면 **기존 포지션을 더 빨리 청산**해야 함:
 2. ~~MEAN_REVERSION MDD FAIL 해결~~ ✅ PASS 달성
 3. ~~US 시장 v4c 결과 확인~~ ✅ 전 전략 PASS
 4. ~~v5 MDD 방어 + 가중치 축소 시도~~ ❌ 실패, 롤백
-5. MDD 개선: 기존 포지션 청산 전략 개선 (stop-loss 타이트닝)
-6. KR TREND_FOLLOWING Sharpe 개선 (현재 0.16, 목표 > 0.2)
-7. 앙상블 가중치 최적화 (분산 효과 유지하면서 개선)
-8. 실전 파이프라인에 동적 앙상블 통합
+5. v5b Trailing Stop 도입 → 실행 후 결과 확인 필요
+
+## 14. v5b: Trailing Stop 도입 — 기존 포지션 보호
+
+### 설계 근거
+
+v5 실패의 핵심 교훈: "MDD는 기존 포지션 손실로 발생한다."
+Trailing stop은 기존 포지션의 고점(peak) 대비 하락을 감지하여 청산.
+새 매수를 줄이는 게 아니라 **보유 중인 포지션을 직접 보호**하므로
+MDD에 직접적 영향을 미치는 올바른 접근법.
+
+### 구현
+
+**BacktestConfig 추가:**
+- `trailing_stop_atr_multiplier: Optional[float]` — 고점 대비 ATR 기반 trailing
+
+**포지션 추적 확장:**
+- 기존: `{"quantity", "avg_price"}`
+- 변경: `{"quantity", "avg_price", "peak_price"}`
+- 매일 `peak_price = max(peak_price, current_price)`로 업데이트
+
+**발동 조건:**
+1. peak_price > avg_price (진입가 이상으로 오른 적이 있어야 함)
+2. (current_price - peak_price) / peak_price < -trailing_threshold
+3. trailing_threshold = max(ATR/peak × multiplier, 5%)
+
+기존 진입가 기준 stop-loss와 독립적으로 동작. 둘 다 설정된 경우 먼저 발동되는 쪽이 청산.
+
+**전략별 프리셋:**
+
+| 전략 | 진입 Stop (ATR×) | Trailing (ATR×) | 설계 근거 |
+|---|---|---|---|
+| MEAN_REVERSION | 없음 | 없음 | 빈번한 매매로 trailing 불필요 |
+| TREND_FOLLOWING | 2.0 | 3.0 | 추세 유지를 위해 넓은 trailing |
+| RISK_PARITY | 2.5 | 3.5 | 장기 보유 → 가장 넓은 trailing |
+| ENSEMBLE | 2.0 | 2.5 | 수익 보호 + 손실 제한 균형 |
+
+변경 파일:
+- `backend/core/backtest_engine/engine.py`: trailing stop 구현 + peak_price 추적
+- `scripts/run_backtest.py`: 프리셋에 trailing_stop_atr_multiplier 추가
+- `backend/tests/test_backtest_engine.py`: TestTrailingStop 4개 테스트
+
+## 15. 다음 단계
+
+1. v5b OOS 재실행 → **Worst MDD 개선 여부 확인** (목표: -39.6% → <-35%)
+2. KR/US 교차 검증으로 과적합 여부 판단
+3. KR TREND_FOLLOWING Sharpe 개선 (현재 0.16, 목표 > 0.2)
+4. 실전 파이프라인에 동적 앙상블 통합

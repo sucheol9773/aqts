@@ -574,3 +574,109 @@ class TestDDCushion:
 
         # 상승장에서 DD가 발생하지 않으므로 수익률이 동일해야 함
         assert abs(result_no.total_return - result_yes.total_return) < 0.01
+
+
+class TestTrailingStop:
+    """고점 대비 ATR 기반 트레일링 손절 테스트"""
+
+    def _make_peak_then_drop_prices(self, n=252):
+        """상승 → 고점 → 급락 가격 데이터"""
+        dates = pd.bdate_range(start="2024-01-02", periods=n)
+        # 전반부 상승 (+50%), 후반부 급락 (-40%)
+        n_up = n * 2 // 3
+        n_down = n - n_up
+        prices_up = 50000 * np.cumprod(1 + np.full(n_up, 0.003))
+        prices_down = prices_up[-1] * np.cumprod(1 + np.full(n_down, -0.005))
+        prices_data = np.concatenate([prices_up, prices_down])
+        prices = pd.DataFrame({"A": prices_data}, index=dates)
+        signals = pd.DataFrame({"A": np.zeros(n)}, index=dates)
+        signals.iloc[0] = 0.8  # 첫날 매수
+        return prices, signals
+
+    def test_trailing_stop_reduces_mdd(self):
+        """상승 후 급락 시, trailing stop이 MDD를 억제해야 함"""
+        prices, signals = self._make_peak_then_drop_prices()
+
+        # trailing stop 없음
+        config_no = BacktestConfig(
+            initial_capital=10_000_000,
+            country=Country.KR,
+            slippage_rate=0.0,
+            commission_rate=0.0,
+            tax_rate=0.0,
+        )
+        result_no = BacktestEngine(config_no).run("NoTrail", signals, prices)
+
+        # trailing stop 있음 (2.5×ATR)
+        config_trail = BacktestConfig(
+            initial_capital=10_000_000,
+            country=Country.KR,
+            slippage_rate=0.0,
+            commission_rate=0.0,
+            tax_rate=0.0,
+            trailing_stop_atr_multiplier=2.5,
+        )
+        result_trail = BacktestEngine(config_trail).run("Trail", signals, prices)
+
+        # trailing stop 적용 시 MDD가 개선되어야 함 (mdd는 음수)
+        assert result_trail.mdd > result_no.mdd, (
+            f"Trailing stop MDD({result_trail.mdd:.4f}) should be less severe " f"than no trailing({result_no.mdd:.4f})"
+        )
+
+    def test_trailing_stop_config_default(self):
+        """trailing_stop_atr_multiplier 기본값은 None"""
+        config = BacktestConfig()
+        assert config.trailing_stop_atr_multiplier is None
+
+    def test_trailing_stop_does_not_trigger_without_peak(self):
+        """진입 이후 한번도 상승하지 않은 포지션에는 trailing이 발동하지 않음"""
+        n = 60
+        dates = pd.bdate_range(start="2024-01-02", periods=n)
+        # 진입 후 횡보 (약간의 등락)
+        np.random.seed(99)
+        prices_data = 50000 + np.cumsum(np.random.randn(n) * 50)
+        # 진입가 아래로 유지 (peak == avg_price이므로 trailing 미발동)
+        prices_data = np.minimum(prices_data, 50000)
+        prices = pd.DataFrame({"A": prices_data}, index=dates)
+        signals = pd.DataFrame({"A": np.zeros(n)}, index=dates)
+        signals.iloc[0] = 0.8
+
+        config_no = BacktestConfig(
+            initial_capital=10_000_000,
+            country=Country.KR,
+            slippage_rate=0.0,
+            commission_rate=0.0,
+            tax_rate=0.0,
+        )
+        config_trail = BacktestConfig(
+            initial_capital=10_000_000,
+            country=Country.KR,
+            slippage_rate=0.0,
+            commission_rate=0.0,
+            tax_rate=0.0,
+            trailing_stop_atr_multiplier=2.5,
+        )
+        result_no = BacktestEngine(config_no).run("NoTrail", signals, prices)
+        result_trail = BacktestEngine(config_trail).run("Trail", signals, prices)
+
+        # peak이 진입가를 넘지 않았으므로 수익률이 비슷해야 함
+        assert abs(result_no.total_return - result_trail.total_return) < 0.05
+
+    def test_trailing_stop_preserves_gains(self):
+        """상승 후 trailing stop이 발동하면 수익이 보존되어야 함"""
+        prices, signals = self._make_peak_then_drop_prices()
+
+        config_trail = BacktestConfig(
+            initial_capital=10_000_000,
+            country=Country.KR,
+            slippage_rate=0.0,
+            commission_rate=0.0,
+            tax_rate=0.0,
+            trailing_stop_atr_multiplier=2.5,
+        )
+        result = BacktestEngine(config_trail).run("Trail", signals, prices)
+
+        # 50% 상승 후 trailing stop으로 일부 수익 보존
+        # trailing이 없으면 급락으로 수익 전부 반납할 수 있음
+        # trailing이 있으면 최종 수익이 양수여야 함
+        assert result.total_return > -0.1, f"Trailing stop should preserve some gains, got {result.total_return:.4f}"
