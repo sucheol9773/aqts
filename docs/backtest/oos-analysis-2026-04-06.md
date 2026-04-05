@@ -379,9 +379,45 @@ MDD에 직접적 영향을 미치는 올바른 접근법.
 - `scripts/run_backtest.py`: 프리셋에 trailing_stop_atr_multiplier 추가
 - `backend/tests/test_backtest_engine.py`: TestTrailingStop 4개 테스트
 
+### Wiring 버그 발견 및 수정
+
+**v5b 첫 실행 결과가 v4c와 완전히 동일** → trailing stop이 미작동.
+
+원인: `run_backtest_for_universe()` 함수에서 STRATEGY_RISK_PRESETS의
+`trailing_stop_atr_multiplier`와 `dd_cushion_start`를 읽어도
+BacktestConfig 생성 시 전달하지 않는 wiring 버그.
+
+```python
+# 수정 전: trailing_stop, dd_cushion이 누락
+config = BacktestConfig(
+    stop_loss_pct=s_stop_loss,
+    stop_loss_atr_multiplier=s_atr_mult,
+    max_drawdown_limit=s_max_dd,
+    drawdown_cooldown_days=s_cooldown,
+)
+
+# 수정 후: 누락 파라미터 추가
+config = BacktestConfig(
+    stop_loss_pct=s_stop_loss,
+    stop_loss_atr_multiplier=s_atr_mult,
+    trailing_stop_atr_multiplier=s_trailing_mult,
+    max_drawdown_limit=s_max_dd,
+    drawdown_cooldown_days=s_cooldown,
+    dd_cushion_start=s_cushion_start,
+)
+```
+
+**영향 범위**: v4에서 구현한 DD 쿠션도 사실상 한번도 활성화된 적 없음.
+v4c PASS 결과는 순수 시그널 + stop-loss + DD limit만으로 달성한 것.
+
+**근본 원인 분석 및 재발 방지**:
+1. 프리셋 dict에 키를 추가하되 config 생성부를 업데이트하지 않은 코드 분리
+2. 기능이 활성화되었는지 확인하는 통합 테스트 부재 (유닛테스트는 통과)
+3. 재발 방지: `CLAUDE.md`에 규칙 추가 — 프리셋 키 추가 시 config 전달부 동시 수정 필수
+
 ## 15. 다음 단계
 
-1. v5b OOS 재실행 → **Worst MDD 개선 여부 확인** (목표: -39.6% → <-35%)
-2. KR/US 교차 검증으로 과적합 여부 판단
+1. v5b+fix OOS 재실행 → trailing stop + DD 쿠션 실제 작동 확인
+2. KR/US 교차 검증
 3. KR TREND_FOLLOWING Sharpe 개선 (현재 0.16, 목표 > 0.2)
 4. 실전 파이프라인에 동적 앙상블 통합

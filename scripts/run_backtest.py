@@ -508,19 +508,29 @@ def run_backtest_for_universe(
             preset = STRATEGY_RISK_PRESETS.get(strategy, {})
             s_stop_loss = preset.get("stop_loss_pct")
             s_atr_mult = preset.get("stop_loss_atr_multiplier")
+            s_trailing_mult = preset.get("trailing_stop_atr_multiplier")
             s_max_dd = preset.get("max_drawdown_limit")
             s_cooldown = preset.get("drawdown_cooldown_days", 20)
-            print(f"  리스크: stop_loss={s_stop_loss}, " f"ATR×{s_atr_mult}, DD한도={s_max_dd}, 쿨다운={s_cooldown}일")
+            s_cushion_start = preset.get("dd_cushion_start")
+            print(
+                f"  리스크: stop_loss={s_stop_loss}, "
+                f"ATR×{s_atr_mult}, trailing×{s_trailing_mult}, "
+                f"DD한도={s_max_dd}, 쿠션={s_cushion_start}, 쿨다운={s_cooldown}일"
+            )
         elif risk_preset == "none":
             s_stop_loss = None
             s_atr_mult = None
+            s_trailing_mult = None
             s_max_dd = None
             s_cooldown = 20
+            s_cushion_start = None
         else:  # custom
             s_stop_loss = stop_loss_pct
             s_atr_mult = stop_loss_atr_multiplier
+            s_trailing_mult = None
             s_max_dd = max_drawdown_limit
             s_cooldown = drawdown_cooldown_days
+            s_cushion_start = None
 
         config = BacktestConfig(
             initial_capital=initial_capital,
@@ -529,8 +539,10 @@ def run_backtest_for_universe(
             country=country,
             stop_loss_pct=s_stop_loss,
             stop_loss_atr_multiplier=s_atr_mult,
+            trailing_stop_atr_multiplier=s_trailing_mult,
             max_drawdown_limit=s_max_dd,
             drawdown_cooldown_days=s_cooldown,
+            dd_cushion_start=s_cushion_start,
         )
 
         engine = BacktestEngine(config)
