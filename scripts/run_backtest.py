@@ -51,6 +51,22 @@ KOSPI_TOP10 = ["005930", "000660", "035420", "005380", "006400", "051910", "0036
 US_TOP10 = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "TSM", "AVGO", "AMD"]
 
 
+def load_all_tickers_from_db(db_url: str, market: str = "kr") -> list[str]:
+    """DB에서 시장별 전체 종목코드 조회"""
+    from sqlalchemy import create_engine, text
+
+    engine = create_engine(db_url)
+    with engine.connect() as conn:
+        if market == "kr":
+            # 숫자로 된 종목코드 = 한국 시장
+            query = text("SELECT DISTINCT ticker FROM market_ohlcv WHERE ticker ~ '^[0-9]+$' ORDER BY ticker")
+        else:
+            # 알파벳으로 된 종목코드 = 미국 시장
+            query = text("SELECT DISTINCT ticker FROM market_ohlcv WHERE ticker ~ '^[A-Z]+$' ORDER BY ticker")
+        rows = conn.execute(query).fetchall()
+    return [row[0] for row in rows]
+
+
 def load_ohlcv_from_db(tickers: list[str], start_date: str, end_date: str, db_url: str) -> dict[str, pd.DataFrame]:
     """
     PostgreSQL에서 OHLCV 데이터 로드
@@ -286,8 +302,9 @@ def build_db_url() -> str:
 
 def main():
     parser = argparse.ArgumentParser(description="AQTS 백테스트 실행")
-    parser.add_argument("--tickers", type=str, default=None, help="종목코드 콤마 구분 (기본: KOSPI TOP10)")
+    parser.add_argument("--tickers", type=str, default=None, help="종목코드 콤마 구분 (기본: TOP10)")
     parser.add_argument("--market", type=str, default="kr", choices=["kr", "us"], help="시장 (kr/us, 기본: kr)")
+    parser.add_argument("--all", action="store_true", help="DB의 해당 시장 전체 종목으로 백테스트")
     parser.add_argument("--start", type=str, default="2000-01-02", help="시작일 (기본: 2000-01-02)")
     parser.add_argument("--end", type=str, default="2026-04-04", help="종료일 (기본: 2026-04-04)")
     parser.add_argument("--capital", type=float, default=50_000_000, help="초기 자본금 (기본: 50,000,000원)")
@@ -295,14 +312,16 @@ def main():
     parser.add_argument("--db-url", type=str, default=None, help="DB URL (미지정 시 환경변수에서 구성)")
     args = parser.parse_args()
 
+    db_url = args.db_url or build_db_url()
+
     # 설정
     country = Country.US if args.market == "us" else Country.KR
     if args.tickers:
         tickers = [t.strip() for t in args.tickers.split(",")]
+    elif getattr(args, "all"):
+        tickers = load_all_tickers_from_db(db_url, args.market)
     else:
         tickers = US_TOP10 if args.market == "us" else KOSPI_TOP10
-
-    db_url = args.db_url or build_db_url()
 
     print("═" * 60)
     print("  AQTS 백테스트")
