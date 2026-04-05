@@ -300,7 +300,7 @@ def main():
         "--output",
         type=str,
         default=None,
-        help="CSV 저장 디렉토리 (기본: results/oos/)",
+        help="CSV 저장 디렉토리 (기본: results/oos/). 파일 경로(.csv)를 주면 해당 디렉토리에 저장",
     )
     args = parser.parse_args()
 
@@ -348,7 +348,11 @@ def main():
         print_window_details(results)
 
     # 5) CSV 저장
-    output_dir = args.output or os.path.join(_project_root, "results", "oos")
+    # --output이 파일 경로(.csv 등 확장자 포함)면 부모 디렉토리를 사용
+    if args.output and os.path.splitext(args.output)[1]:
+        output_dir = os.path.dirname(args.output) or "."
+    else:
+        output_dir = args.output or os.path.join(_project_root, "results", "oos")
     summary_csv, detail_csv = save_results_to_csv(results, output_dir)
 
     print("\n✅ Walk-Forward 검증 완료")
