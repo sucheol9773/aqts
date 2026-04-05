@@ -40,15 +40,41 @@ os.environ.setdefault("KIS_TRADING_MODE", "BACKTEST")
 os.environ.setdefault("TESTING", "1")
 
 from config.constants import TRANSACTION_COSTS, Country
-from core.backtest_engine.engine import BacktestConfig, BacktestEngine, StrategyComparator
+from core.backtest_engine.engine import (
+    BacktestConfig,
+    BacktestEngine,
+    StrategyComparator,
+)
 from core.quant_engine.signal_generator import SignalGenerator
 
 # ══════════════════════════════════════
 # 기본 유니버스
 # ══════════════════════════════════════
-KOSPI_TOP10 = ["005930", "000660", "035420", "005380", "006400", "051910", "003670", "105560", "055550", "000270"]
+KOSPI_TOP10 = [
+    "005930",
+    "000660",
+    "035420",
+    "005380",
+    "006400",
+    "051910",
+    "003670",
+    "105560",
+    "055550",
+    "000270",
+]
 
-US_TOP10 = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "TSM", "AVGO", "AMD"]
+US_TOP10 = [
+    "AAPL",
+    "MSFT",
+    "GOOGL",
+    "AMZN",
+    "NVDA",
+    "META",
+    "TSLA",
+    "TSM",
+    "AVGO",
+    "AMD",
+]
 
 
 def load_all_tickers_from_db(db_url: str, market: str = "kr") -> list[str]:
@@ -59,15 +85,21 @@ def load_all_tickers_from_db(db_url: str, market: str = "kr") -> list[str]:
     with engine.connect() as conn:
         if market == "kr":
             # 숫자로 된 종목코드 = 한국 시장
-            query = text("SELECT DISTINCT ticker FROM market_ohlcv WHERE ticker ~ '^[0-9]+$' ORDER BY ticker")
+            query = text(
+                "SELECT DISTINCT ticker FROM market_ohlcv WHERE ticker ~ '^[0-9]+$' ORDER BY ticker"
+            )
         else:
             # 알파벳으로 된 종목코드 = 미국 시장
-            query = text("SELECT DISTINCT ticker FROM market_ohlcv WHERE ticker ~ '^[A-Z]+$' ORDER BY ticker")
+            query = text(
+                "SELECT DISTINCT ticker FROM market_ohlcv WHERE ticker ~ '^[A-Z]+$' ORDER BY ticker"
+            )
         rows = conn.execute(query).fetchall()
     return [row[0] for row in rows]
 
 
-def load_ohlcv_from_db(tickers: list[str], start_date: str, end_date: str, db_url: str) -> dict[str, pd.DataFrame]:
+def load_ohlcv_from_db(
+    tickers: list[str], start_date: str, end_date: str, db_url: str
+) -> dict[str, pd.DataFrame]:
     """
     PostgreSQL에서 OHLCV 데이터 로드
 
@@ -92,7 +124,11 @@ def load_ohlcv_from_db(tickers: list[str], start_date: str, end_date: str, db_ur
                 ORDER BY time ASC
             """
             )
-            df = pd.read_sql(query, conn, params={"ticker": ticker, "start": start_date, "end": end_date})
+            df = pd.read_sql(
+                query,
+                conn,
+                params={"ticker": ticker, "start": start_date, "end": end_date},
+            )
 
             if df.empty:
                 print(f"  ⚠ {ticker}: 데이터 없음 (skip)")
@@ -183,8 +219,12 @@ def run_backtest_for_universe(
         print(f"\n══ {strategy} 백테스트 ══")
 
         # 종목별 시그널/가격 DataFrame 구성
-        signals_df = pd.DataFrame({ticker: ticker_signals[ticker][strategy] for ticker in ohlcv_data})
-        prices_df = pd.DataFrame({ticker: ohlcv_data[ticker]["close"] for ticker in ohlcv_data})
+        signals_df = pd.DataFrame(
+            {ticker: ticker_signals[ticker][strategy] for ticker in ohlcv_data}
+        )
+        prices_df = pd.DataFrame(
+            {ticker: ohlcv_data[ticker]["close"] for ticker in ohlcv_data}
+        )
 
         # 인덱스 정렬
         common_idx = signals_df.index.intersection(prices_df.index)
@@ -227,9 +267,7 @@ def print_comparison_table(results: dict[str, object]):
     print("  전략 비교 요약")
     print("═" * 80)
 
-    header = (
-        f"{'전략':<20} {'수익률':>10} {'CAGR':>10} {'MDD':>10} {'Sharpe':>8} {'Sortino':>8} {'승률':>8} {'거래':>6}"
-    )
+    header = f"{'전략':<20} {'수익률':>10} {'CAGR':>10} {'MDD':>10} {'Sharpe':>8} {'Sortino':>8} {'승률':>8} {'거래':>6}"
     print(header)
     print("─" * 80)
 
@@ -252,8 +290,12 @@ def print_comparison_table(results: dict[str, object]):
     if results:
         best_sharpe = max(results.items(), key=lambda x: x[1].sharpe_ratio)
         best_return = max(results.items(), key=lambda x: x[1].total_return)
-        print(f"\n  📊 최고 Sharpe: {best_sharpe[0]} ({best_sharpe[1].sharpe_ratio:.2f})")
-        print(f"  📈 최고 수익률: {best_return[0]} ({best_return[1].total_return:+.2%})")
+        print(
+            f"\n  📊 최고 Sharpe: {best_sharpe[0]} ({best_sharpe[1].sharpe_ratio:.2f})"
+        )
+        print(
+            f"  📈 최고 수익률: {best_return[0]} ({best_return[1].total_return:+.2%})"
+        )
 
 
 def save_results_csv(results: dict[str, object], output_path: str):
@@ -306,16 +348,47 @@ def build_db_url() -> str:
 
 def main():
     parser = argparse.ArgumentParser(description="AQTS 백테스트 실행")
-    parser.add_argument("--tickers", type=str, default=None, help="종목코드 콤마 구분 (기본: TOP10)")
-    parser.add_argument("--market", type=str, default="kr", choices=["kr", "us"], help="시장 (kr/us, 기본: kr)")
-    parser.add_argument("--all", action="store_true", help="DB의 해당 시장 전체 종목으로 백테스트")
-    parser.add_argument("--start", type=str, default="2000-01-02", help="시작일 (기본: 2000-01-02)")
-    parser.add_argument("--end", type=str, default="2026-04-04", help="종료일 (기본: 2026-04-04)")
-    parser.add_argument("--capital", type=float, default=50_000_000, help="초기 자본금 (기본: 50,000,000원)")
+    parser.add_argument(
+        "--tickers", type=str, default=None, help="종목코드 콤마 구분 (기본: TOP10)"
+    )
+    parser.add_argument(
+        "--market",
+        type=str,
+        default="kr",
+        choices=["kr", "us"],
+        help="시장 (kr/us, 기본: kr)",
+    )
+    parser.add_argument(
+        "--all", action="store_true", help="DB의 해당 시장 전체 종목으로 백테스트"
+    )
+    parser.add_argument(
+        "--start", type=str, default="2000-01-02", help="시작일 (기본: 2000-01-02)"
+    )
+    parser.add_argument(
+        "--end", type=str, default="2026-04-04", help="종료일 (기본: 2026-04-04)"
+    )
+    parser.add_argument(
+        "--capital",
+        type=float,
+        default=50_000_000,
+        help="초기 자본금 (기본: 50,000,000원)",
+    )
     parser.add_argument("--output", type=str, default=None, help="결과 CSV 저장 경로")
-    parser.add_argument("--db-url", type=str, default=None, help="DB URL (미지정 시 환경변수에서 구성)")
-    parser.add_argument("--stop-loss", type=float, default=None, help="종목별 손절 비율 (예: 0.10 = -10%%)")
-    parser.add_argument("--max-dd", type=float, default=None, help="포트폴리오 DD 한도 (예: 0.20 = -20%%)")
+    parser.add_argument(
+        "--db-url", type=str, default=None, help="DB URL (미지정 시 환경변수에서 구성)"
+    )
+    parser.add_argument(
+        "--stop-loss",
+        type=float,
+        default=None,
+        help="종목별 손절 비율 (예: 0.10 = -10%%)",
+    )
+    parser.add_argument(
+        "--max-dd",
+        type=float,
+        default=None,
+        help="포트폴리오 DD 한도 (예: 0.20 = -20%%)",
+    )
     args = parser.parse_args()
 
     db_url = args.db_url or build_db_url()
@@ -333,7 +406,9 @@ def main():
     print("  AQTS 백테스트")
     print("═" * 60)
     print(f"  시장:     {args.market.upper()}")
-    print(f"  종목:     {len(tickers)}개 ({', '.join(tickers[:5])}{'...' if len(tickers) > 5 else ''})")
+    print(
+        f"  종목:     {len(tickers)}개 ({', '.join(tickers[:5])}{'...' if len(tickers) > 5 else ''})"
+    )
     print(f"  기간:     {args.start} ~ {args.end}")
     print(f"  초기자본: {args.capital:,.0f}원")
     print(f"  거래비용: {TRANSACTION_COSTS[country]}")
@@ -355,7 +430,9 @@ def main():
 
     # 2) 백테스트 실행
     results = run_backtest_for_universe(
-        ohlcv_data, country, args.capital,
+        ohlcv_data,
+        country,
+        args.capital,
         stop_loss_pct=args.stop_loss,
         max_drawdown_limit=args.max_dd,
     )
