@@ -33,6 +33,10 @@ class BacktestConfig:
     slippage_rate: Optional[float] = None
     risk_free_rate: float = 0.035  # 연 3.5% (한국 기준금리 근사)
     benchmark_returns: Optional[pd.Series] = None  # 벤치마크 수익률
+    # ── 리스크 관리 ──
+    stop_loss_pct: Optional[float] = None  # 종목별 손절 (예: 0.10 = -10%에서 청산)
+    max_drawdown_limit: Optional[float] = None  # 포트폴리오 DD 한도 (예: 0.20 = -20%에서 전량 청산)
+    drawdown_recovery_pct: float = 0.05  # DD 회복 후 재진입 기준 (고점 대비 -5% 이내면 복귀)
 
     def get_costs(self) -> dict:
         """거래 비용 반환 (명시적 설정값 또는 국가 기본값)"""
@@ -175,6 +179,8 @@ class BacktestEngine:
         positions = {}  # {ticker: {"quantity": int, "avg_price": float}}
         equity_history = {}
         trade_records = []
+        peak_value = capital  # 포트폴리오 최고점 추적
+        is_risk_off = False  # Drawdown limit 발동 시 True
 
         dates = signals.index.tolist()
 
@@ -188,6 +194,74 @@ class BacktestEngine:
                     current_price = prices.loc[date, ticker]
                     if not pd.isna(current_price) and current_price > 0:
                         portfolio_value += pos["quantity"] * current_price
+
+            # ── 포트폴리오 Drawdown Limit 체크 ──
+            peak_value = max(peak_value, portfolio_value)
+            current_dd = (portfolio_value - peak_value) / peak_value if peak_value > 0 else 0.0
+
+            if self._config.max_drawdown_limit is not None:
+                if not is_risk_off and current_dd < -self._config.max_drawdown_limit:
+                    # DD 한도 초과 → 전 포지션 강제 청산
+                    is_risk_off = True
+                    for ticker in list(positions.keys()):
+                        pos = positions[ticker]
+                        sell_price = prices.loc[date, ticker] if ticker in prices.columns else 0
+                        if pd.isna(sell_price) or sell_price <= 0:
+                            continue
+                        effective_price = sell_price * (1 - self._costs["slippage"])
+                        quantity = pos["quantity"]
+                        gross_proceeds = effective_price * quantity
+                        commission = gross_proceeds * self._costs["commission"]
+                        tax = gross_proceeds * self._costs["tax"]
+                        total_cost = commission + tax
+                        net_proceeds = gross_proceeds - total_cost
+                        pnl = net_proceeds - (pos["avg_price"] * quantity)
+                        cash += net_proceeds
+                        trade_records.append(
+                            TradeRecord(date=date_str, ticker=ticker, side="SELL",
+                                        quantity=quantity, price=effective_price,
+                                        cost=total_cost, pnl=pnl)
+                        )
+                        del positions[ticker]
+                    # 현금 전환 후 equity 재계산
+                    portfolio_value = cash
+                    equity_history[date] = portfolio_value
+                    continue
+
+                if is_risk_off:
+                    # 회복 대기: 포트폴리오 가치가 고점의 (1 - recovery_pct) 이상이면 복귀
+                    recovery_threshold = peak_value * (1 - self._config.drawdown_recovery_pct)
+                    if portfolio_value >= recovery_threshold:
+                        is_risk_off = False
+                    else:
+                        equity_history[date] = portfolio_value
+                        continue
+
+            # ── 종목별 Stop-loss 체크 ──
+            if self._config.stop_loss_pct is not None:
+                for ticker in list(positions.keys()):
+                    pos = positions[ticker]
+                    current_price = prices.loc[date, ticker] if ticker in prices.columns else 0
+                    if pd.isna(current_price) or current_price <= 0:
+                        continue
+                    loss_pct = (current_price - pos["avg_price"]) / pos["avg_price"]
+                    if loss_pct < -self._config.stop_loss_pct:
+                        # Stop-loss 발동
+                        effective_price = current_price * (1 - self._costs["slippage"])
+                        quantity = pos["quantity"]
+                        gross_proceeds = effective_price * quantity
+                        commission = gross_proceeds * self._costs["commission"]
+                        tax = gross_proceeds * self._costs["tax"]
+                        total_cost = commission + tax
+                        net_proceeds = gross_proceeds - total_cost
+                        pnl = net_proceeds - (pos["avg_price"] * quantity)
+                        cash += net_proceeds
+                        trade_records.append(
+                            TradeRecord(date=date_str, ticker=ticker, side="SELL",
+                                        quantity=quantity, price=effective_price,
+                                        cost=total_cost, pnl=pnl)
+                        )
+                        del positions[ticker]
 
             # 시그널 기반 목표 포지션 계산
             day_signals = signals.loc[date].dropna()

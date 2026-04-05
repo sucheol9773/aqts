@@ -106,11 +106,38 @@ Sharpe 기반 가중치 추천: ENSEMBLE 39.5%, TREND_FOLLOWING 30.2%, RISK_PARI
 
 기존 2024-01 ~ 2026-04 (2.3년, 62,800건)에서 2000-01 ~ 2026-04 (26년, 543,193건)로 확장. yfinance 백필 스크립트를 통해 114종목의 장기 OHLCV 데이터 수집 완료.
 
+### MDD 방어 로직 구현 (2026-04-05)
+
+BacktestEngine에 두 가지 리스크 관리 메커니즘을 추가했다.
+
+**1. 포트폴리오 Drawdown Limit (`--max-dd`)**
+- 포트폴리오 가치가 고점 대비 설정한 한도(예: -20%) 이상 하락하면 전 포지션을 강제 청산하고 "risk off" 모드에 진입한다.
+- 이후 포트폴리오 가치가 고점의 95%(recovery_pct=5%) 이상으로 회복되면 거래를 재개한다.
+- 닷컴버블, 금융위기, 코로나 등 극단적 하락장에서 -50% 이상의 MDD를 방어하기 위한 장치이다.
+
+**2. 종목별 Stop-loss (`--stop-loss`)**
+- 각 포지션의 미실현 손실이 설정한 비율(예: -10%)을 초과하면 해당 종목만 즉시 매도한다.
+- 평균 매입가 대비 현재가의 손실률로 계산하며, 슬리피지와 거래비용을 반영한다.
+
+**사용법:**
+```bash
+# 종목별 -10% 손절 + 포트폴리오 -20% DD 한도
+python scripts/run_backtest.py --stop-loss 0.10 --max-dd 0.20
+
+# stop-loss만 적용
+python scripts/run_backtest.py --stop-loss 0.15
+
+# DD 한도만 적용
+python scripts/run_backtest.py --max-dd 0.25
+```
+
+BacktestConfig에 추가된 필드: `stop_loss_pct`, `max_drawdown_limit`, `drawdown_recovery_pct`
+
 ## 향후 과제
 
-- MDD 방어: stop-loss, 시장 레짐 감지(VIX 기반 위험 회피) 로직 추가
+- MDD 방어 효과 비교 백테스트 실행 (보호 있음 vs 없음)
+- 시장 레짐 감지(VIX 기반 위험 회피) 로직 추가
 - RISK_PARITY 거래 빈도 개선: 시그널 임계값 또는 로직 추가 튜닝
-- 전체 유니버스(114종목) 백테스트 실행
 - 거래 임계값(0.3) 파라미터 민감도 분석
 - 시장별 전략 가중치 자동 조정 로직 (동적 앙상블)
 - 트랜잭션 코스트 민감도 분석

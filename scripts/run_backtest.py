@@ -158,6 +158,8 @@ def run_backtest_for_universe(
     ohlcv_data: dict[str, pd.DataFrame],
     country: Country,
     initial_capital: float = 50_000_000,
+    stop_loss_pct: float | None = None,
+    max_drawdown_limit: float | None = None,
 ) -> dict[str, dict]:
     """
     유니버스 전체에 대해 전략별 백테스트 실행
@@ -202,6 +204,8 @@ def run_backtest_for_universe(
             start_date=str(common_idx[0].date()),
             end_date=str(common_idx[-1].date()),
             country=country,
+            stop_loss_pct=stop_loss_pct,
+            max_drawdown_limit=max_drawdown_limit,
         )
 
         engine = BacktestEngine(config)
@@ -310,6 +314,8 @@ def main():
     parser.add_argument("--capital", type=float, default=50_000_000, help="초기 자본금 (기본: 50,000,000원)")
     parser.add_argument("--output", type=str, default=None, help="결과 CSV 저장 경로")
     parser.add_argument("--db-url", type=str, default=None, help="DB URL (미지정 시 환경변수에서 구성)")
+    parser.add_argument("--stop-loss", type=float, default=None, help="종목별 손절 비율 (예: 0.10 = -10%%)")
+    parser.add_argument("--max-dd", type=float, default=None, help="포트폴리오 DD 한도 (예: 0.20 = -20%%)")
     args = parser.parse_args()
 
     db_url = args.db_url or build_db_url()
@@ -331,6 +337,10 @@ def main():
     print(f"  기간:     {args.start} ~ {args.end}")
     print(f"  초기자본: {args.capital:,.0f}원")
     print(f"  거래비용: {TRANSACTION_COSTS[country]}")
+    if args.stop_loss:
+        print(f"  손절기준: 종목별 -{args.stop_loss:.0%}")
+    if args.max_dd:
+        print(f"  DD한도:   포트폴리오 -{args.max_dd:.0%}")
     print()
 
     # 1) 데이터 로드
@@ -344,7 +354,11 @@ def main():
     print(f"\n  총 {len(ohlcv_data)}개 종목 로드 완료")
 
     # 2) 백테스트 실행
-    results = run_backtest_for_universe(ohlcv_data, country, args.capital)
+    results = run_backtest_for_universe(
+        ohlcv_data, country, args.capital,
+        stop_loss_pct=args.stop_loss,
+        max_drawdown_limit=args.max_dd,
+    )
 
     if not results:
         print("\n❌ 백테스트 결과가 없습니다.")
