@@ -158,7 +158,20 @@ DD 비례 포지션 쿠션 (엔진 레벨):
   ENSEMBLE:        cushion -8%,  DD limit -20%, cooldown 20일
 ```
 
-## 9. 다음 단계
+## 9. 전체 시장 테스트 스크립트
+
+`scripts/run_full_test.sh` — KR + US 전체 종목 OOS + 백테스트 일괄 실행
+
+```bash
+./scripts/run_full_test.sh              # KR + US 전체
+./scripts/run_full_test.sh kr           # KR만
+./scripts/run_full_test.sh us           # US만
+./scripts/run_full_test.sh --skip-backtest  # OOS만
+```
+
+결과: `results/full_test/YYYYMMDD_HHMMSS/` 하위에 시장별 CSV + 요약 텍스트 저장.
+
+## 10. 다음 단계
 
 1. v4 MDD 방어 적용 후 OOS 재실행 → MDD 억제 효과 확인
 2. MEAN_REVERSION MDD -45.8% FAIL 해결 여부 확인
