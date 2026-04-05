@@ -57,17 +57,17 @@ jobs:
             git pull origin main
 
             echo "═══ Step 2: Build & restart services ═══"
-            docker compose -f docker-compose.yml build --no-cache backend
+            docker compose -f docker-compose.yml build backend
             docker compose -f docker-compose.yml up -d
 
-            echo "═══ Step 3: Wait for health check ═══"
-            for i in $(seq 1 30); do
+            echo "═══ Step 3: Wait for health check (max 120s) ═══"
+            for i in $(seq 1 60); do
               if curl -sf http://localhost:8000/api/system/health > /dev/null 2>&1; then
-                echo "✅ Backend healthy after ${i}s"
+                echo "✅ Backend healthy after $((i*2))s"
                 break
               fi
-              if [ $i -eq 30 ]; then
-                echo "❌ Health check failed after 30s"
+              if [ $i -eq 60 ]; then
+                echo "❌ Health check failed after 120s"
                 docker compose logs backend --tail=50
                 exit 1
               fi
