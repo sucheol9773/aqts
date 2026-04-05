@@ -120,7 +120,7 @@ jobs:
             MSG="\${EMOJI} AQTS Deploy \${STATUS}
           Commit: ${GITHUB_SHA:0:7}
           Branch: main
-          Time: \$(date '+%Y-%m-%d %H:%M:%S KST')"
+          Time: \$(TZ='Asia/Seoul' date '+%Y-%m-%d %H:%M:%S KST')"
             curl -sf "https://api.telegram.org/bot\${TELEGRAM_BOT_TOKEN}/sendMessage" \
               -d chat_id="\${TELEGRAM_CHAT_ID}" \
               -d text="\${MSG}" > /dev/null 2>&1 || true
