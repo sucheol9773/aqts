@@ -27,9 +27,14 @@ import os
 import sys
 
 import pandas as pd
+from dotenv import load_dotenv
+
+# 프로젝트 루트의 .env 파일 로드
+_project_root = os.path.join(os.path.dirname(__file__), "..")
+load_dotenv(os.path.join(_project_root, ".env"))
 
 # backend 경로 추가
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
+sys.path.insert(0, os.path.join(_project_root, "backend"))
 
 os.environ.setdefault("KIS_TRADING_MODE", "BACKTEST")
 os.environ.setdefault("TESTING", "1")
@@ -263,14 +268,14 @@ def save_results_csv(results: dict[str, object], output_path: str):
 
 
 def build_db_url() -> str:
-    """환경변수에서 DB URL 구성"""
+    """환경변수에서 DB URL 구성 (.env의 TIMESCALE_* 변수 사용)"""
     from urllib.parse import quote_plus
 
-    host = os.environ.get("DB_HOST", "localhost")
-    port = os.environ.get("DB_PORT", "5432")
-    user = os.environ.get("DB_USER", "aqts")
-    password = os.environ.get("DB_PASSWORD", "")
-    name = os.environ.get("DB_NAME", "aqts")
+    host = os.environ.get("TIMESCALE_HOST", os.environ.get("DB_HOST", "localhost"))
+    port = os.environ.get("TIMESCALE_PORT", os.environ.get("DB_PORT", "5432"))
+    user = os.environ.get("TIMESCALE_USER", os.environ.get("DB_USER", "aqts"))
+    password = os.environ.get("TIMESCALE_PASSWORD", os.environ.get("DB_PASSWORD", ""))
+    name = os.environ.get("TIMESCALE_DB", os.environ.get("DB_NAME", "aqts"))
     return f"postgresql+psycopg2://{user}:{quote_plus(password)}@{host}:{port}/{name}"
 
 

@@ -49,7 +49,7 @@ torch>=2.6.0
 # ── Quant / Backtest ──
 # vectorbt==0.26.2
 ta==0.11.0
-empyrical==0.5.5
+# empyrical==0.5.5  # Python 3.12 비호환 (SafeConfigParser 제거됨), 코드에서 미사용
  
 # ── AI / LLM ──
 anthropic==0.28.1
