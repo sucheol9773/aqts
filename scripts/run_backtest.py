@@ -276,6 +276,11 @@ def build_db_url() -> str:
     user = os.environ.get("TIMESCALE_USER", os.environ.get("DB_USER", "aqts"))
     password = os.environ.get("TIMESCALE_PASSWORD", os.environ.get("DB_PASSWORD", ""))
     name = os.environ.get("TIMESCALE_DB", os.environ.get("DB_NAME", "aqts"))
+
+    # Docker 내부 호스트명 → 호스트 머신에서는 localhost로 변환
+    if host in ("postgres", "timescaledb", "timescale"):
+        host = "localhost"
+
     return f"postgresql+psycopg2://{user}:{quote_plus(password)}@{host}:{port}/{name}"
 
 
