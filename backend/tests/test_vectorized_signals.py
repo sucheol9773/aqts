@@ -6,8 +6,8 @@ generate_strategy_signals_vectorized() 및 _generate_signals_worker()의
 """
 
 import multiprocessing as mp
-import sys
 import os
+import sys
 
 import numpy as np
 import pandas as pd
