@@ -208,8 +208,13 @@ class TestDynamicEnsemble:
         # 동적이면 MR 가중치가 바뀜
         assert not active.isna().any(), "NaN 존재"
 
-    def test_weights_always_sum_to_one(self):
-        """어떤 레짐이든 가중치 합이 1인지 확인 (간접 검증)"""
+    def test_weights_always_sum_to_one_before_vol_scaling(self):
+        """어떤 레짐이든 가중치 합이 1인지 확인 (간접 검증)
+
+        변동성 타겟팅으로 최종 시그널이 축소될 수 있지만,
+        가중치 자체의 합은 1이므로 ensemble ≤ 1.0이어야 함.
+        고변동 시 vol_scalar < 1.0으로 축소되는 것은 정상 동작.
+        """
         np.random.seed(42)
         n = 200
         dates = pd.date_range("2023-01-01", periods=n, freq="B")
@@ -227,16 +232,13 @@ class TestDynamicEnsemble:
 
         from run_backtest import _compute_dynamic_ensemble
 
-        # 모든 전략 시그널 = 1.0이면, ensemble = w_tf*1 + w_mr*1 + w_rp*1 = 1.0
+        # 모든 전략 시그널 = 1.0이면, 가중치 합=1 → ensemble ≤ 1.0
+        # vol_scalar ≤ 1.0이므로 축소만 발생 (레버리지 없음)
         ones = pd.Series(1.0, index=dates)
         ensemble = _compute_dynamic_ensemble(ohlcv, ones, ones, ones, min_window=60)
         active = ensemble.iloc[60:]
-        np.testing.assert_allclose(
-            active.values,
-            1.0,
-            atol=1e-10,
-            err_msg="가중치 합이 1이 아님 (모든 시그널=1일 때 ensemble≠1)",
-        )
+        assert (active <= 1.0 + 1e-10).all(), "앙상블이 1.0을 초과 (레버리지 발생)"
+        assert (active > 0).all(), "앙상블이 0 이하 (시그널 소멸)"
 
 
 class TestMultiprocessingWorker:

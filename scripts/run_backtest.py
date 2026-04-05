@@ -366,6 +366,15 @@ def _compute_dynamic_ensemble(
     # ── 6) 동적 가중 합산 ──
     ensemble = w_tf * tf_signal + w_mr * mr_signal + w_rp * rp_signal
 
+    # ── 7) 변동성 타겟팅: 고변동 시 시그널 축소 ──
+    # 연환산 변동성이 target_vol을 넘으면 시그널을 비례 축소
+    # 레버리지는 사용하지 않음 (scalar ≤ 1.0)
+    target_vol = 0.15  # 연 15% 목표 변동성
+    current_vol = returns.rolling(20).std() * np.sqrt(252)
+    current_vol = current_vol.fillna(target_vol)  # 초기 구간은 목표값 사용
+    vol_scalar = (target_vol / current_vol.replace(0, target_vol)).clip(upper=1.0)
+    ensemble = ensemble * vol_scalar
+
     return ensemble
 
 
@@ -393,6 +402,7 @@ STRATEGY_RISK_PRESETS: dict[str, dict] = {
         "stop_loss_atr_multiplier": None,
         "max_drawdown_limit": 0.25,
         "drawdown_cooldown_days": 10,
+        "dd_cushion_start": 0.10,  # -10%부터 포지션 축소 시작
     },
     "TREND_FOLLOWING": {
         # 추세추종은 ATR 기반 트레일링 손절이 적합
@@ -400,6 +410,7 @@ STRATEGY_RISK_PRESETS: dict[str, dict] = {
         "stop_loss_atr_multiplier": 2.0,
         "max_drawdown_limit": 0.20,
         "drawdown_cooldown_days": 20,
+        "dd_cushion_start": 0.08,  # -8%부터 포지션 축소 시작
     },
     "RISK_PARITY": {
         # 리스크패리티는 변동성 기반이므로 넓은 ATR 배수
@@ -407,6 +418,7 @@ STRATEGY_RISK_PRESETS: dict[str, dict] = {
         "stop_loss_atr_multiplier": 2.5,
         "max_drawdown_limit": 0.20,
         "drawdown_cooldown_days": 15,
+        "dd_cushion_start": 0.08,  # -8%부터 포지션 축소 시작
     },
     "ENSEMBLE": {
         # 앙상블은 중간 수준
@@ -414,6 +426,7 @@ STRATEGY_RISK_PRESETS: dict[str, dict] = {
         "stop_loss_atr_multiplier": 2.0,
         "max_drawdown_limit": 0.20,
         "drawdown_cooldown_days": 20,
+        "dd_cushion_start": 0.08,  # -8%부터 포지션 축소 시작
     },
 }
 

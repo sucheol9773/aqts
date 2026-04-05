@@ -39,6 +39,9 @@ class BacktestConfig:
     max_drawdown_limit: Optional[float] = None  # 포트폴리오 DD 한도 (예: 0.20 = -20%에서 전량 청산)
     drawdown_cooldown_days: int = 20  # DD 발동 후 거래 재개까지 대기 영업일
     safe_asset_annual_return: float = 0.03  # 쿨다운 중 안전자산 연수익률 (기본: 국채 3%)
+    # ── DD 비례 포지션 축소 (쿠션) ──
+    dd_cushion_start: Optional[float] = None  # DD 쿠션 시작점 (예: 0.10 = -10%부터 축소 시작)
+    dd_cushion_floor: float = 0.25  # 최소 포지션 비율 (0.25 = 25%까지 축소)
 
     def get_costs(self) -> dict:
         """거래 비용 반환 (명시적 설정값 또는 국가 기본값)"""
@@ -343,6 +346,27 @@ class BacktestEngine:
                 total_signal = buy_signals.sum()
                 if total_signal > 0:
                     available_cash = cash * 0.95  # 5% 현금 유보
+
+                    # ── DD 비례 포지션 축소 (쿠션) ──
+                    # DD가 cushion_start를 넘으면 선형으로 포지션 축소
+                    # hard limit에 도달하기 전에 완충 역할
+                    if self._config.dd_cushion_start is not None and current_dd < 0:
+                        dd_abs = abs(current_dd)
+                        cushion_start = self._config.dd_cushion_start
+                        if dd_abs > cushion_start:
+                            # hard limit까지 선형 축소
+                            hard_limit = (
+                                self._config.max_drawdown_limit
+                                if self._config.max_drawdown_limit is not None
+                                else cushion_start * 2
+                            )
+                            # cushion_start → hard_limit 구간에서 1.0 → floor 선형 보간
+                            progress = min(
+                                (dd_abs - cushion_start) / max(hard_limit - cushion_start, 1e-6),
+                                1.0,
+                            )
+                            scale = 1.0 - progress * (1.0 - self._config.dd_cushion_floor)
+                            available_cash *= scale
 
                     for ticker, sig in buy_signals.items():
                         if ticker in positions:

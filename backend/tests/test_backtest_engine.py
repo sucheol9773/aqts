@@ -489,3 +489,88 @@ class TestBenchmarkMetrics:
         assert "beta" in df.columns
         assert "info_ratio" in df.columns
         assert "tracking_error" in df.columns
+
+
+# ══════════════════════════════════════
+# DD 비례 쿠션 테스트
+# ══════════════════════════════════════
+class TestDDCushion:
+    """DD 비례 포지션 축소 (쿠션) 테스트"""
+
+    def _make_declining_prices(self, n=252):
+        """지속 하락 가격 데이터 (MDD 발생 보장)"""
+        dates = pd.bdate_range(start="2024-01-02", periods=n)
+        # 전반부 상승 후 급락 → DD 발생
+        prices_up = 50000 * np.cumprod(1 + np.full(n // 2, 0.002))
+        prices_down = prices_up[-1] * np.cumprod(1 + np.full(n - n // 2, -0.003))
+        prices_data = np.concatenate([prices_up, prices_down])
+        prices = pd.DataFrame({"A": prices_data}, index=dates)
+        signals = pd.DataFrame({"A": np.zeros(n)}, index=dates)
+        signals.iloc[0] = 0.8  # 첫날 매수
+        return prices, signals
+
+    def test_cushion_reduces_mdd(self):
+        """DD 쿠션 활성화 시 MDD가 쿠션 없는 경우보다 작아야 함"""
+        prices, signals = self._make_declining_prices()
+
+        # 쿠션 없음
+        config_no_cushion = BacktestConfig(
+            initial_capital=10_000_000,
+            country=Country.KR,
+            slippage_rate=0.0,
+            commission_rate=0.0,
+            tax_rate=0.0,
+            dd_cushion_start=None,
+        )
+        result_no = BacktestEngine(config_no_cushion).run("NoCushion", signals, prices)
+
+        # 쿠션 있음 (-5%부터 축소 시작)
+        config_cushion = BacktestConfig(
+            initial_capital=10_000_000,
+            country=Country.KR,
+            slippage_rate=0.0,
+            commission_rate=0.0,
+            tax_rate=0.0,
+            dd_cushion_start=0.05,
+            max_drawdown_limit=0.20,
+        )
+        result_yes = BacktestEngine(config_cushion).run("Cushion", signals, prices)
+
+        # 쿠션 적용 시 MDD가 더 작아야 함 (또는 같음 — 쿨다운 발동 시)
+        assert result_yes.mdd >= result_no.mdd  # mdd는 음수이므로 >= 이 "덜 나쁨"
+
+    def test_cushion_config_defaults(self):
+        """DD 쿠션 기본값 확인"""
+        config = BacktestConfig()
+        assert config.dd_cushion_start is None
+        assert config.dd_cushion_floor == 0.25
+
+    def test_cushion_does_not_affect_when_no_dd(self):
+        """DD가 없는 상승장에서 쿠션이 영향 없어야 함"""
+        dates = pd.bdate_range(start="2024-01-02", periods=252)
+        prices_data = 50000 * np.cumprod(1 + np.full(252, 0.001))
+        prices = pd.DataFrame({"A": prices_data}, index=dates)
+        signals = pd.DataFrame({"A": np.zeros(252)}, index=dates)
+        signals.iloc[0] = 0.8
+
+        config_no = BacktestConfig(
+            initial_capital=10_000_000,
+            country=Country.KR,
+            slippage_rate=0.0,
+            commission_rate=0.0,
+            tax_rate=0.0,
+        )
+        config_yes = BacktestConfig(
+            initial_capital=10_000_000,
+            country=Country.KR,
+            slippage_rate=0.0,
+            commission_rate=0.0,
+            tax_rate=0.0,
+            dd_cushion_start=0.05,
+            max_drawdown_limit=0.20,
+        )
+        result_no = BacktestEngine(config_no).run("NoCush", signals, prices)
+        result_yes = BacktestEngine(config_yes).run("Cush", signals, prices)
+
+        # 상승장에서 DD가 발생하지 않으므로 수익률이 동일해야 함
+        assert abs(result_no.total_return - result_yes.total_return) < 0.01
