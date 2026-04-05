@@ -156,6 +156,7 @@ def generate_strategy_signals_vectorized(
     Returns:
         {strategy_name: pd.Series(index=날짜, values=시그널값)}
     """
+    import numpy as np
     from core.quant_engine.signal_generator import TechnicalIndicators
 
     ti = TechnicalIndicators()
