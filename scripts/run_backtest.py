@@ -369,7 +369,7 @@ def _compute_dynamic_ensemble(
     # ── 7) 변동성 타겟팅: 고변동 시 시그널 축소 ──
     # 연환산 변동성이 target_vol을 넘으면 시그널을 비례 축소
     # 레버리지는 사용하지 않음 (scalar ≤ 1.0)
-    target_vol = 0.15  # 연 15% 목표 변동성
+    target_vol = 0.25  # 연 25% 목표 변동성 (한국 시장 평균 vol 20~30% 감안)
     current_vol = returns.rolling(20).std() * np.sqrt(252)
     current_vol = current_vol.fillna(target_vol)  # 초기 구간은 목표값 사용
     vol_scalar = (target_vol / current_vol.replace(0, target_vol)).clip(upper=1.0)

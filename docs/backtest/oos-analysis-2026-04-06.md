@@ -42,7 +42,15 @@
 | RISK_PARITY | 35.4% | -0.35 | -25.5% | 6.04 | REVIEW |
 | ENSEMBLE | 47.9% | -0.06 | -34.3% | 7.00 | REVIEW |
 
-Note: v4 MDD 방어 기능은 이 실행 이후 구현됨. 다음 재실행에서 효과 확인 예정.
+### v4a (target_vol=15%) 결과 — 실패
+
+| 전략 | 양수 윈도우 | 평균 Sharpe | Worst MDD | Sharpe 분산 | Gate |
+|---|---|---|---|---|---|
+| ENSEMBLE | 30.2% | -0.57 | -39.6% | 10.68 | REVIEW |
+
+target_vol=15%가 한국 시장 평균 vol(20~30%)에 비해 과도하게 낮아서
+시그널이 50% 이상 축소되는 구간이 많아 전체 성능 악화.
+target_vol을 25%로 상향 조정 (v4b).
 
 ## 2. OOS 결과 비교 (ENSEMBLE)
 
@@ -133,7 +141,7 @@ OOS 성과가 IS보다 높은 것은 동적 가중치가 특정 구간에서 특
 
 ```
 변동성 타겟팅 (시그널 레벨):
-  target_vol = 15% (연환산)
+  target_vol = 25% (연환산, 한국 시장 vol 20~30% 감안)
   vol_scalar = min(target_vol / rolling_20d_vol, 1.0)
   ensemble_signal *= vol_scalar
   → 고변동 시 시그널 축소, 레버리지 없음
