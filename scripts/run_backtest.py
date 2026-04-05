@@ -339,8 +339,11 @@ def _compute_dynamic_ensemble(
     tf_perf = (tf_signal * returns).rolling(perf_window).sum().fillna(0.0)
     rp_perf = (rp_signal * returns).rolling(perf_window).sum().fillna(0.0)
 
-    # softmax 스타일 보정 계수 (온도 파라미터로 과도한 쏠림 방지)
-    temperature = 5.0
+    # softmax 스타일 보정 계수
+    # 온도 3.0: 기존 5.0 대비 성과 차이에 더 민감하게 반응
+    # → 부진 전략(RISK_PARITY 등)의 가중치를 자연스럽게 축소
+    # 과적합 리스크: 새 파라미터 추가 없이 기존 온도만 조정
+    temperature = 3.0
     exp_mr = np.exp(mr_perf / temperature)
     exp_tf = np.exp(tf_perf / temperature)
     exp_rp = np.exp(rp_perf / temperature)
@@ -351,8 +354,10 @@ def _compute_dynamic_ensemble(
     perf_adj_tf = exp_tf / exp_sum
     perf_adj_rp = exp_rp / exp_sum
 
-    # 레짐 가중치에 성과 보정 블렌딩 (70% 레짐 + 30% 성과)
-    blend = 0.3
+    # 레짐 가중치에 성과 보정 블렌딩 (60% 레짐 + 40% 성과)
+    # 기존 70/30에서 60/40으로 성과 반영 비중 확대
+    # → 레짐 가중치가 부진 전략에 높은 비중을 줘도 성과가 보정
+    blend = 0.4
     w_mr = w_mr * (1 - blend) + perf_adj_mr * blend
     w_tf = w_tf * (1 - blend) + perf_adj_tf * blend
     w_rp = w_rp * (1 - blend) + perf_adj_rp * blend
@@ -374,6 +379,17 @@ def _compute_dynamic_ensemble(
     current_vol = current_vol.fillna(target_vol)  # 초기 구간은 목표값 사용
     vol_scalar = (target_vol / current_vol.replace(0, target_vol)).clip(upper=1.0)
     ensemble = ensemble * vol_scalar
+
+    # ── 8) 위기 구간 추가 감쇄 ──
+    # 변동성이 target_vol의 1.6배(40%)를 넘는 극단 구간에서
+    # 추가적인 시그널 축소 적용 (2008, 2020 같은 위기 구간)
+    # 경제적 근거: 극단 변동성에서는 시그널 정확도가 급격히 떨어짐
+    crisis_vol_threshold = target_vol * 1.6  # 40% (= 25% × 1.6)
+    crisis_mask = current_vol > crisis_vol_threshold
+    # 위기 강도에 비례한 추가 감쇄 (40%→50%에서 1.0→0.5 선형)
+    crisis_severity = ((current_vol - crisis_vol_threshold) / (target_vol * 0.4)).clip(0.0, 1.0)
+    crisis_scalar = 1.0 - crisis_severity * 0.5  # 최대 50% 추가 감쇄
+    ensemble = ensemble.where(~crisis_mask, ensemble * crisis_scalar)
 
     return ensemble
 
