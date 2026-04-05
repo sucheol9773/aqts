@@ -41,7 +41,7 @@ class BacktestConfig:
     safe_asset_annual_return: float = 0.03  # 쿨다운 중 안전자산 연수익률 (기본: 국채 3%)
     # ── DD 비례 포지션 축소 (쿠션) ──
     dd_cushion_start: Optional[float] = None  # DD 쿠션 시작점 (예: 0.10 = -10%부터 축소 시작)
-    dd_cushion_floor: float = 0.15  # 최소 포지션 비율 (0.15 = 15%까지 축소)
+    dd_cushion_floor: float = 0.25  # 최소 포지션 비율 (0.25 = 25%까지 축소)
 
     def get_costs(self) -> dict:
         """거래 비용 반환 (명시적 설정값 또는 국가 기본값)"""
@@ -354,23 +354,18 @@ class BacktestEngine:
                         dd_abs = abs(current_dd)
                         cushion_start = self._config.dd_cushion_start
                         if dd_abs > cushion_start:
-                            # hard limit까지 제곱(convex) 커브로 축소
-                            # DD가 깊어질수록 가속적으로 포지션 감소
+                            # hard limit까지 선형 축소
                             hard_limit = (
                                 self._config.max_drawdown_limit
                                 if self._config.max_drawdown_limit is not None
                                 else cushion_start * 2
                             )
-                            # cushion_start → hard_limit 구간에서 진행률 계산
+                            # cushion_start → hard_limit 구간에서 1.0 → floor 선형 보간
                             progress = min(
                                 (dd_abs - cushion_start) / max(hard_limit - cushion_start, 1e-6),
                                 1.0,
                             )
-                            # 제곱 커브: 초반은 완만하게, 후반은 급격하게 축소
-                            # progress=0.5 → 선형은 50% 감소, 제곱은 25% 감소
-                            # progress=0.8 → 선형은 80% 감소, 제곱은 64% 감소
-                            convex_progress = progress**2
-                            scale = 1.0 - convex_progress * (1.0 - self._config.dd_cushion_floor)
+                            scale = 1.0 - progress * (1.0 - self._config.dd_cushion_floor)
                             available_cash *= scale
 
                     for ticker, sig in buy_signals.items():

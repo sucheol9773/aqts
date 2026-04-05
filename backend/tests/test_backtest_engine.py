@@ -543,7 +543,7 @@ class TestDDCushion:
         """DD 쿠션 기본값 확인"""
         config = BacktestConfig()
         assert config.dd_cushion_start is None
-        assert config.dd_cushion_floor == 0.15
+        assert config.dd_cushion_floor == 0.25
 
     def test_cushion_does_not_affect_when_no_dd(self):
         """DD가 없는 상승장에서 쿠션이 영향 없어야 함"""
