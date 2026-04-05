@@ -678,6 +678,28 @@ python scripts/run_rl_training.py --evaluate --model models/rl_agent_v1
 
 **테스트**: 16개 신규 (TradingEnv 8, RLTrainer 4, Gym 호환성 2, RLConfig 2)
 
+### 16.8 DEMO 모드 + 전체 파이프라인 통합 테스트
+
+프로덕션 배포 전 시스템 전체 흐름을 검증하는 통합 테스트 구현.
+
+**DEMO 모드 활성화 테스트** (TestDemoModeIntegration, 8개):
+- BACKTEST→DEMO 전환 사전 검증 (자격증명 유/무)
+- DemoVerifier 11항목 전체 통과/부분 실패 시나리오
+- HealthChecker 시스템 건전성 확인
+- TradingGuard 일일 상태 리셋
+- 전체 활성화 흐름 (전환검증→DemoVerifier→HealthCheck→GuardReset→기록)
+- DEMO→LIVE 전환 차단 (프로덕션 자격증명 없음)
+
+**전체 파이프라인 통합 테스트** (TestFullPipelineIntegration, 8개):
+- 5개 핸들러 개별 검증 (PRE_MARKET~POST_MARKET)
+- **전체 사이클 테스트**: InMemoryRedis로 핸들러간 데이터 전파 검증
+  - market_open → Redis 캐시 → midday_check에서 조회
+  - market_close → Redis 스냅샷 → post_market에서 조회
+- PipelineStateMachine 상태 전이 (IDLE→COLLECTING→ANALYZING→COMPLETED)
+- 핸들러 장애 격리 (한 핸들러 실패가 다른 핸들러에 영향 없음)
+
+**테스트**: 16개 신규 (총 2646 pass)
+
 ## 17. 다음 단계
 
 1. ~~RL/학습형 에이전트 도입~~ ✅ 1단계 완료 (Optuna 베이지안 최적화)
@@ -689,6 +711,7 @@ python scripts/run_rl_training.py --evaluate --model models/rl_agent_v1
 7. ~~MIDDAY_CHECK / MARKET_CLOSE / POST_MARKET 핸들러 확장~~ ✅ 완료
 8. ~~RL 에이전트 2단계: Gym 환경 + PPO/SAC~~ ✅ 완료
 9. ~~최적화된 하이퍼파라미터 YAML 설정 파일 관리 체계 구축~~ ✅ 완료
-10. RL 에이전트 실전 학습: 전 종목 OHLCV 데이터로 PPO/SAC 학습 및 OOS 비교
-11. 멀티 에셋 RL 환경 확장: 단일 → 포트폴리오 레벨 의사결정
-12. Hyperopt + RL 결합: Optuna로 RL 보상함수 파라미터 최적화
+10. ~~DEMO 모드 + 전체 파이프라인 통합 테스트~~ ✅ 완료
+11. RL 에이전트 실전 학습: 전 종목 OHLCV 데이터로 PPO/SAC 학습 및 OOS 비교
+12. 멀티 에셋 RL 환경 확장: 단일 → 포트폴리오 레벨 의사결정
+13. Hyperopt + RL 결합: Optuna로 RL 보상함수 파라미터 최적화
