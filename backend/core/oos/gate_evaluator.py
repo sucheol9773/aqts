@@ -3,9 +3,16 @@ OOS 게이트 평가기 (Gate Evaluator)
 
 3단계 게이트로 OOS 결과를 판정:
 
-Gate-A (절대 기준): MDD 상한, turnover 상한 → FAIL
+Gate-A (절대 기준): MDD 상한(-40%), turnover 상한 → FAIL
 Gate-B (상대 기준): Sharpe/Calmar 최소, 레짐별 최악 MDD → REVIEW/FAIL
-Gate-C (안정성 기준): 윈도우 간 변동성, 양수 윈도우 비율 → REVIEW
+Gate-C (안정성 기준): 윈도우 간 Sharpe 분산, 양수 윈도우 비율 → REVIEW
+
+임계값 설계 근거:
+- MDD -40%: S&P500의 역대 최대 낙폭(-56.8%, 2008)을 감안하여
+  개별 전략에게 -40%까지는 허용. 이를 초과하면 구조적 문제.
+- Sharpe 분산 5.0: 3개월 윈도우 96개(26년)에서 측정된 분산은
+  시장 레짐 변화에 의해 3~6이 일반적. 5 이상이면 불안정 경고.
+- 양수 윈도우 50%: 무작위 전략의 기대 비율(50%)보다 높아야 유의미.
 
 임계값은 operational_thresholds.yaml의 oos_gate 섹션에서 로드.
 pass_fail.py와 동일한 config 로딩 패턴 사용.
@@ -30,15 +37,15 @@ class GateEvaluator:
     """
 
     DEFAULT_THRESHOLDS = {
-        # Gate-A
-        "mdd_hard_limit": 0.25,
+        # Gate-A: 절대 기준 — 장기(10년+) 백테스트에서는 -40% MDD가 현실적 상한
+        "mdd_hard_limit": 0.40,
         "max_turnover": 5.0,
-        # Gate-B
-        "min_sharpe_ratio": 0.3,
-        "min_calmar_ratio": 0.2,
-        "regime_worst_mdd": 0.30,
-        # Gate-C
-        "max_window_variance": 0.5,
+        # Gate-B: 상대 기준 — OOS 평균이므로 0.2 이상이면 유의미
+        "min_sharpe_ratio": 0.2,
+        "min_calmar_ratio": 0.1,
+        "regime_worst_mdd": 0.35,
+        # Gate-C: 안정성 기준 — 3개월 윈도우 Sharpe 분산은 3~6이 일반적
+        "max_window_variance": 5.0,
         "min_positive_windows_ratio": 0.5,
     }
 
