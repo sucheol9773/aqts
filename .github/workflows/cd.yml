@@ -1,7 +1,7 @@
 # ══════════════════════════════════════════════════════════════
 # AQTS CD Pipeline — GCP 자동 배포
 # ══════════════════════════════════════════════════════════════
-# 트리거: main 브랜치 push + CI 통과 후 수동 승인
+# 트리거: main 브랜치 push + CI 통과 후 자동 배포
 name: CD
 
 on:
@@ -18,10 +18,10 @@ jobs:
     name: Deployment Gate
     runs-on: ubuntu-latest
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
-    environment: production
+    # environment: production  # 테스트 기간 중 수동 승인 비활성화 (프로덕션 전환 시 복원)
     steps:
       - name: Deployment approved
-        run: echo "✅ Deployment to production approved"
+        run: echo "✅ Deployment approved (auto-deploy mode)"
 
   # ──────────────────────────────────
   # Stage 2: GCP 서버 배포
