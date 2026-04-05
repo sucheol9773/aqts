@@ -259,6 +259,43 @@ def generate_strategy_signals(ticker: str, ohlcv: pd.DataFrame) -> dict[str, pd.
     return generate_strategy_signals_vectorized(ticker, ohlcv)
 
 
+# ══════════════════════════════════════
+# 전략별 리스크 프리셋
+# ══════════════════════════════════════
+# 각 전략의 특성에 맞는 기본 리스크 파라미터
+# CLI에서 --risk-preset custom 으로 커스텀 값을 사용할 수 있음
+STRATEGY_RISK_PRESETS: dict[str, dict] = {
+    "MEAN_REVERSION": {
+        # 평균회귀는 역추세 전략이므로 손절을 느슨하게 (단기 역행 허용)
+        "stop_loss_pct": None,
+        "stop_loss_atr_multiplier": None,
+        "max_drawdown_limit": 0.25,
+        "drawdown_cooldown_days": 10,
+    },
+    "TREND_FOLLOWING": {
+        # 추세추종은 ATR 기반 트레일링 손절이 적합
+        "stop_loss_pct": None,
+        "stop_loss_atr_multiplier": 2.0,
+        "max_drawdown_limit": 0.20,
+        "drawdown_cooldown_days": 20,
+    },
+    "RISK_PARITY": {
+        # 리스크패리티는 변동성 기반이므로 넓은 ATR 배수
+        "stop_loss_pct": None,
+        "stop_loss_atr_multiplier": 2.5,
+        "max_drawdown_limit": 0.20,
+        "drawdown_cooldown_days": 15,
+    },
+    "ENSEMBLE": {
+        # 앙상블은 중간 수준
+        "stop_loss_pct": None,
+        "stop_loss_atr_multiplier": 2.0,
+        "max_drawdown_limit": 0.20,
+        "drawdown_cooldown_days": 20,
+    },
+}
+
+
 def run_backtest_for_universe(
     ohlcv_data: dict[str, pd.DataFrame],
     country: Country,
@@ -267,9 +304,16 @@ def run_backtest_for_universe(
     stop_loss_atr_multiplier: float | None = None,
     max_drawdown_limit: float | None = None,
     drawdown_cooldown_days: int = 20,
+    risk_preset: str = "strategy",
 ) -> dict[str, dict]:
     """
     유니버스 전체에 대해 전략별 백테스트 실행
+
+    Args:
+        risk_preset:
+            "strategy" — 전략별 프리셋 적용 (STRATEGY_RISK_PRESETS)
+            "custom"   — CLI에서 전달된 값을 전 전략에 동일 적용
+            "none"     — 리스크 보호 없음
 
     Returns:
         {strategy_name: {ticker: BacktestResult}}
@@ -324,15 +368,37 @@ def run_backtest_for_universe(
             print(f"  ⚠ 데이터 부족 ({len(common_idx)}일), skip")
             continue
 
+        # 전략별 리스크 파라미터 결정
+        if risk_preset == "strategy":
+            preset = STRATEGY_RISK_PRESETS.get(strategy, {})
+            s_stop_loss = preset.get("stop_loss_pct")
+            s_atr_mult = preset.get("stop_loss_atr_multiplier")
+            s_max_dd = preset.get("max_drawdown_limit")
+            s_cooldown = preset.get("drawdown_cooldown_days", 20)
+            print(
+                f"  리스크: stop_loss={s_stop_loss}, "
+                f"ATR×{s_atr_mult}, DD한도={s_max_dd}, 쿨다운={s_cooldown}일"
+            )
+        elif risk_preset == "none":
+            s_stop_loss = None
+            s_atr_mult = None
+            s_max_dd = None
+            s_cooldown = 20
+        else:  # custom
+            s_stop_loss = stop_loss_pct
+            s_atr_mult = stop_loss_atr_multiplier
+            s_max_dd = max_drawdown_limit
+            s_cooldown = drawdown_cooldown_days
+
         config = BacktestConfig(
             initial_capital=initial_capital,
             start_date=str(common_idx[0].date()),
             end_date=str(common_idx[-1].date()),
             country=country,
-            stop_loss_pct=stop_loss_pct,
-            stop_loss_atr_multiplier=stop_loss_atr_multiplier,
-            max_drawdown_limit=max_drawdown_limit,
-            drawdown_cooldown_days=drawdown_cooldown_days,
+            stop_loss_pct=s_stop_loss,
+            stop_loss_atr_multiplier=s_atr_mult,
+            max_drawdown_limit=s_max_dd,
+            drawdown_cooldown_days=s_cooldown,
         )
 
         engine = BacktestEngine(config)
@@ -488,6 +554,13 @@ def main():
         default=20,
         help="DD 발동 후 거래 재개 대기 영업일 (기본: 20)",
     )
+    parser.add_argument(
+        "--risk-preset",
+        type=str,
+        default="strategy",
+        choices=["strategy", "custom", "none"],
+        help="리스크 프리셋: strategy(전략별 차등), custom(CLI값 전 전략 적용), none(보호 없음)",
+    )
     args = parser.parse_args()
 
     db_url = args.db_url or build_db_url()
@@ -511,12 +584,18 @@ def main():
     print(f"  기간:     {args.start} ~ {args.end}")
     print(f"  초기자본: {args.capital:,.0f}원")
     print(f"  거래비용: {TRANSACTION_COSTS[country]}")
-    if args.stop_loss:
-        print(f"  손절기준: 종목별 고정 -{args.stop_loss:.0%}")
-    if args.stop_loss_atr:
-        print(f"  손절기준: ATR×{args.stop_loss_atr:.1f} (동적)")
-    if args.max_dd:
-        print(f"  DD한도:   포트폴리오 -{args.max_dd:.0%} (쿨다운 {args.cooldown}일)")
+    print(f"  리스크:   {args.risk_preset} 모드")
+    if args.risk_preset == "custom":
+        if args.stop_loss:
+            print(f"  손절기준: 종목별 고정 -{args.stop_loss:.0%}")
+        if args.stop_loss_atr:
+            print(f"  손절기준: ATR×{args.stop_loss_atr:.1f} (동적)")
+        if args.max_dd:
+            print(
+                f"  DD한도:   포트폴리오 -{args.max_dd:.0%} (쿨다운 {args.cooldown}일)"
+            )
+    elif args.risk_preset == "strategy":
+        print("            (전략별 차등 파라미터 — 각 전략 실행 시 표시)")
     print()
 
     # 1) 데이터 로드
@@ -538,6 +617,7 @@ def main():
         stop_loss_atr_multiplier=args.stop_loss_atr,
         max_drawdown_limit=args.max_dd,
         drawdown_cooldown_days=args.cooldown,
+        risk_preset=args.risk_preset,
     )
 
     if not results:
