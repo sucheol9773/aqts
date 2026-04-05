@@ -181,6 +181,66 @@ def print_window_details(results: dict[str, object]):
             )
 
 
+def save_results_to_csv(results: dict[str, object], output_dir: str):
+    """OOS 결과를 CSV 파일로 저장"""
+    from datetime import datetime
+
+    os.makedirs(output_dir, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # 1) 전략별 요약 CSV
+    summary_rows = []
+    for name, r in results.items():
+        summary_rows.append(
+            {
+                "strategy": name,
+                "total_windows": r.total_windows,
+                "passed_windows": r.passed_windows,
+                "pass_rate": f"{r.passed_windows / r.total_windows:.1%}" if r.total_windows else "N/A",
+                "avg_sharpe": round(r.avg_sharpe, 4),
+                "avg_cagr": round(r.avg_cagr, 4),
+                "avg_mdd": round(r.avg_mdd, 4),
+                "worst_mdd": round(r.worst_mdd, 4),
+                "sharpe_variance": round(r.sharpe_variance, 6),
+                "overall_gate": r.overall_gate,
+            }
+        )
+    summary_df = pd.DataFrame(summary_rows)
+    summary_path = os.path.join(output_dir, f"oos_summary_{timestamp}.csv")
+    summary_df.to_csv(summary_path, index=False, encoding="utf-8-sig")
+    print(f"\n  📄 요약 CSV: {summary_path}")
+
+    # 2) 윈도우별 상세 CSV
+    detail_rows = []
+    for name, r in results.items():
+        for w in r.windows:
+            detail_rows.append(
+                {
+                    "strategy": name,
+                    "window": w.window_index,
+                    "train_start": w.train_start,
+                    "train_end": w.train_end,
+                    "test_start": w.test_start,
+                    "test_end": w.test_end,
+                    "total_return": round(w.total_return, 4),
+                    "sharpe_ratio": round(w.sharpe_ratio, 4),
+                    "cagr": round(w.cagr, 4),
+                    "mdd": round(w.mdd, 4),
+                    "sortino_ratio": round(w.sortino_ratio, 4),
+                    "calmar_ratio": round(w.calmar_ratio, 4),
+                    "total_trades": w.total_trades,
+                    "win_rate": round(w.win_rate, 4),
+                    "profit_factor": round(w.profit_factor, 4),
+                }
+            )
+    detail_df = pd.DataFrame(detail_rows)
+    detail_path = os.path.join(output_dir, f"oos_detail_{timestamp}.csv")
+    detail_df.to_csv(detail_path, index=False, encoding="utf-8-sig")
+    print(f"  📄 상세 CSV: {detail_path}")
+
+    return summary_path, detail_path
+
+
 def main():
     parser = argparse.ArgumentParser(description="AQTS Walk-Forward OOS 검증")
     parser.add_argument(
@@ -236,6 +296,12 @@ def main():
         action="store_true",
         help="윈도우별 상세 출력",
     )
+    parser.add_argument(
+        "--output",
+        type=str,
+        default=None,
+        help="CSV 저장 디렉토리 (기본: results/oos/)",
+    )
     args = parser.parse_args()
 
     db_url = args.db_url or build_db_url()
@@ -280,6 +346,10 @@ def main():
     # 4) 상세 출력
     if args.detail:
         print_window_details(results)
+
+    # 5) CSV 저장
+    output_dir = args.output or os.path.join(_project_root, "results", "oos")
+    summary_csv, detail_csv = save_results_to_csv(results, output_dir)
 
     print("\n✅ Walk-Forward 검증 완료")
     return results
