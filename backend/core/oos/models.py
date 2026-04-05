@@ -120,6 +120,7 @@ class OOSRun:
     avg_sharpe: float = 0.0
     avg_mdd: float = 0.0
     avg_cagr: float = 0.0
+    avg_calmar: float = 0.0
     worst_mdd: float = 0.0
     sharpe_variance: float = 0.0  # 윈도우 간 Sharpe 분산 (안정성)
     # 게이트 판정
@@ -156,6 +157,7 @@ class OOSRun:
             "avg_sharpe": self.avg_sharpe,
             "avg_mdd": self.avg_mdd,
             "avg_cagr": self.avg_cagr,
+            "avg_calmar": self.avg_calmar,
             "worst_mdd": self.worst_mdd,
             "sharpe_variance": self.sharpe_variance,
             "gate_a_result": self.gate_a_result,

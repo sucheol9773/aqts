@@ -144,7 +144,7 @@ class WalkForwardEngine:
             gate_result = self._gate_evaluator.evaluate_all(
                 windows=window_results,
                 avg_sharpe=oos_run.avg_sharpe,
-                avg_calmar=oos_run.avg_mdd,  # avg_calmar는 별도 계산
+                avg_calmar=oos_run.avg_calmar,
                 worst_mdd=oos_run.worst_mdd,
                 sharpe_variance=oos_run.sharpe_variance,
             )
@@ -345,10 +345,12 @@ class WalkForwardEngine:
         sharpes = [w.sharpe_ratio for w in windows]
         mdds = [w.mdd for w in windows]
         cagrs = [w.cagr for w in windows]
+        calmars = [w.calmar_ratio for w in windows]
 
         oos_run.avg_sharpe = round(float(np.mean(sharpes)), 4)
         oos_run.avg_mdd = round(float(np.mean(mdds)), 4)
         oos_run.avg_cagr = round(float(np.mean(cagrs)), 4)
+        oos_run.avg_calmar = round(float(np.mean(calmars)), 4)
         oos_run.worst_mdd = round(float(min(mdds)), 4)  # 가장 큰 낙폭 (음수)
         oos_run.sharpe_variance = round(float(np.var(sharpes)), 6)
 

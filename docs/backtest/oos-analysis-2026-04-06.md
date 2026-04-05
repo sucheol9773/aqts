@@ -212,7 +212,24 @@ DD 비례 포지션 쿠션 (엔진 레벨):
 
 결과: `results/full_test/YYYYMMDD_HHMMSS/` 하위에 시장별 CSV + 요약 텍스트 저장.
 
-## 10. 다음 단계
+## 10. avg_calmar 버그 수정 (v4c)
+
+Gate-B에서 ENSEMBLE이 REVIEW가 되는 원인: `walk_forward.py`에서 Gate 평가 시
+`avg_calmar` 대신 `avg_mdd`를 전달하는 버그.
+
+```python
+# 수정 전 (버그)
+avg_calmar=oos_run.avg_mdd,  # avg_mdd는 음수 → 항상 < min_calmar(0.1) → REVIEW
+
+# 수정 후
+avg_calmar=oos_run.avg_calmar,  # 윈도우별 calmar_ratio의 평균
+```
+
+변경 파일:
+- `core/oos/walk_forward.py`: avg_calmar 계산 추가 + Gate 호출 수정
+- `core/oos/models.py`: OOSRun에 avg_calmar 필드 추가
+
+## 11. 다음 단계
 
 1. v4 MDD 방어 적용 후 OOS 재실행 → MDD 억제 효과 확인
 2. MEAN_REVERSION MDD -45.8% FAIL 해결 여부 확인
