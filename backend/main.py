@@ -19,7 +19,19 @@ from api.middleware.rate_limiter import limiter, rate_limit_exceeded_handler
 from api.middleware.request_logger import RequestLoggingMiddleware
 
 # Phase 5: API 라우터 & 미들웨어
-from api.routes import alerts, audit, auth, market, oos, orders, param_sensitivity, portfolio, profile, system
+from api.routes import (
+    alerts,
+    audit,
+    auth,
+    ensemble,
+    market,
+    oos,
+    orders,
+    param_sensitivity,
+    portfolio,
+    profile,
+    system,
+)
 from config.logging import logger, setup_logging
 from config.settings import get_settings
 from core.data_collector.kis_client import KISClient
@@ -270,3 +282,4 @@ app.include_router(
     tags=["Parameter Sensitivity"],
 )
 app.include_router(audit.router)
+app.include_router(ensemble.router, prefix="/api/ensemble", tags=["Ensemble"])

@@ -42,6 +42,7 @@ scipy==1.13.1
 # ── Machine Learning ──
 scikit-learn==1.5.1
 xgboost==2.0.3
+optuna==4.8.0
 # torch>=2.6.0  — Dockerfile에서 CPU 전용 빌드로 별도 설치 (CUDA 제외 ~4GB 절감)
 # 로컬 설치: pip install torch --index-url https://download.pytorch.org/whl/cpu
 # CVE 해소 위해 2.6.0+ 필수 (PYSEC-2024-259, PYSEC-2025-41)

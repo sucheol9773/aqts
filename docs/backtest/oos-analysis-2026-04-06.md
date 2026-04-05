@@ -510,12 +510,95 @@ await scheduler.start()
 
 **테스트**: 17개 신규 (총 2541 pass)
 
+### 16.3 동적 앙상블 REST API 엔드포인트
+
+**목적**: 동적 앙상블 시그널을 외부에서 조회/실행할 수 있는 REST API 제공
+
+**신규 파일**:
+- `api/schemas/ensemble.py`: Pydantic 응답 모델 (EnsembleSignalResponse, EnsembleBatchResponse 등)
+- `api/routes/ensemble.py`: FastAPI 라우터 (4개 엔드포인트)
+- `tests/test_ensemble_routes.py`: 12개 유닛테스트
+
+**엔드포인트**:
+| 메서드 | 경로 | 설명 |
+|---|---|---|
+| GET | `/api/ensemble/cached` | Redis 캐시 요약 조회 (스케줄러가 생성한 최신 결과) |
+| GET | `/api/ensemble/cached/{ticker}` | 특정 종목의 캐시된 앙상블 결과 조회 |
+| POST | `/api/ensemble/run?ticker=005930&country=KR` | 단일 종목 동적 앙상블 실시간 실행 |
+| POST | `/api/ensemble/batch?country=KR&cache_results=true` | 유니버스 전체 배치 실행 |
+
+**설계 결정**:
+- 캐시 조회(GET)와 실시간 실행(POST) 분리: 캐시는 빠른 읽기, 실행은 DB + 계산 비용 수반
+- `/run` 엔드포인트의 lookback_days 범위: 200~500 (MIN_OHLCV_DAYS=200 하한 준수)
+- `/batch`는 scheduler_handlers의 `_load_universe_grouped` + `_cache_ensemble_results` 재사용
+- 모든 응답은 기존 `APIResponse[T]` 래퍼 사용으로 일관성 유지
+- JWT 인증 필수 (get_current_user 의존성)
+
+**테스트**: 12개 신규 (총 2553 pass)
+
+### 16.4 Optuna 기반 하이퍼파라미터 자동 최적화
+
+**목적**: TPE(Tree-structured Parzen Estimator) 기반 베이지안 최적화로 OOS Sharpe를 극대화하는 파라미터 자동 탐색
+
+**신규 파일**:
+- `core/hyperopt/__init__.py`: 모듈 진입점
+- `core/hyperopt/search_space.py`: 20개 파라미터 탐색 공간 정의 (3그룹)
+- `core/hyperopt/objective.py`: Walk-forward OOS Sharpe 목적 함수
+- `core/hyperopt/optimizer.py`: Optuna study 오케스트레이터
+- `core/hyperopt/models.py`: TrialResult, OptimizationResult 데이터 모델
+- `scripts/run_hyperopt.py`: CLI 실행 스크립트
+- `tests/test_hyperopt.py`: 20개 유닛테스트
+
+**최적화 대상 파라미터 (20개, 3그룹)**:
+
+| 그룹 | 파라미터 수 | 예시 |
+|---|---|---|
+| ensemble (6) | 앙상블 핵심 | adx_threshold, vol_pct_threshold, softmax_temperature, perf_blend, target_vol, perf_window |
+| regime_weights (8) | 레짐별 전략 가중치 | w_trending_up_tf/mr, w_trending_down_tf/mr, w_high_vol_tf/mr, w_sideways_tf/mr (RP = 1-TF-MR) |
+| risk (6) | 리스크 관리 | stop_loss_atr_multiplier, trailing_stop_atr_multiplier, max_drawdown_limit, dd_cushion_start 등 |
+
+**알고리즘 흐름**:
+1. VectorizedSignalGenerator로 MR/TF/RP 시그널 사전계산 (trial 간 공유)
+2. 각 trial: Optuna TPE로 파라미터 샘플 → 커스텀 DynamicEnsembleService 생성
+3. 종목별 앙상블 시계열 산출 → DataFrame 변환
+4. Walk-forward 윈도우 분할 (train 24개월 / test 3개월)
+5. BacktestEngine으로 OOS Sharpe 계산 → 윈도우 평균 반환
+6. MedianPruner로 성과 부진 trial 조기 종료
+7. 완료 후 fANOVA 기반 파라미터 중요도 산출
+
+**설계 결정**:
+- 시그널 사전계산: MR/TF/RP 시그널은 앙상블 파라미터에 무관하므로 한 번만 계산
+- 레짐 가중치 제약: TF + MR ≤ 0.90 (RP ≥ 0.10 보장), 위반 시 prune
+- 기본값 enqueue: 현재 검증된 기본값을 첫 trial로 삽입하여 기준선 확보
+- 그룹별 최적화: `--groups ensemble`으로 앙상블만 최적화 가능 (탐색 공간 축소)
+- Pruning: MedianPruner (n_warmup_steps=2) 로 비효율 trial 조기 중단
+
+**사용법**:
+```bash
+# 전체 파라미터 50 trials
+python scripts/run_hyperopt.py
+
+# 앙상블만 100 trials
+python scripts/run_hyperopt.py --groups ensemble --trials 100
+
+# 앙상블 + 리스크 80 trials
+python scripts/run_hyperopt.py --groups ensemble risk --trials 80
+
+# 특정 종목으로 빠른 테스트
+python scripts/run_hyperopt.py --tickers 005930,000660 --trials 20
+```
+
+**2단계 예정**: 강화학습(PPO/SAC) 에이전트로 일별 포지션 크기를 직접 학습하는 Gym 환경 구축
+
+**테스트**: 20개 신규 (총 2573 pass)
+
 ## 17. 다음 단계
 
-1. RL/학습형 에이전트 도입 → trailing stop 최적 배수 자동 탐색
+1. ~~RL/학습형 에이전트 도입~~ ✅ 1단계 완료 (Optuna 베이지안 최적화)
 2. KR TREND_FOLLOWING Sharpe 개선 (현재 0.16, 목표 > 0.2)
 3. ~~실전 파이프라인에 동적 앙상블 통합~~ ✅ 완료
 4. ~~실시간 데이터 연동~~ ✅ 완료 (KIS API 일봉 자동 수집)
 5. ~~스케줄러 핸들러에 동적 앙상블 배치 실행 연결~~ ✅ 완료
-6. API 엔드포인트 추가 (동적 앙상블 결과 조회)
+6. ~~API 엔드포인트 추가 (동적 앙상블 결과 조회)~~ ✅ 완료
 7. MIDDAY_CHECK / MARKET_CLOSE / POST_MARKET 핸들러 확장
+8. RL 에이전트 2단계: Gym 환경 + PPO/SAC 일별 포지션 학습
