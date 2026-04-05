@@ -345,12 +345,13 @@ class TestPresetWiring:
                     # 실제 전달 여부는 run_backtest_for_universe 코드 리뷰로 확인
                     pass  # 구조적 검증은 위의 필드 존재성 테스트로 충분
 
-    def test_ensemble_has_trailing_stop(self):
-        """ENSEMBLE 프리셋에 trailing_stop_atr_multiplier가 설정되어 있는지 확인"""
+    def test_ensemble_has_trailing_stop_key(self):
+        """ENSEMBLE 프리셋에 trailing_stop_atr_multiplier 키가 존재하는지 확인
+
+        값이 None이면 비활성화 상태 (RL 도입 시 활성화 예정).
+        키 자체가 없으면 wiring 버그 위험.
+        """
         from run_backtest import STRATEGY_RISK_PRESETS
 
         preset = STRATEGY_RISK_PRESETS["ENSEMBLE"]
-        assert "trailing_stop_atr_multiplier" in preset, "ENSEMBLE 프리셋에 trailing_stop_atr_multiplier 누락"
-        assert (
-            preset["trailing_stop_atr_multiplier"] is not None
-        ), "ENSEMBLE의 trailing_stop이 None — 의도적 비활성화인지 확인"
+        assert "trailing_stop_atr_multiplier" in preset, "ENSEMBLE 프리셋에 trailing_stop_atr_multiplier 키 누락"

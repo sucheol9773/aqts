@@ -400,7 +400,7 @@ STRATEGY_RISK_PRESETS: dict[str, dict] = {
         # 평균회귀는 역추세 전략이므로 손절을 느슨하게 (단기 역행 허용)
         "stop_loss_pct": None,
         "stop_loss_atr_multiplier": None,
-        "trailing_stop_atr_multiplier": None,  # MR은 빈번한 매매로 trailing 불필요
+        "trailing_stop_atr_multiplier": None,
         "max_drawdown_limit": 0.25,
         "drawdown_cooldown_days": 10,
         "dd_cushion_start": 0.10,  # -10%부터 포지션 축소 시작
@@ -409,7 +409,7 @@ STRATEGY_RISK_PRESETS: dict[str, dict] = {
         # 추세추종은 ATR 기반 트레일링 손절이 적합
         "stop_loss_pct": None,
         "stop_loss_atr_multiplier": 2.0,
-        "trailing_stop_atr_multiplier": 3.0,  # 추세 유지를 위해 넓은 trailing
+        "trailing_stop_atr_multiplier": None,  # RL 도입 시 활성화 예정
         "max_drawdown_limit": 0.20,
         "drawdown_cooldown_days": 20,
         "dd_cushion_start": 0.08,  # -8%부터 포지션 축소 시작
@@ -418,16 +418,17 @@ STRATEGY_RISK_PRESETS: dict[str, dict] = {
         # 리스크패리티는 변동성 기반이므로 넓은 ATR 배수
         "stop_loss_pct": None,
         "stop_loss_atr_multiplier": 2.5,
-        "trailing_stop_atr_multiplier": 3.5,  # 장기 보유이므로 가장 넓은 trailing
+        "trailing_stop_atr_multiplier": None,  # RL 도입 시 활성화 예정
         "max_drawdown_limit": 0.20,
         "drawdown_cooldown_days": 15,
         "dd_cushion_start": 0.08,  # -8%부터 포지션 축소 시작
     },
     "ENSEMBLE": {
-        # 앙상블: trailing stop으로 수익 보호 + 진입 stop으로 손실 제한
+        # 앙상블: 진입 stop으로 손실 제한
+        # trailing_stop은 ATR×2.5에서 수익률 -64% 확인 → RL 최적화까지 보류
         "stop_loss_pct": None,
         "stop_loss_atr_multiplier": 2.0,
-        "trailing_stop_atr_multiplier": 2.5,  # 고점 대비 2.5×ATR 하락 시 청산
+        "trailing_stop_atr_multiplier": None,  # RL 도입 시 활성화 예정
         "max_drawdown_limit": 0.20,
         "drawdown_cooldown_days": 20,
         "dd_cushion_start": 0.08,  # -8%부터 포지션 축소 시작
