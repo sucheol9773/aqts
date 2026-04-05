@@ -195,7 +195,9 @@ def run_backtest_for_universe(
     country: Country,
     initial_capital: float = 50_000_000,
     stop_loss_pct: float | None = None,
+    stop_loss_atr_multiplier: float | None = None,
     max_drawdown_limit: float | None = None,
+    drawdown_cooldown_days: int = 20,
 ) -> dict[str, dict]:
     """
     유니버스 전체에 대해 전략별 백테스트 실행
@@ -245,7 +247,9 @@ def run_backtest_for_universe(
             end_date=str(common_idx[-1].date()),
             country=country,
             stop_loss_pct=stop_loss_pct,
+            stop_loss_atr_multiplier=stop_loss_atr_multiplier,
             max_drawdown_limit=max_drawdown_limit,
+            drawdown_cooldown_days=drawdown_cooldown_days,
         )
 
         engine = BacktestEngine(config)
@@ -381,13 +385,25 @@ def main():
         "--stop-loss",
         type=float,
         default=None,
-        help="종목별 손절 비율 (예: 0.10 = -10%%)",
+        help="종목별 고정 손절 비율 (예: 0.15 = -15%%)",
+    )
+    parser.add_argument(
+        "--stop-loss-atr",
+        type=float,
+        default=None,
+        help="ATR 기반 동적 손절 배수 (예: 2.0 = 2×ATR)",
     )
     parser.add_argument(
         "--max-dd",
         type=float,
         default=None,
         help="포트폴리오 DD 한도 (예: 0.20 = -20%%)",
+    )
+    parser.add_argument(
+        "--cooldown",
+        type=int,
+        default=20,
+        help="DD 발동 후 거래 재개 대기 영업일 (기본: 20)",
     )
     args = parser.parse_args()
 
@@ -413,9 +429,11 @@ def main():
     print(f"  초기자본: {args.capital:,.0f}원")
     print(f"  거래비용: {TRANSACTION_COSTS[country]}")
     if args.stop_loss:
-        print(f"  손절기준: 종목별 -{args.stop_loss:.0%}")
+        print(f"  손절기준: 종목별 고정 -{args.stop_loss:.0%}")
+    if args.stop_loss_atr:
+        print(f"  손절기준: ATR×{args.stop_loss_atr:.1f} (동적)")
     if args.max_dd:
-        print(f"  DD한도:   포트폴리오 -{args.max_dd:.0%}")
+        print(f"  DD한도:   포트폴리오 -{args.max_dd:.0%} (쿨다운 {args.cooldown}일)")
     print()
 
     # 1) 데이터 로드
@@ -434,7 +452,9 @@ def main():
         country,
         args.capital,
         stop_loss_pct=args.stop_loss,
+        stop_loss_atr_multiplier=args.stop_loss_atr,
         max_drawdown_limit=args.max_dd,
+        drawdown_cooldown_days=args.cooldown,
     )
 
     if not results:
