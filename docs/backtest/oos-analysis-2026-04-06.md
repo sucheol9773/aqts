@@ -700,6 +700,30 @@ python scripts/run_rl_training.py --evaluate --model models/rl_agent_v1
 
 **테스트**: 16개 신규 (총 2646 pass)
 
+### 16.9 CD 파이프라인 수정 — Dockerfile torch 이중 설치 버그
+
+**문제**: `stable-baselines3`가 `torch` 의존성을 가지는데, Dockerfile의 multi-stage 빌드에서
+`--prefix=/install`로 torch CPU를 먼저 설치한 후 `requirements.txt`를 설치할 때
+pip이 기존 torch를 인식하지 못해 PyPI에서 CUDA 포함 torch(~2GB+)를 다시 다운로드 시도.
+GCP 서버에서 디스크/메모리 초과로 `docker compose build` 실패 (CD exit code 1).
+
+**수정**:
+- `PYTHONPATH=/install/lib/python3.11/site-packages` 설정 → pip이 기존 torch 인식
+- `--extra-index-url https://download.pytorch.org/whl/cpu` 추가 → 혹시 재설치 시에도 CPU 버전 사용
+
+**변경 전**:
+```dockerfile
+pip install --prefix=/install -r requirements.txt
+```
+
+**변경 후**:
+```dockerfile
+PYTHONPATH=/install/lib/python3.11/site-packages \
+    pip install --prefix=/install \
+    --extra-index-url https://download.pytorch.org/whl/cpu \
+    -r requirements.txt
+```
+
 ## 17. 다음 단계
 
 1. ~~RL/학습형 에이전트 도입~~ ✅ 1단계 완료 (Optuna 베이지안 최적화)

@@ -12,10 +12,15 @@ WORKDIR /build
 
 COPY requirements.txt .
 # torch CPU 전용 빌드 먼저 설치 (GPU 불필요, 이미지 ~2GB 절감)
+# stable-baselines3가 torch 의존성을 가지므로, 두 번째 pip install 시
+# PYTHONPATH로 기존 torch 설치를 인식시키고 --extra-index-url로 CPU 버전을 우선하도록 설정
 RUN pip install --no-cache-dir --upgrade pip==24.0 \
     && pip install --no-cache-dir --prefix=/install \
        torch --index-url https://download.pytorch.org/whl/cpu \
-    && pip install --no-cache-dir --prefix=/install -r requirements.txt
+    && PYTHONPATH=/install/lib/python3.11/site-packages \
+       pip install --no-cache-dir --prefix=/install \
+       --extra-index-url https://download.pytorch.org/whl/cpu \
+       -r requirements.txt
 
 
 # ══════════════════════════════════════
