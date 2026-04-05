@@ -139,7 +139,6 @@ SUMMARY_FILE="${RESULT_DIR}/summary.txt"
         echo "── ${market^^} 결과 ──"
 
         # OOS 요약
-        local oos_summary
         oos_summary=$(find "${RESULT_DIR}/${market}" -name "oos_summary_*.csv" 2>/dev/null | head -1)
         if [ -n "$oos_summary" ]; then
             echo "  [OOS]"
@@ -150,7 +149,7 @@ SUMMARY_FILE="${RESULT_DIR}/summary.txt"
         echo
 
         # 백테스트 요약
-        local bt_file="${RESULT_DIR}/${market}/backtest.csv"
+        bt_file="${RESULT_DIR}/${market}/backtest.csv"
         if [ -f "$bt_file" ]; then
             echo "  [백테스트]"
             column -t -s, "$bt_file" 2>/dev/null || cat "$bt_file"
