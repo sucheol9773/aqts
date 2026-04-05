@@ -24,6 +24,26 @@
 - DD 쿨다운 중 현금 → 국채 연 3% 수익률 적용
 - OOS 평균 Sharpe: 0.67 (+379%), 분산: 4.14 (-32%), 양수 윈도우: 65.6%
 
+### v4: MDD 방어 강화 (변동성 타겟팅 + DD 비례 쿠션)
+- 변동성 타겟팅: 연 15% 목표 vol 대비 현재 vol이 높으면 앙상블 시그널을 비례 축소
+  - `vol_scalar = min(target_vol / current_vol, 1.0)` — 레버리지 없음
+- DD 비례 포지션 쿠션: DD가 cushion_start를 넘으면 매수 자금을 선형 축소
+  - MEAN_REVERSION: -10%부터, 나머지: -8%부터 축소 시작
+  - hard limit까지 선형 보간 (100% → 25% floor)
+- 전략별 프리셋에 `dd_cushion_start` 파라미터 추가
+- 기대 효과: 고변동 구간에서 포지션 자동 축소 → MDD 억제, worst MDD 개선
+
+### v4-kr 재실행 결과 (yaml 동기화 후)
+
+| 전략 | 양수 윈도우 | 평균 Sharpe | Worst MDD | Sharpe 분산 | Gate |
+|---|---|---|---|---|---|
+| MEAN_REVERSION | 58.3% | 0.53 | -45.8% | 3.44 | FAIL |
+| TREND_FOLLOWING | 53.1% | -0.01 | -32.4% | 4.78 | REVIEW |
+| RISK_PARITY | 35.4% | -0.35 | -25.5% | 6.04 | REVIEW |
+| ENSEMBLE | 47.9% | -0.06 | -34.3% | 7.00 | REVIEW |
+
+Note: v4 MDD 방어 기능은 이 실행 이후 구현됨. 다음 재실행에서 효과 확인 예정.
+
 ## 2. OOS 결과 비교 (ENSEMBLE)
 
 | 지표 | v1 (고정) | v2 (레짐) | v3 (레짐+성과) | 변화 (v1→v3) |
@@ -109,9 +129,31 @@ OOS 성과가 IS보다 높은 것은 동적 가중치가 특정 구간에서 특
   DD 쿨다운 중 현금 → 국채 연 3% 일일 수익률 적용
 ```
 
-## 8. 다음 단계
+## 8. MDD 방어 메커니즘 (v4)
 
-1. Gate 임계값 수정 후 OOS 재실행 → ENSEMBLE PASS 확인
-2. RISK_PARITY Sharpe 분산(7.77) 원인 분석 및 개선
-3. 실전 파이프라인에 동적 앙상블 통합
-4. 실시간 레짐 감지 + 가중치 업데이트 자동화
+```
+변동성 타겟팅 (시그널 레벨):
+  target_vol = 15% (연환산)
+  vol_scalar = min(target_vol / rolling_20d_vol, 1.0)
+  ensemble_signal *= vol_scalar
+  → 고변동 시 시그널 축소, 레버리지 없음
+
+DD 비례 포지션 쿠션 (엔진 레벨):
+  dd_cushion_start: DD가 이 수준 넘으면 매수 자금 점진 축소
+  dd_cushion_floor: 최소 포지션 비율 (기본 25%)
+  cushion_start → hard_limit 구간에서 선형 보간 (100% → floor)
+
+전략별 설정:
+  MEAN_REVERSION:  cushion -10%, DD limit -25%, cooldown 10일
+  TREND_FOLLOWING: cushion -8%,  DD limit -20%, cooldown 20일
+  RISK_PARITY:     cushion -8%,  DD limit -20%, cooldown 15일
+  ENSEMBLE:        cushion -8%,  DD limit -20%, cooldown 20일
+```
+
+## 9. 다음 단계
+
+1. v4 MDD 방어 적용 후 OOS 재실행 → MDD 억제 효과 확인
+2. MEAN_REVERSION MDD -45.8% FAIL 해결 여부 확인
+3. RISK_PARITY Sharpe 분산(6.04) 원인 분석 및 개선
+4. 앙상블 가중치 최적화 (부진 전략 가중치 동적 축소)
+5. 실전 파이프라인에 동적 앙상블 통합
