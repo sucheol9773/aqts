@@ -331,7 +331,39 @@ def _compute_dynamic_ensemble(
     w_mr = w_mr.where(~sideways, 0.45)  # 횡보장 = 평균회귀
     w_rp = w_rp.where(~sideways, 0.30)
 
-    # ── 5) 동적 가중 합산 ──
+    # ── 5) 롤링 성과 기반 미세조정 ──
+    # 최근 60일 각 전략 시그널의 누적 수익률로 가중치 보정
+    # 잘 나가는 전략 가중치를 최대 ±20% 보정
+    perf_window = 60
+    mr_perf = (mr_signal * returns).rolling(perf_window).sum().fillna(0.0)
+    tf_perf = (tf_signal * returns).rolling(perf_window).sum().fillna(0.0)
+    rp_perf = (rp_signal * returns).rolling(perf_window).sum().fillna(0.0)
+
+    # softmax 스타일 보정 계수 (온도 파라미터로 과도한 쏠림 방지)
+    temperature = 5.0
+    exp_mr = np.exp(mr_perf / temperature)
+    exp_tf = np.exp(tf_perf / temperature)
+    exp_rp = np.exp(rp_perf / temperature)
+    exp_sum = exp_mr + exp_tf + exp_rp
+
+    # 보정 비율 (1/3 기준 대비 얼마나 벗어나는지)
+    perf_adj_mr = exp_mr / exp_sum
+    perf_adj_tf = exp_tf / exp_sum
+    perf_adj_rp = exp_rp / exp_sum
+
+    # 레짐 가중치에 성과 보정 블렌딩 (70% 레짐 + 30% 성과)
+    blend = 0.3
+    w_mr = w_mr * (1 - blend) + perf_adj_mr * blend
+    w_tf = w_tf * (1 - blend) + perf_adj_tf * blend
+    w_rp = w_rp * (1 - blend) + perf_adj_rp * blend
+
+    # 재정규화 (합 = 1)
+    w_total = w_mr + w_tf + w_rp
+    w_mr = w_mr / w_total
+    w_tf = w_tf / w_total
+    w_rp = w_rp / w_total
+
+    # ── 6) 동적 가중 합산 ──
     ensemble = w_tf * tf_signal + w_mr * mr_signal + w_rp * rp_signal
 
     return ensemble

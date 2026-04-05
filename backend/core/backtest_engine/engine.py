@@ -38,6 +38,7 @@ class BacktestConfig:
     stop_loss_atr_multiplier: Optional[float] = None  # ATR 기반 동적 손절 (예: 2.0 = 2×ATR)
     max_drawdown_limit: Optional[float] = None  # 포트폴리오 DD 한도 (예: 0.20 = -20%에서 전량 청산)
     drawdown_cooldown_days: int = 20  # DD 발동 후 거래 재개까지 대기 영업일
+    safe_asset_annual_return: float = 0.03  # 쿨다운 중 안전자산 연수익률 (기본: 국채 3%)
 
     def get_costs(self) -> dict:
         """거래 비용 반환 (명시적 설정값 또는 국가 기본값)"""
@@ -201,8 +202,12 @@ class BacktestEngine:
             current_dd = (portfolio_value - peak_value) / peak_value if peak_value > 0 else 0.0
 
             if self._config.max_drawdown_limit is not None:
-                # 쿨다운 중이면 카운트 감소, 만료 시 peak 리셋 후 거래 재개
+                # 쿨다운 중이면 안전자산 수익률 적용 + 카운트 감소
                 if cooldown_remaining > 0:
+                    # 안전자산(국채 등) 일일 수익률 적용
+                    daily_safe_return = (1 + self._config.safe_asset_annual_return) ** (1 / 252) - 1
+                    cash *= 1 + daily_safe_return
+                    portfolio_value = cash  # 쿨다운 중에는 포지션 없음, 전액 안전자산
                     cooldown_remaining -= 1
                     if cooldown_remaining == 0:
                         # 쿨다운 종료 → peak를 현재 가치로 리셋
