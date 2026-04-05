@@ -52,6 +52,8 @@ aqts/
 ├── docs/
 │   ├── PRD.md                       # 제품 요구사항 문서
 │   ├── FEATURE_STATUS.md            # 기능 구현 현황 (Single Source of Truth)
+│   ├── backtest/
+│   │   └── oos-analysis-2026-04-06.md  # OOS 분석 리포트 (16개 섹션)
 │   └── operations/                  # 운영 문서 (OPS-001 ~ OPS-008)
 │       ├── trading-halt-policy.md   # OPS-001: 매매 중단/재개 정책
 │       ├── incident-runbook.md      # OPS-002: 장애 대응 런북
@@ -70,7 +72,9 @@ aqts/
 │   │   ├── settings.py              # 환경변수 기반 설정 (pydantic-settings)
 │   │   ├── constants.py             # 상수·Enum 정의 (20+ Enum, 매핑 테이블)
 │   │   ├── logging.py               # Loguru 로깅 설정 (dev/production 분리)
-│   │   └── operational_thresholds.yaml  # 전 스테이지 임계값 중앙관리
+│   │   ├── operational_thresholds.yaml  # 전 스테이지 임계값 중앙관리
+│   │   ├── ensemble_config.yaml     # 앙상블 하이퍼파라미터 설정 (YAML 관리)
+│   │   └── ensemble_config_loader.py # YAML 설정 로더·검증·Hyperopt 연동
 │   ├── contracts/                   # 데이터 계약 (9개 도메인)
 │   │   ├── converters.py            # 계약 ↔ 엔진 변환기
 │   │   ├── price_data.py            # 가격 데이터 계약
@@ -93,7 +97,8 @@ aqts/
 │   │   │   └── corp_action.py       # 기업 이벤트 처리
 │   │   ├── quant_engine/
 │   │   │   ├── factor_analyzer.py   # 5팩터 분석 (Value·Momentum·Quality·LowVol·Size)
-│   │   │   └── signal_generator.py  # 기술적 시그널 생성
+│   │   │   ├── signal_generator.py  # 기술적 시그널 생성
+│   │   │   └── vectorized_signals.py # 벡터화 시그널 (MR/TF/RP, 고속 연산)
 │   │   ├── ai_analyzer/
 │   │   │   ├── sentiment.py         # Mode A: Claude Haiku 감성 분석
 │   │   │   ├── opinion.py           # Mode B: Claude Sonnet 투자 의견 (STOCK·SECTOR·MACRO)
@@ -104,7 +109,9 @@ aqts/
 │   │   │   └── reproducibility.py   # 재현성 검증
 │   │   ├── strategy_ensemble/
 │   │   │   ├── engine.py            # 가중 앙상블 + Sharpe 기반 재보정
-│   │   │   └── regime.py            # 레짐 감지 (상승/하락/횡보/고변동)
+│   │   │   ├── regime.py            # 레짐 감지 (상승/하락/횡보/고변동)
+│   │   │   ├── dynamic_ensemble.py  # 동적 레짐 기반 앙상블 서비스 (OOS 검증)
+│   │   │   └── runner.py            # 앙상블 실행 오케스트레이터
 │   │   ├── backtest_engine/
 │   │   │   ├── engine.py            # 백테스트 엔진 + 전략 비교 + 벤치마크 지표
 │   │   │   ├── metrics_calculator.py # 성과 지표 산출
@@ -141,6 +148,18 @@ aqts/
 │   │   │   ├── executor.py          # 주문 집행 (시장가·지정가·TWAP·VWAP)
 │   │   │   ├── slippage.py          # 슬리피지 모델
 │   │   │   └── time_rules.py        # 시간대별 거래 규칙
+│   │   ├── hyperopt/                # Optuna 하이퍼파라미터 자동 최적화
+│   │   │   ├── search_space.py      # 20개 파라미터 탐색 공간 (3그룹)
+│   │   │   ├── objective.py         # Walk-Forward OOS 목적함수
+│   │   │   ├── optimizer.py         # TPE 베이지안 최적화 오케스트레이터
+│   │   │   └── models.py            # TrialResult·OptimizationResult
+│   │   ├── rl/                      # 강화학습 에이전트
+│   │   │   ├── environment.py       # Gymnasium 트레이딩 환경 (11차원 관찰)
+│   │   │   ├── trainer.py           # PPO/SAC 학습 파이프라인
+│   │   │   └── config.py            # RL 설정 (25개 파라미터)
+│   │   ├── data_collector/
+│   │   │   ├── daily_collector.py   # 일일 OHLCV 자동 수집 (KIS API)
+│   │   ├── scheduler_handlers.py    # 스케줄러 이벤트 핸들러 (5개 시간대)
 │   │   ├── oos/                     # Out-of-Sample 검증
 │   │   │   ├── models.py            # OOS 데이터 모델
 │   │   │   ├── walk_forward.py      # Walk-Forward 엔진
@@ -195,14 +214,16 @@ aqts/
 │   │   │   ├── system.py            # 시스템 (설정·백테스트·리밸런싱·파이프라인)
 │   │   │   ├── audit.py             # 감사 추적 API
 │   │   │   ├── oos.py               # OOS 검증 API (4 엔드포인트)
-│   │   │   └── param_sensitivity.py # 민감도 분석 API (3 엔드포인트)
+│   │   │   ├── param_sensitivity.py # 민감도 분석 API (3 엔드포인트)
+│   │   │   └── ensemble.py          # 동적 앙상블 API (4 엔드포인트)
 │   │   ├── schemas/
 │   │   │   ├── common.py            # 공통 응답 (APIResponse·PaginatedResponse)
 │   │   │   ├── auth.py              # 인증 스키마
 │   │   │   ├── portfolio.py         # 포트폴리오 스키마
 │   │   │   ├── orders.py            # 주문 스키마
 │   │   │   ├── profile.py           # 프로필 스키마
-│   │   │   └── alerts.py            # 알림 스키마
+│   │   │   ├── alerts.py            # 알림 스키마
+│   │   │   └── ensemble.py          # 앙상블 응답 스키마
 │   │   └── middleware/
 │   │       ├── auth.py              # JWT 인증 (HS256, Bearer Token)
 │   │       ├── request_logger.py    # 요청 로깅 미들웨어 (X-Request-ID)
@@ -212,14 +233,18 @@ aqts/
 │   │   ├── models/                  # SQLAlchemy 모델
 │   │   └── repositories/
 │   │       └── audit_log.py         # 감사 로그 (AuditLogger)
-│   └── tests/                       # 2,477 tests (전체 통과)
+│   └── tests/                       # 2,630 tests (전체 통과)
 │       ├── conftest.py              # 공통 Fixture + 환경변수 설정
-│       └── test_*.py                # 70개 테스트 파일
+│       └── test_*.py                # 75+ 테스트 파일
 ├── frontend/
 │   └── index.html                   # SPA 대시보드 (Chart.js)
 └── scripts/
     ├── init_db.sql                  # DB 초기화 스크립트 (17 테이블, 6 hypertable)
-    └── check_doc_sync.py            # 문서-코드-테스트 동기화 검증 (CI용)
+    ├── check_doc_sync.py            # 문서-코드-테스트 동기화 검증 (CI용)
+    ├── run_backtest.py              # 백테스트 실행 CLI
+    ├── run_scheduler.py             # 스케줄러 CLI (장 전/시작/중간/마감/후)
+    ├── run_hyperopt.py              # Optuna 하이퍼파라미터 최적화 CLI
+    └── run_rl_training.py           # RL 에이전트 학습/평가 CLI (PPO/SAC)
 ```
 
 ## 개발 단계
@@ -239,13 +264,16 @@ aqts/
 | Phase 11 | 가중치 자동 최적화, NYSE 캘린더, 주간/월간 리포트, Cross-Market 팩터 | ✅ 완료 |
 | Phase 12 | 데이터 계약, 파이프라인 게이트 (9개), 상태 머신, OOS 검증, 파라미터 민감도 | ✅ 완료 |
 | Phase 13 | Release Gates (A~E), 컴플라이언스, 모니터링 대시보드, 운영 문서 8종 | ✅ 완료 |
+| Phase 14 | OOS Walk-Forward 검증, 동적 레짐 앙상블, 벡터화 시그널, MDD 방어 | ✅ 완료 |
+| Phase 15 | KIS API 실시간 연동, OHLCV 자동 수집, 스케줄러 파이프라인 (5핸들러) | ✅ 완료 |
+| Phase 16 | 동적 앙상블 REST API, Optuna 하이퍼파라미터 최적화, YAML 설정 관리, RL 에이전트 (Gym+PPO/SAC) | ✅ 완료 |
 
 ## 테스트 실행
 
 ```bash
 cd backend
 
-# 전체 테스트 (2,477 tests)
+# 전체 테스트 (2,630 tests)
 python -m pytest
 
 # 스모크 테스트 (413 tests, < 13초)
