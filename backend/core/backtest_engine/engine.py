@@ -35,28 +35,16 @@ class BacktestConfig:
     benchmark_returns: Optional[pd.Series] = None  # 벤치마크 수익률
     # ── 리스크 관리 ──
     stop_loss_pct: Optional[float] = None  # 종목별 손절 (예: 0.10 = -10%에서 청산)
-    max_drawdown_limit: Optional[float] = (
-        None  # 포트폴리오 DD 한도 (예: 0.20 = -20%에서 전량 청산)
-    )
-    drawdown_recovery_pct: float = (
-        0.05  # DD 회복 후 재진입 기준 (고점 대비 -5% 이내면 복귀)
-    )
+    max_drawdown_limit: Optional[float] = None  # 포트폴리오 DD 한도 (예: 0.20 = -20%에서 전량 청산)
+    drawdown_recovery_pct: float = 0.05  # DD 회복 후 재진입 기준 (고점 대비 -5% 이내면 복귀)
 
     def get_costs(self) -> dict:
         """거래 비용 반환 (명시적 설정값 또는 국가 기본값)"""
         defaults = TRANSACTION_COSTS[self.country]
         return {
-            "commission": (
-                self.commission_rate
-                if self.commission_rate is not None
-                else defaults["commission_rate"]
-            ),
+            "commission": (self.commission_rate if self.commission_rate is not None else defaults["commission_rate"]),
             "tax": self.tax_rate if self.tax_rate is not None else defaults["tax_rate"],
-            "slippage": (
-                self.slippage_rate
-                if self.slippage_rate is not None
-                else defaults["slippage_rate"]
-            ),
+            "slippage": (self.slippage_rate if self.slippage_rate is not None else defaults["slippage_rate"]),
         }
 
 
@@ -209,9 +197,7 @@ class BacktestEngine:
 
             # ── 포트폴리오 Drawdown Limit 체크 ──
             peak_value = max(peak_value, portfolio_value)
-            current_dd = (
-                (portfolio_value - peak_value) / peak_value if peak_value > 0 else 0.0
-            )
+            current_dd = (portfolio_value - peak_value) / peak_value if peak_value > 0 else 0.0
 
             if self._config.max_drawdown_limit is not None:
                 if not is_risk_off and current_dd < -self._config.max_drawdown_limit:
@@ -219,9 +205,7 @@ class BacktestEngine:
                     is_risk_off = True
                     for ticker in list(positions.keys()):
                         pos = positions[ticker]
-                        sell_price = (
-                            prices.loc[date, ticker] if ticker in prices.columns else 0
-                        )
+                        sell_price = prices.loc[date, ticker] if ticker in prices.columns else 0
                         if pd.isna(sell_price) or sell_price <= 0:
                             continue
                         effective_price = sell_price * (1 - self._costs["slippage"])
@@ -252,9 +236,7 @@ class BacktestEngine:
 
                 if is_risk_off:
                     # 회복 대기: 포트폴리오 가치가 고점의 (1 - recovery_pct) 이상이면 복귀
-                    recovery_threshold = peak_value * (
-                        1 - self._config.drawdown_recovery_pct
-                    )
+                    recovery_threshold = peak_value * (1 - self._config.drawdown_recovery_pct)
                     if portfolio_value >= recovery_threshold:
                         is_risk_off = False
                     else:
@@ -265,9 +247,7 @@ class BacktestEngine:
             if self._config.stop_loss_pct is not None:
                 for ticker in list(positions.keys()):
                     pos = positions[ticker]
-                    current_price = (
-                        prices.loc[date, ticker] if ticker in prices.columns else 0
-                    )
+                    current_price = prices.loc[date, ticker] if ticker in prices.columns else 0
                     if pd.isna(current_price) or current_price <= 0:
                         continue
                     loss_pct = (current_price - pos["avg_price"]) / pos["avg_price"]
@@ -469,14 +449,10 @@ class BacktestEngine:
             avg_trade_return = sum(t.pnl for t in sell_trades) / total_trades / initial
 
         # 최대 연속 손실
-        max_consec_losses = _max_consecutive(
-            [1 if t.pnl <= 0 else 0 for t in sell_trades]
-        )
+        max_consec_losses = _max_consecutive([1 if t.pnl <= 0 else 0 for t in sell_trades])
 
         # 월별 수익률
-        monthly_returns = daily_returns.resample("ME").apply(
-            lambda x: (1 + x).prod() - 1
-        )
+        monthly_returns = daily_returns.resample("ME").apply(lambda x: (1 + x).prod() - 1)
 
         # ── 벤치마크 대비 지표 (F-07-01 완성) ──
         alpha, beta, info_ratio, tracking_err = self._calculate_benchmark_metrics(
