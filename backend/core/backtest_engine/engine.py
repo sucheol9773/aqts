@@ -35,29 +35,17 @@ class BacktestConfig:
     benchmark_returns: Optional[pd.Series] = None  # 벤치마크 수익률
     # ── 리스크 관리 ──
     stop_loss_pct: Optional[float] = None  # 종목별 손절 (예: 0.15 = -15%에서 청산)
-    stop_loss_atr_multiplier: Optional[float] = (
-        None  # ATR 기반 동적 손절 (예: 2.0 = 2×ATR)
-    )
-    max_drawdown_limit: Optional[float] = (
-        None  # 포트폴리오 DD 한도 (예: 0.20 = -20%에서 전량 청산)
-    )
+    stop_loss_atr_multiplier: Optional[float] = None  # ATR 기반 동적 손절 (예: 2.0 = 2×ATR)
+    max_drawdown_limit: Optional[float] = None  # 포트폴리오 DD 한도 (예: 0.20 = -20%에서 전량 청산)
     drawdown_cooldown_days: int = 20  # DD 발동 후 거래 재개까지 대기 영업일
 
     def get_costs(self) -> dict:
         """거래 비용 반환 (명시적 설정값 또는 국가 기본값)"""
         defaults = TRANSACTION_COSTS[self.country]
         return {
-            "commission": (
-                self.commission_rate
-                if self.commission_rate is not None
-                else defaults["commission_rate"]
-            ),
+            "commission": (self.commission_rate if self.commission_rate is not None else defaults["commission_rate"]),
             "tax": self.tax_rate if self.tax_rate is not None else defaults["tax_rate"],
-            "slippage": (
-                self.slippage_rate
-                if self.slippage_rate is not None
-                else defaults["slippage_rate"]
-            ),
+            "slippage": (self.slippage_rate if self.slippage_rate is not None else defaults["slippage_rate"]),
         }
 
 
@@ -210,9 +198,7 @@ class BacktestEngine:
 
             # ── 포트폴리오 Drawdown Limit 체크 ──
             peak_value = max(peak_value, portfolio_value)
-            current_dd = (
-                (portfolio_value - peak_value) / peak_value if peak_value > 0 else 0.0
-            )
+            current_dd = (portfolio_value - peak_value) / peak_value if peak_value > 0 else 0.0
 
             if self._config.max_drawdown_limit is not None:
                 # 쿨다운 중이면 카운트 감소, 만료 시 peak 리셋 후 거래 재개
@@ -229,9 +215,7 @@ class BacktestEngine:
                     cooldown_remaining = self._config.drawdown_cooldown_days
                     for ticker in list(positions.keys()):
                         pos = positions[ticker]
-                        sell_price = (
-                            prices.loc[date, ticker] if ticker in prices.columns else 0
-                        )
+                        sell_price = prices.loc[date, ticker] if ticker in prices.columns else 0
                         if pd.isna(sell_price) or sell_price <= 0:
                             continue
                         effective_price = sell_price * (1 - self._costs["slippage"])
@@ -260,35 +244,23 @@ class BacktestEngine:
                     continue
 
             # ── 종목별 Stop-loss 체크 (ATR 동적 or 고정 비율) ──
-            if (
-                self._config.stop_loss_pct is not None
-                or self._config.stop_loss_atr_multiplier is not None
-            ):
+            if self._config.stop_loss_pct is not None or self._config.stop_loss_atr_multiplier is not None:
                 for ticker in list(positions.keys()):
                     pos = positions[ticker]
-                    current_price = (
-                        prices.loc[date, ticker] if ticker in prices.columns else 0
-                    )
+                    current_price = prices.loc[date, ticker] if ticker in prices.columns else 0
                     if pd.isna(current_price) or current_price <= 0:
                         continue
 
                     # 손절 기준 결정
                     stop_threshold = self._config.stop_loss_pct or 0.15
-                    if (
-                        self._config.stop_loss_atr_multiplier is not None
-                        and ticker in prices.columns
-                    ):
+                    if self._config.stop_loss_atr_multiplier is not None and ticker in prices.columns:
                         # ATR 기반 동적 손절: 최근 20일 True Range 평균
                         lookback = min(i, 20)
                         if lookback >= 5:
-                            recent_prices = prices[ticker].iloc[
-                                max(0, i - lookback) : i + 1
-                            ]
+                            recent_prices = prices[ticker].iloc[max(0, i - lookback) : i + 1]
                             high_low = recent_prices.max() - recent_prices.min()
                             atr = high_low / lookback if lookback > 0 else 0
-                            atr_pct = (
-                                atr / pos["avg_price"] if pos["avg_price"] > 0 else 0
-                            )
+                            atr_pct = atr / pos["avg_price"] if pos["avg_price"] > 0 else 0
                             stop_threshold = max(
                                 atr_pct * self._config.stop_loss_atr_multiplier,
                                 0.05,  # 최소 5% 손절선
@@ -492,14 +464,10 @@ class BacktestEngine:
             avg_trade_return = sum(t.pnl for t in sell_trades) / total_trades / initial
 
         # 최대 연속 손실
-        max_consec_losses = _max_consecutive(
-            [1 if t.pnl <= 0 else 0 for t in sell_trades]
-        )
+        max_consec_losses = _max_consecutive([1 if t.pnl <= 0 else 0 for t in sell_trades])
 
         # 월별 수익률
-        monthly_returns = daily_returns.resample("ME").apply(
-            lambda x: (1 + x).prod() - 1
-        )
+        monthly_returns = daily_returns.resample("ME").apply(lambda x: (1 + x).prod() - 1)
 
         # ── 벤치마크 대비 지표 (F-07-01 완성) ──
         alpha, beta, info_ratio, tracking_err = self._calculate_benchmark_metrics(
