@@ -1,7 +1,12 @@
 # ══════════════════════════════════════════════════════════════
-# AQTS CD Pipeline — GCP 자동 배포
+# AQTS CD Pipeline — GCP 자동 배포 (롤백 지원)
 # ══════════════════════════════════════════════════════════════
 # 트리거: main 브랜치 push + CI 통과 후 자동 배포
+# 안전장치:
+#   1. 수동 승인 게이트 (environment: production)
+#   2. 배포 전 스냅샷 (이전 이미지 태그 + DB 상태)
+#   3. 헬스체크 실패 시 자동 롤백
+#   4. Telegram 배포 결과 알림
 name: CD
 
 on:
@@ -9,6 +14,10 @@ on:
     workflows: ["CI"]
     types: [completed]
     branches: [main]
+
+env:
+  DEPLOY_TIMEOUT: 120
+  HEALTH_ENDPOINT: "http://localhost:8000/api/system/health"
 
 jobs:
   # ──────────────────────────────────
@@ -18,13 +27,16 @@ jobs:
     name: Deployment Gate
     runs-on: ubuntu-latest
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
-    # environment: production  # 테스트 기간 중 수동 승인 비활성화 (프로덕션 전환 시 복원)
+    environment: production
     steps:
       - name: Deployment approved
-        run: echo "✅ Deployment approved (auto-deploy mode)"
+        run: |
+          echo "✅ Deployment approved by reviewer"
+          echo "Commit: ${{ github.event.workflow_run.head_sha }}"
+          echo "Branch: ${{ github.event.workflow_run.head_branch }}"
 
   # ──────────────────────────────────
-  # Stage 2: GCP 서버 배포
+  # Stage 2: 배포 전 스냅샷 + 배포 + 검증 + 롤백
   # ──────────────────────────────────
   deploy:
     name: Deploy to GCP
@@ -41,10 +53,23 @@ jobs:
           mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/gcp_key
           chmod 600 ~/.ssh/gcp_key
-          # Host key verification skip for CI
           echo "StrictHostKeyChecking no" > ~/.ssh/config
 
+      # ── Step 1: 배포 전 스냅샷 ──
+      - name: Pre-deploy snapshot
+        id: snapshot
+        env:
+          SERVER_IP: ${{ secrets.GCP_SERVER_IP }}
+          SERVER_USER: ${{ secrets.GCP_SERVER_USER }}
+        run: |
+          PREV_SHA=$(ssh -i ~/.ssh/gcp_key ${SERVER_USER}@${SERVER_IP} \
+            "cd ~/aqts && git rev-parse --short HEAD 2>/dev/null || echo 'none'")
+          echo "previous_sha=${PREV_SHA}" >> $GITHUB_OUTPUT
+          echo "📸 Pre-deploy snapshot: commit=${PREV_SHA}"
+
+      # ── Step 2: 배포 실행 ──
       - name: Deploy to server
+        id: deploy
         env:
           SERVER_IP: ${{ secrets.GCP_SERVER_IP }}
           SERVER_USER: ${{ secrets.GCP_SERVER_USER }}
@@ -64,22 +89,19 @@ jobs:
             for i in $(seq 1 60); do
               if curl -sf http://localhost:8000/api/system/health > /dev/null 2>&1; then
                 echo "✅ Backend healthy after $((i*2))s"
-                break
-              fi
-              if [ $i -eq 60 ]; then
-                echo "❌ Health check failed after 120s"
-                docker compose logs backend --tail=50
-                exit 1
+                exit 0
               fi
               sleep 2
             done
 
-            echo "═══ Step 4: Verify all services ═══"
-            docker compose ps
-            echo "═══ Deployment complete ═══"
+            echo "❌ Health check failed after 120s"
+            docker compose logs backend --tail=50
+            exit 1
           DEPLOY_SCRIPT
 
+      # ── Step 3: 배포 후 검증 ──
       - name: Post-deploy verification
+        id: verify
         env:
           SERVER_IP: ${{ secrets.GCP_SERVER_IP }}
           SERVER_USER: ${{ secrets.GCP_SERVER_USER }}
@@ -88,11 +110,11 @@ jobs:
             set -e
             cd ~/aqts
 
-            # API 헬스체크
+            echo "═══ Health Check ═══"
             HEALTH=$(curl -sf http://localhost:8000/api/system/health)
             echo "Health: $HEALTH"
 
-            # 컨테이너 상태
+            echo "═══ Container Status ═══"
             RUNNING=$(docker compose ps --format '{{.Name}} {{.Status}}' | grep -c "Up" || true)
             echo "Running containers: $RUNNING/4"
 
@@ -102,28 +124,80 @@ jobs:
               exit 1
             fi
 
+            echo "═══ Version Check ═══"
+            DEPLOYED_SHA=$(git rev-parse --short HEAD)
+            echo "Deployed commit: $DEPLOYED_SHA"
+
             echo "✅ All verification checks passed"
           VERIFY_SCRIPT
 
+      # ── Step 4: 실패 시 자동 롤백 ──
+      - name: Rollback on failure
+        if: failure() && steps.snapshot.outputs.previous_sha != 'none'
+        env:
+          SERVER_IP: ${{ secrets.GCP_SERVER_IP }}
+          SERVER_USER: ${{ secrets.GCP_SERVER_USER }}
+          PREV_SHA: ${{ steps.snapshot.outputs.previous_sha }}
+        run: |
+          echo "🔄 Rolling back to ${PREV_SHA}..."
+          ssh -i ~/.ssh/gcp_key ${SERVER_USER}@${SERVER_IP} << ROLLBACK_SCRIPT
+            set -e
+            cd ~/aqts
+
+            echo "═══ Rollback: reverting to ${PREV_SHA} ═══"
+            git checkout ${PREV_SHA}
+
+            echo "═══ Rebuild & restart ═══"
+            docker compose -f docker-compose.yml build backend
+            docker compose -f docker-compose.yml up -d
+
+            echo "═══ Wait for health check (max 120s) ═══"
+            for i in \$(seq 1 60); do
+              if curl -sf http://localhost:8000/api/system/health > /dev/null 2>&1; then
+                echo "✅ Rollback healthy after \$((i*2))s"
+                break
+              fi
+              sleep 2
+            done
+
+            RUNNING=\$(docker compose ps --format '{{.Name}} {{.Status}}' | grep -c "Up" || true)
+            echo "Running containers after rollback: \$RUNNING/4"
+            echo "═══ Rollback complete ═══"
+          ROLLBACK_SCRIPT
+
+      # ── Step 5: Telegram 알림 ──
       - name: Notify deployment (Telegram)
         if: always()
         env:
           SERVER_IP: ${{ secrets.GCP_SERVER_IP }}
           SERVER_USER: ${{ secrets.GCP_SERVER_USER }}
           DEPLOY_STATUS: ${{ job.status }}
+          PREV_SHA: ${{ steps.snapshot.outputs.previous_sha }}
         run: |
           ssh -i ~/.ssh/gcp_key ${SERVER_USER}@${SERVER_IP} << NOTIFY_SCRIPT
             cd ~/aqts
-            source .env
+            source .env 2>/dev/null || true
             STATUS="${DEPLOY_STATUS}"
-            EMOJI=\$([ "\$STATUS" = "success" ] && echo "✅" || echo "❌")
-            MSG="\${EMOJI} AQTS Deploy \${STATUS}
-          Commit: ${GITHUB_SHA:0:7}
+            CURRENT_SHA=\$(git rev-parse --short HEAD)
+
+            if [ "\$STATUS" = "success" ]; then
+              EMOJI="✅"
+              DETAIL="배포 성공"
+            else
+              EMOJI="❌"
+              DETAIL="배포 실패 → 롤백 (${PREV_SHA})"
+            fi
+
+            MSG="\${EMOJI} AQTS Deploy \${DETAIL}
+          Commit: ${GITHUB_SHA:0:7} → \${CURRENT_SHA}
           Branch: main
           Time: \$(TZ='Asia/Seoul' date '+%Y-%m-%d %H:%M:%S KST')"
-            curl -sf "https://api.telegram.org/bot\${TELEGRAM_BOT_TOKEN}/sendMessage" \
-              -d chat_id="\${TELEGRAM_CHAT_ID}" \
-              -d text="\${MSG}" > /dev/null 2>&1 || true
+
+            if [ -n "\${TELEGRAM_BOT_TOKEN}" ] && [ -n "\${TELEGRAM_CHAT_ID}" ]; then
+              curl -sf "https://api.telegram.org/bot\${TELEGRAM_BOT_TOKEN}/sendMessage" \
+                -d chat_id="\${TELEGRAM_CHAT_ID}" \
+                -d text="\${MSG}" > /dev/null 2>&1 || true
+            fi
           NOTIFY_SCRIPT
 
       - name: Cleanup SSH

@@ -1,7 +1,7 @@
 # 릴리스 승인 게이트 (Release Approval Gates)
 
 **문서 번호**: OPS-004
-**버전**: 1.15
+**버전**: 1.16
 **최종 수정**: 2026-04-06
 
 ## 1. 목적
@@ -32,7 +32,7 @@ Gate A (개발/QA) → Gate B (보안) → Gate C (리스크/운영) → Gate D 
 | API 계약 테스트 | Pydantic 스키마 검증 | PASS (9개 계약) |
 | 통합 테스트 | 주요 플로우 E2E | PASS (30건 + OOS 55건 + 민감도 40건 + 인프라 70건 + 실시간 파이프라인 25건) |
 | 문서 동기화 | FEATURE_STATUS 최신화 | PASS |
-| CI/CD 파이프라인 | GitHub Actions 자동화 | PASS (Lint→Smoke→Test→Build→Deploy, 3개 워크플로우) |
+| CI/CD 파이프라인 | GitHub Actions 자동화 | PASS (Lint→Smoke→Test→Build→Deploy, 3개 워크플로우, 수동 승인 게이트 + 자동 롤백) |
 
 **승인자**: 개발 리드
 
@@ -115,6 +115,7 @@ Gate E: PASS (ASC 운영책임자 서명 완료, 2026-04-05)
 **결론: Gate A~E 전 게이트 PASS. 배포 승인 완료.**
 
 ### 변경 이력
+- v1.16 (2026-04-06): CD 파이프라인 실전 전환 — 수동 승인 게이트, 자동 롤백, 배포 전 스냅샷, CI coverage threshold 60→80%
 - v1.15 (2026-04-06): 커버리지 부스트 테스트 49건 추가 (engine 67→100%, pipeline 65→98%, data_loader 68→93%), 전체 커버리지 84→85%, 테스트 수 2,760→2,809
 - v1.14 (2026-04-06): 실시간 파이프라인 E2E 통합 테스트 25건 추가 (마켓사이클/장애복원/RL블렌딩/레지스트리연동/Redis캐시/스케줄러상태/IntradayBar), 테스트 수 2,735→2,760
 - v1.13 (2026-04-06): 테스트 수 2,477→2,735 반영 (RL v2 28 + RL production 20 + Realtime 20 = 68건 추가), 문서 정합성 일괄 수정

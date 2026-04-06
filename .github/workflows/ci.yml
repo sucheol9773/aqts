@@ -180,7 +180,7 @@ jobs:
         run: |
           cd backend
           python -m pytest tests/ --cov=core --cov=config --cov=db --cov=api --cov=contracts \
-            --cov-report=term --cov-fail-under=60 -q --no-header 2>&1 | tail -20 || true
+            --cov-report=term --cov-fail-under=80 -q --no-header 2>&1 | tail -20 || true
 
   # ──────────────────────────────────
   # Stage 4: Docker Build 검증
