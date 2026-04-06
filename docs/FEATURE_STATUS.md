@@ -166,6 +166,9 @@
 | alembic_migrations | DB 스키마 마이그레이션 (Alembic) | Implemented | alembic/env.py | N/A | init_db.sql 베이스라인 마이그레이션, settings.py sync_url 연동, black post-write hook |
 | jwt_security | JWT 보안 강화 (Key Rotation + Revocation) | Tested | api/middleware/auth.py | test_jwt_security.py (17) | kid 헤더 기반 key rotation, jti UUID4 + TokenRevocationStore, bcrypt 전용 인증, 로그아웃 엔드포인트 |
 | ssh_hardening | CD 파이프라인 SSH 하드닝 | Implemented | .github/workflows/cd.yml | N/A | StrictHostKeyChecking no 제거, GCP_HOST_KEY 시크릿 기반 known_hosts 검증 (MITM 방지) |
+| db_backup | DB 백업 자동화 (pg_dump + mongodump + GCS) | Tested | scripts/backup_db.sh | test_scheduler_separation.py (33) | 24시간 주기 cron 컨테이너, GCS 업로드, 로컬 보관 정리, 복원 스크립트 |
+| pitr_wal_archive | PostgreSQL PITR (WAL 아카이빙) | Tested | docker-compose.yml | test_scheduler_separation.py (33) | wal_level=replica, archive_mode=on, 5분 archive_timeout, WAL 전용 볼륨 |
+| scheduler_separation | 스케줄러 컨테이너 분리 (장애 격리) | Tested | scheduler_main.py | test_scheduler_separation.py (33) | SCHEDULER_ENABLED 환경변수, 헬스체크 external 상태, API/스케줄러 독립 장애 격리 |
 
 ---
 

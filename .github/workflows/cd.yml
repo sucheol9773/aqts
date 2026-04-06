@@ -120,11 +120,13 @@ jobs:
             echo "Health: $HEALTH"
 
             echo "═══ Container Status ═══"
+            TOTAL=$(docker compose ps --format '{{.Name}}' | wc -l)
             RUNNING=$(docker compose ps --format '{{.Name}} {{.Status}}' | grep -c "Up" || true)
-            echo "Running containers: $RUNNING/4"
+            echo "Running containers: $RUNNING/$TOTAL"
 
+            # 핵심 서비스 최소 4개 (postgres, mongodb, redis, backend)
             if [ "$RUNNING" -lt 4 ]; then
-              echo "❌ Not all containers running"
+              echo "❌ Core containers not running (minimum 4 required)"
               docker compose ps
               exit 1
             fi

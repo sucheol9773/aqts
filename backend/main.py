@@ -89,15 +89,24 @@ async def lifespan(app: FastAPI):
         logger.info("PostgreSQL (TimescaleDB) engine ready")
 
         # ── 스케줄러 시작 ──
+        # SCHEDULER_ENABLED=false 설정 시 API 서버에서 스케줄러를 시작하지 않음
+        # (별도 scheduler 컨테이너에서 실행하는 경우)
+        import os
+
+        scheduler_enabled = os.environ.get("SCHEDULER_ENABLED", "true").lower() != "false"
         global trading_scheduler
-        try:
-            trading_scheduler = TradingScheduler()
-            await trading_scheduler.start()
-            logger.info("TradingScheduler started successfully")
-        except Exception as e:
-            logger.warning(f"TradingScheduler 시작 실패 (degraded): {e}")
+        if scheduler_enabled:
+            try:
+                trading_scheduler = TradingScheduler()
+                await trading_scheduler.start()
+                logger.info("TradingScheduler started successfully (embedded mode)")
+            except Exception as e:
+                logger.warning(f"TradingScheduler 시작 실패 (degraded): {e}")
+                trading_scheduler = None
+                app.state.scheduler_degraded = True
+        else:
             trading_scheduler = None
-            app.state.scheduler_degraded = True
+            logger.info("TradingScheduler disabled (SCHEDULER_ENABLED=false, 별도 컨테이너 실행)")
 
         # ── KIS API 토큰 초기화 ──
         global kis_client
@@ -224,7 +233,12 @@ async def health_check():
         health["status"] = "degraded"
 
     # 스케줄러 상태 (degraded 허용)
-    if getattr(app.state, "scheduler_degraded", False):
+    import os
+
+    scheduler_enabled = os.environ.get("SCHEDULER_ENABLED", "true").lower() != "false"
+    if not scheduler_enabled:
+        health["components"]["scheduler"] = "external"  # 별도 컨테이너에서 실행
+    elif getattr(app.state, "scheduler_degraded", False):
         health["components"]["scheduler"] = "degraded"
         health["status"] = "degraded"
     elif trading_scheduler and trading_scheduler.is_running:
@@ -247,7 +261,7 @@ async def health_check():
     for comp, comp_status in health["components"].items():
         if comp_status == "healthy":
             COMPONENT_HEALTH.labels(component=comp).set(1.0)
-        elif comp_status in ("degraded", "stopped", "not_initialized"):
+        elif comp_status in ("degraded", "stopped", "not_initialized", "external"):
             COMPONENT_HEALTH.labels(component=comp).set(0.5)
         else:
             COMPONENT_HEALTH.labels(component=comp).set(0.0)
