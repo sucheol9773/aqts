@@ -49,11 +49,15 @@ jobs:
       - name: Setup SSH key
         env:
           SSH_PRIVATE_KEY: ${{ secrets.GCP_SSH_PRIVATE_KEY }}
+          GCP_HOST_KEY: ${{ secrets.GCP_HOST_KEY }}
         run: |
           mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/gcp_key
           chmod 600 ~/.ssh/gcp_key
-          echo "StrictHostKeyChecking no" > ~/.ssh/config
+          # 호스트 키 검증 활성화 — MITM 방지
+          # GCP_HOST_KEY는 서버에서 `ssh-keyscan <SERVER_IP>` 출력을 Secrets에 저장
+          echo "$GCP_HOST_KEY" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
 
       # ── Step 1: 배포 전 스냅샷 ──
       - name: Pre-deploy snapshot

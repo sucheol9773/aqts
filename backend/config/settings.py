@@ -263,8 +263,12 @@ class DashboardSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="DASHBOARD_")
 
-    secret_key: str = Field(..., description="JWT 시크릿 키")
-    password: str = Field(..., description="대시보드 로그인 비밀번호")
+    secret_key: str = Field(..., description="JWT 시크릿 키 (현재 활성)")
+    previous_secret_key: Optional[str] = Field(
+        default=None,
+        description="이전 JWT 시크릿 키 (key rotation 기간 동안 검증용)",
+    )
+    password: str = Field(..., description="대시보드 로그인 비밀번호 (bcrypt 해시)")
     access_token_expire_hours: int = Field(default=24)
     refresh_token_expire_days: int = Field(default=7)
 

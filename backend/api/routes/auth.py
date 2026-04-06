@@ -58,6 +58,29 @@ async def refresh_token(request: RefreshTokenRequest):
     return APIResponse(success=True, data=token_data, message="토큰 갱신 성공")
 
 
+@router.post("/logout", response_model=APIResponse[dict])
+async def logout(
+    request: Request,
+    current_user: str = Depends(get_current_user),
+):
+    """
+    로그아웃 — 현재 토큰을 무효화 (revocation)
+
+    Authorization 헤더의 access token을 블랙리스트에 등록합니다.
+    """
+    auth_header = request.headers.get("authorization", "")
+    token = auth_header.replace("Bearer ", "") if auth_header else ""
+
+    jti = AuthService.revoke_token(token)
+    revoked = jti is not None
+
+    return APIResponse(
+        success=True,
+        data={"revoked": revoked, "jti": jti},
+        message="로그아웃 완료" if revoked else "토큰에 jti가 없어 revoke 불가 (레거시 토큰)",
+    )
+
+
 @router.get("/me", response_model=APIResponse[dict])
 async def get_me(current_user: str = Depends(get_current_user)):
     """

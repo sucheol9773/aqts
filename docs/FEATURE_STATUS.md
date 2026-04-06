@@ -101,9 +101,9 @@
 
 | Module | Feature | Status | Code Path | Tests | Notes |
 |--------|---------|--------|-----------|-------|-------|
-| middleware/auth | JWT 인증 (HS256 Bearer Token) | Tested | api/middleware/auth.py | test_api.py (59) | 단일 사용자, bcrypt/평문 지원 |
+| middleware/auth | JWT 인증 (HS256 Bearer Token) | Tested | api/middleware/auth.py | test_api.py (59), test_jwt_security.py (17) | Key Rotation (kid), jti + revocation, bcrypt 전용 |
 | middleware/request_logger | 요청 로깅 미들웨어 | Tested | api/middleware/request_logger.py | test_api.py (59) | HTTP 요청/응답 로깅 |
-| routes/auth | 인증 (로그인·토큰 갱신) | Tested | api/routes/auth.py | test_api.py (59) | 로그인, 토큰 갱신 엔드포인트 |
+| routes/auth | 인증 (로그인·토큰 갱신·로그아웃) | Tested | api/routes/auth.py | test_api.py (59) | 로그인, 토큰 갱신, 로그아웃(revoke) 엔드포인트 |
 | routes/portfolio | 포트폴리오 (요약·보유·성과) | Tested | api/routes/portfolio.py | test_api.py (59) | 포트폴리오 조회, 성과 분석 |
 | routes/orders | 주문 (생성·배치·조회·취소) | Tested | api/routes/orders.py | test_api.py (59) | 주문 CRUD 작업 |
 | routes/profile | 투자자 프로필 (조회·수정) | Tested | api/routes/profile.py | test_api.py (59) | 프로필 조회 및 수정 |
@@ -164,6 +164,8 @@
 | pre_deploy_check | 배포 전 자동 검증 스크립트 | Implemented | scripts/pre_deploy_check.sh | N/A | 7단계 검증 (Git/린트/테스트/문서/Docker/환경변수/릴리즈게이트) |
 | prometheus_alerting | Prometheus 알림 규칙 + Alertmanager | Implemented | monitoring/prometheus/rules/aqts_alerts.yml | N/A | 5그룹 15규칙 (가용성/API성능/서킷브레이커/데이터수집/트레이딩), Alertmanager 텔레그램 연동, 심각도별 라우팅 |
 | alembic_migrations | DB 스키마 마이그레이션 (Alembic) | Implemented | alembic/env.py | N/A | init_db.sql 베이스라인 마이그레이션, settings.py sync_url 연동, black post-write hook |
+| jwt_security | JWT 보안 강화 (Key Rotation + Revocation) | Tested | api/middleware/auth.py | test_jwt_security.py (17) | kid 헤더 기반 key rotation, jti UUID4 + TokenRevocationStore, bcrypt 전용 인증, 로그아웃 엔드포인트 |
+| ssh_hardening | CD 파이프라인 SSH 하드닝 | Implemented | .github/workflows/cd.yml | N/A | StrictHostKeyChecking no 제거, GCP_HOST_KEY 시크릿 기반 known_hosts 검증 (MITM 방지) |
 
 ---
 

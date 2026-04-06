@@ -39,7 +39,7 @@ def pytest_configure(config):
         "TELEGRAM_CHAT_ID": "test-chat-id",
         # Dashboard
         "DASHBOARD_SECRET_KEY": "test-secret-key",
-        "DASHBOARD_PASSWORD": "test-dashboard-password",
+        "DASHBOARD_PASSWORD": "$2b$12$VzL4GUmOF2MSYpRTg0oWH.BkJEsU6l0HQaTY.0Xds2bJ1feOJBvJS",  # bcrypt hash of "test-dashboard-password"
     }
     for key, value in test_env_vars.items():
         os.environ.setdefault(key, value)

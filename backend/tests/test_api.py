@@ -461,8 +461,8 @@ class TestAuthService:
         assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
 
     def test_authenticate_with_plaintext_password(self):
-        """Test authenticate with plaintext password from .env."""
-        # conftest sets DASHBOARD_PASSWORD = "test-dashboard-password"
+        """Test authenticate with correct password against bcrypt hash."""
+        # conftest sets DASHBOARD_PASSWORD = bcrypt hash of "test-dashboard-password"
         access_token, refresh_token = AuthService.authenticate("test-dashboard-password")
 
         assert isinstance(access_token, str)

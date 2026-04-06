@@ -115,6 +115,7 @@ Gate E: PASS (ASC 운영책임자 서명 완료, 2026-04-05)
 **결론: Gate A~E 전 게이트 PASS. 배포 승인 완료.**
 
 ### 변경 이력
+- v1.24 (2026-04-07): 보안 강화 — JWT key rotation (kid 헤더 + previous_secret_key), token revocation (jti + 인메모리 블랙리스트), 로그아웃 엔드포인트, bcrypt 전용 인증 (평문 fallback 제거), CD SSH 하드닝 (known_hosts 검증), 17 tests 추가, 테스트 3,105건
 - v1.23 (2026-04-07): 엔터프라이즈 갭 대응 — Prometheus Alerting 체계 (5그룹 15규칙 + Alertmanager 텔레그램), Alembic DB 마이그레이션 초기 설정 (init_db.sql 베이스라인), docker-compose에 Alertmanager 서비스 추가, deployment-roadmap v1.3
 - v1.22 (2026-04-07): Phase 0 카나리 배포 인프라 추가 — nginx split_clients 트래픽 분할 (nginx-canary.conf), docker-compose.canary.yml (stable/canary 듀얼 백엔드), canary_deploy.sh (start/promote/rollback/status/finish), pre_deploy_check.sh (7단계 자동 검증), deployment-roadmap.md v1.2 업데이트
 - v1.21 (2026-04-07): 부하/스트레스 테스트 28건 추가 — 백테스트 스케일링 (1000일×50종목), 동시 백테스트 (ThreadPool 4건), 상태 머신 동시 전이, API 동시 요청 (20~50건), 파이프라인 동시 실행, 메모리 누수 검증, 서킷 브레이커 급속 트리거, 레짐 탐지 대량 데이터, 테스트 3,060→3,088건
