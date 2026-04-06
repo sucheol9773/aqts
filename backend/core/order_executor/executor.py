@@ -29,6 +29,7 @@ from config.logging import logger
 from config.settings import get_settings
 from contracts.converters import order_request_to_contract
 from core.data_collector.kis_client import KISClient
+from core.dry_run.engine import get_dry_run_engine
 from db.database import async_session_factory
 from db.repositories.audit_log import AuditLogger
 
@@ -154,15 +155,27 @@ class OrderExecutor:
     - 재시도 로직 (지수 백오프)
     """
 
-    def __init__(self):
+    def __init__(self, dry_run: bool = False):
         """
         주문 실행 엔진 초기화
 
         한국투자증권 설정을 로드하고 KIS 클라이언트를 초기화합니다.
+
+        Args:
+            dry_run: True이면 실제 주문 실행 없이 가상 주문만 기록
         """
         self._settings = get_settings()
         self._kis_client = KISClient()
-        logger.info("OrderExecutor 초기화 완료")
+        self._dry_run = dry_run
+        if dry_run:
+            logger.info("OrderExecutor 초기화 완료 [DRY_RUN 모드]")
+        else:
+            logger.info("OrderExecutor 초기화 완료")
+
+    @property
+    def dry_run(self) -> bool:
+        """드라이런 모드 여부"""
+        return self._dry_run
 
     async def execute_order(self, request: OrderRequest) -> OrderResult:
         """
@@ -331,6 +344,33 @@ class OrderExecutor:
         logger.info(f"시장가 주문 실행: {request.ticker} {request.side.value} {request.quantity}")
 
         try:
+            if self._dry_run:
+                # 드라이런 모드: 가상 주문 기록만 수행, API 호출 없음
+                engine = get_dry_run_engine()
+                engine.record_order(
+                    ticker=request.ticker,
+                    market=request.market,
+                    side=request.side,
+                    quantity=request.quantity,
+                    order_type=request.order_type,
+                    limit_price=request.limit_price,
+                    reason=request.reason,
+                    estimated_price=100.0,
+                )
+                result = OrderResult(
+                    order_id=f"DRY_{request.ticker}_{datetime.now().timestamp():.0f}",
+                    ticker=request.ticker,
+                    market=request.market,
+                    side=request.side,
+                    quantity=request.quantity,
+                    filled_quantity=request.quantity,
+                    avg_price=0.0,
+                    status=OrderStatus.FILLED,
+                    executed_at=datetime.now(timezone.utc),
+                )
+                logger.info(f"[DRY_RUN] 시장가 가상 주문: {result.order_id}")
+                return result
+
             if self._kis_client.is_backtest:
                 # Mock 모드: 시뮬레이션
                 result = OrderResult(
@@ -402,6 +442,33 @@ class OrderExecutor:
         )
 
         try:
+            if self._dry_run:
+                # 드라이런 모드: 가상 주문 기록
+                engine = get_dry_run_engine()
+                engine.record_order(
+                    ticker=request.ticker,
+                    market=request.market,
+                    side=request.side,
+                    quantity=request.quantity,
+                    order_type=request.order_type,
+                    limit_price=request.limit_price,
+                    reason=request.reason,
+                    estimated_price=request.limit_price,
+                )
+                result = OrderResult(
+                    order_id=f"DRY_{request.ticker}_{datetime.now().timestamp():.0f}",
+                    ticker=request.ticker,
+                    market=request.market,
+                    side=request.side,
+                    quantity=request.quantity,
+                    filled_quantity=int(request.quantity * 0.5),
+                    avg_price=request.limit_price,
+                    status=OrderStatus.PARTIAL,
+                    executed_at=datetime.now(timezone.utc),
+                )
+                logger.info(f"[DRY_RUN] 지정가 가상 주문: {result.order_id}")
+                return result
+
             if self._kis_client.is_backtest:
                 # Mock 모드
                 result = OrderResult(

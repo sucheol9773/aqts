@@ -23,6 +23,7 @@ from api.routes import (
     alerts,
     audit,
     auth,
+    dry_run,
     ensemble,
     market,
     oos,
@@ -300,3 +301,8 @@ app.include_router(
 app.include_router(audit.router)
 app.include_router(ensemble.router, prefix="/api/ensemble", tags=["Ensemble"])
 app.include_router(realtime.router, prefix="/api/realtime", tags=["Realtime"])
+app.include_router(
+    dry_run.router,
+    prefix="/api/system/dry-run",
+    tags=["Dry Run"],
+)

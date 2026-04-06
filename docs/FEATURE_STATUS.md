@@ -12,10 +12,10 @@
 |--------|-------|
 | Not Started | 0 |
 | Implemented | 1 |
-| Tested | 124 |
+| Tested | 125 |
 | Production-ready | 0 |
 | Blocked | 0 |
-| **TOTAL** | **125** |
+| **TOTAL** | **126** |
 
 ---
 
@@ -73,7 +73,8 @@
 
 | Module | Feature | Status | Code Path | Tests | Notes |
 |--------|---------|--------|-----------|-------|-------|
-| executor | 주문 집행 (시장가·지정가·TWAP·VWAP) | Tested | core/order_executor/executor.py | test_executor.py (33) | TWAP 6분할, VWAP 가중치, 배치 실행 |
+| executor | 주문 집행 (시장가·지정가·TWAP·VWAP) | Tested | core/order_executor/executor.py | test_executor.py (33) | TWAP 6분할, VWAP 가중치, 배치 실행, dry_run 모드 지원 |
+| dry_run_engine | 드라이런 엔진 (주문 인터셉트 + 가상 기록) | Tested | core/dry_run/engine.py | test_dry_run_engine.py (34) + test_dry_run_api.py (12) | DryRunSession/Order/Report, 6개 API 엔드포인트 |
 | trading_guard | 트레이딩 안전 장치 (7계층 보호) | Tested | core/trading_guard.py | test_trading_guard.py (72) | 환경·자본·손실·MDD·연속손실 검증 |
 | emergency_monitor | 비상 리밸런싱 5분 모니터 | Tested | core/emergency_monitor.py | test_emergency_monitor.py (64) | 동적 손절, 방어 포트폴리오 전환 |
 
