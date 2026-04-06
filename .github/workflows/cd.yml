@@ -79,6 +79,7 @@ jobs:
             cd ~/aqts
 
             echo "═══ Step 1: Pull latest code ═══"
+            git checkout main
             git pull origin main
 
             echo "═══ Step 2: Build & restart services ═══"
@@ -86,21 +87,17 @@ jobs:
             docker compose -f docker-compose.yml up -d
 
             echo "═══ Step 3: Wait for health check (max 120s) ═══"
-            HEALTHY=false
             for i in $(seq 1 60); do
               if curl -sf http://localhost:8000/api/system/health > /dev/null 2>&1; then
                 echo "✅ Backend healthy after $((i*2))s"
-                HEALTHY=true
-                break
+                exit 0
               fi
               sleep 2
             done
 
-            if [ "$HEALTHY" = false ]; then
-              echo "❌ Health check failed after 120s"
-              docker compose logs backend --tail=50
-              exit 1
-            fi
+            echo "❌ Health check failed after 120s"
+            docker compose logs backend --tail=50
+            exit 1
           DEPLOY_SCRIPT
 
       # ── Step 3: 배포 후 검증 ──
@@ -149,7 +146,7 @@ jobs:
             cd ~/aqts
 
             echo "═══ Rollback: reverting to ${PREV_SHA} ═══"
-            git checkout ${PREV_SHA}
+            git reset --hard ${PREV_SHA}
 
             echo "═══ Rebuild & restart ═══"
             docker compose -f docker-compose.yml build backend
