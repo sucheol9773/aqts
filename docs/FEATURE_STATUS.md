@@ -246,7 +246,7 @@
 | judge | PerformanceJudge (PASS/REVIEW/FAIL) | Tested | core/backtest_engine/pass_fail.py | test_performance_validation.py (73) | 성과 합격 판정 |
 | vol_scaling | 변동성 스케일링 (vol_target) | Tested | core/backtest_engine/engine.py | test_backtest_improvements.py (22) | 실현 변동성 역비례 포지션 조절 |
 | gradual_reentry | 점진적 재진입 (gradual_reentry_days) | Tested | core/backtest_engine/engine.py | test_backtest_improvements.py (22) | 쿨다운 후 10%→100% 선형 복귀 |
-| dynamic_threshold | 동적 임계값 (레짐 기반) | Tested | core/backtest_engine/engine.py + core/strategy_ensemble/regime.py | test_backtest_improvements.py (22) | 레짐별 매수/매도 임계값 자동 조정 |
+| dynamic_threshold | 동적 임계값 (레짐 기반) | Tested | core/backtest_engine/engine.py | test_backtest_improvements.py (22) | 레짐별 매수/매도 임계값 자동 조정 (regime.py 연동) |
 
 ### Stage 7: LLM Promotion ✅
 
