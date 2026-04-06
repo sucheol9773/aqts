@@ -159,7 +159,7 @@
 |--------|---------|--------|-----------|-------|-------|
 | monitoring_dashboard | 모니터링 대시보드 (핵심 지표 실시간 확인) | Tested | core/monitoring/dashboard.py | test_gate_e_monitoring.py (53) | 서비스 상태/메트릭/알림 통합, 임계값 자동 알림 |
 | prometheus_metrics | Prometheus 메트릭 수집 + Grafana 시각화 | Tested | core/monitoring/metrics.py | test_prometheus_metrics.py (26) | HTTP latency/count, 컴포넌트 상태, 비즈니스 메트릭, 서킷브레이커 |
-| json_structured_logging | JSON 구조화 로그 (운영 환경) | Tested | config/logging.py | test_prometheus_metrics.py (2) | 운영: JSON stdout + 파일 로테이션, 개발: 컬러 콘솔 |
+| json_structured_logging | JSON 구조화 로그 (운영 환경) | Tested | config/logging.py | test_prometheus_metrics.py (26) | 운영: JSON stdout + 파일 로테이션, 개발: 컬러 콘솔 (로깅 테스트 2건 포함) |
 
 ---
 
