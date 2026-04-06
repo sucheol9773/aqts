@@ -48,6 +48,7 @@ class MarketRegime(str, Enum):
     TRENDING_DOWN = "TRENDING_DOWN"  # 하락 추세
     SIDEWAYS = "SIDEWAYS"  # 횡보/박스권
     HIGH_VOLATILITY = "HIGH_VOLATILITY"  # 고변동 (방향 불명)
+    CRISIS = "CRISIS"  # 위기 (급락 + 고변동 + 상관관계 급등)
 
 
 @dataclass
@@ -84,6 +85,10 @@ class MarketRegimeDetector:
     VOL_HIGH_PERCENTILE = 0.75
     ADX_TREND_THRESHOLD = 25.0
     MIN_DATA_POINTS = 120  # 최소 6개월
+    # CRISIS 레짐 임계값
+    CRISIS_VOL_PERCENTILE = 0.90  # 변동성 90백분위 초과
+    CRISIS_MOMENTUM_THRESHOLD = -0.10  # 20일 수익률 -10% 이하
+    CRISIS_DRAWDOWN_THRESHOLD = -0.15  # 60일 고점 대비 -15% 이하
 
     def detect(self, ohlcv: pd.DataFrame) -> RegimeInfo:
         """
@@ -135,6 +140,10 @@ class MarketRegimeDetector:
         # ── 추세 강도 ──
         trend_strength = np.clip(ma_spread * 10.0, -1.0, 1.0)
 
+        # ── 60일 고점 대비 하락폭 (CRISIS 감지용) ──
+        high_60d = close.tail(60).max()
+        dd_from_60d_high = (close.iloc[-1] / high_60d - 1.0) if high_60d > 0 else 0.0
+
         # ── 레짐 판정 ──
         regime, regime_confidence = self._classify_regime(
             vol_percentile=vol_percentile,
@@ -142,6 +151,7 @@ class MarketRegimeDetector:
             ma_spread=ma_spread,
             momentum=momentum_20d,
             trend_strength=trend_strength,
+            drawdown_from_60d_high=dd_from_60d_high,
         )
 
         details = {
@@ -153,6 +163,7 @@ class MarketRegimeDetector:
             "ma60": round(ma60, 2),
             "ma_spread": round(ma_spread, 4),
             "momentum_20d": round(momentum_20d, 4),
+            "dd_from_60d_high": round(dd_from_60d_high, 4),
         }
 
         logger.debug(
@@ -213,8 +224,22 @@ class MarketRegimeDetector:
         ma_spread: float,
         momentum: float,
         trend_strength: float,
+        drawdown_from_60d_high: float = 0.0,
     ) -> tuple[MarketRegime, float]:
         """레짐 분류 + 확신도"""
+        # Rule 0: CRISIS — 극단적 변동성 + 급락 + 깊은 낙폭
+        # 위기 시 모든 자산 상관관계가 1에 수렴하므로 최대한 보수적 대응
+        crisis_signals = 0
+        if vol_percentile > self.CRISIS_VOL_PERCENTILE:
+            crisis_signals += 1
+        if momentum < self.CRISIS_MOMENTUM_THRESHOLD:
+            crisis_signals += 1
+        if drawdown_from_60d_high < self.CRISIS_DRAWDOWN_THRESHOLD:
+            crisis_signals += 1
+        if crisis_signals >= 2:
+            conf = min(0.7 + crisis_signals * 0.1, 0.95)
+            return MarketRegime.CRISIS, conf
+
         # Rule 1: 고변동 + 추세 약함
         if vol_percentile > self.VOL_HIGH_PERCENTILE and adx < self.ADX_TREND_THRESHOLD:
             conf = min(vol_percentile, 0.95)
@@ -263,6 +288,7 @@ class DynamicThreshold:
         MarketRegime.TRENDING_DOWN: 0.20,
         MarketRegime.SIDEWAYS: 0.30,
         MarketRegime.HIGH_VOLATILITY: 0.40,
+        MarketRegime.CRISIS: 0.50,  # 위기 시 매우 보수적 (높은 임계값)
     }
 
     # 변동성 보정 계수 (vol_percentile 0.5 기준)
@@ -470,6 +496,14 @@ class RegimeWeightRouter:
             "RISK_PARITY": 1.8,  # 리스크패리티 크게 강화
             "ML_SIGNAL": 1.0,
             "SENTIMENT": 0.6,  # 감성 약화 (뉴스 과반응 가능)
+        },
+        MarketRegime.CRISIS: {
+            "FACTOR": 0.3,  # 위기 시 팩터 대부분 무력화
+            "MEAN_REVERSION": 0.2,  # 역추세 위험 (낙폭 더 확대 가능)
+            "TREND_FOLLOWING": 1.5,  # 하락 추세 추종만 유효
+            "RISK_PARITY": 2.0,  # 리스크 관리 최우선
+            "ML_SIGNAL": 0.5,
+            "SENTIMENT": 0.3,  # 뉴스 기반 판단 최소화
         },
     }
 

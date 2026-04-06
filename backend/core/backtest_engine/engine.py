@@ -18,6 +18,10 @@ import pandas as pd
 
 from config.constants import TRANSACTION_COSTS, Country
 from config.logging import logger
+from core.strategy_ensemble.regime import (
+    DynamicThreshold,
+    MarketRegimeDetector,
+)
 
 
 @dataclass
@@ -43,6 +47,13 @@ class BacktestConfig:
     # ── DD 비례 포지션 축소 (쿠션) ──
     dd_cushion_start: Optional[float] = None  # DD 쿠션 시작점 (예: 0.10 = -10%부터 축소 시작)
     dd_cushion_floor: float = 0.25  # 최소 포지션 비율 (0.25 = 25%까지 축소)
+    # ── 변동성 타겟팅 (Volatility Scaling) ──
+    vol_target: Optional[float] = None  # 목표 연환산 변동성 (예: 0.15 = 15%). 실현 변동성 대비 포지션 스케일링
+    vol_lookback: int = 20  # 실현 변동성 계산 룩백 (영업일)
+    # ── 점진적 재진입 ──
+    gradual_reentry_days: int = 0  # 쿨다운 종료 후 점진적 재진입 일수 (0=즉시 100% 복귀)
+    # ── 동적 임계값 ──
+    use_dynamic_threshold: bool = False  # True이면 레짐 기반 동적 임계값 사용 (0.3 대신)
 
     def get_costs(self) -> dict:
         """거래 비용 반환 (명시적 설정값 또는 국가 기본값)"""
@@ -187,6 +198,11 @@ class BacktestEngine:
         trade_records = []
         peak_value = capital  # 포트폴리오 최고점 추적
         cooldown_remaining = 0  # DD 발동 후 남은 쿨다운 일수
+        reentry_remaining = 0  # 점진적 재진입 남은 일수
+
+        # ── 동적 임계값 / 레짐 감지 초기화 ──
+        regime_detector = MarketRegimeDetector() if self._config.use_dynamic_threshold else None
+        dynamic_threshold = DynamicThreshold() if self._config.use_dynamic_threshold else None
 
         dates = signals.index.tolist()
 
@@ -216,6 +232,9 @@ class BacktestEngine:
                     if cooldown_remaining == 0:
                         # 쿨다운 종료 → peak를 현재 가치로 리셋
                         peak_value = portfolio_value
+                        # 점진적 재진입 시작
+                        if self._config.gradual_reentry_days > 0:
+                            reentry_remaining = self._config.gradual_reentry_days
                     equity_history[date] = portfolio_value
                     continue
 
@@ -359,10 +378,34 @@ class BacktestEngine:
                         )
                         del positions[ticker]
 
+            # ── 동적 임계값 / 레짐 감지 ──
+            buy_threshold = 0.3
+            sell_threshold = -0.3
+            current_regime_info = None
+
+            if regime_detector is not None and dynamic_threshold is not None:
+                # 대표 가격으로 레짐 감지 (첫 번째 종목 또는 평균)
+                if i >= 60:
+                    # 다중 종목 평균 가격으로 레짐 감지
+                    avg_prices = prices.iloc[max(0, i - 119) : i + 1].mean(axis=1)
+                    ohlcv_proxy = pd.DataFrame(
+                        {
+                            "open": avg_prices.shift(1).fillna(avg_prices),
+                            "high": avg_prices * 1.005,
+                            "low": avg_prices * 0.995,
+                            "close": avg_prices,
+                            "volume": 1_000_000,
+                        }
+                    )
+                    current_regime_info = regime_detector.detect(ohlcv_proxy)
+                    bt, st = dynamic_threshold.compute(current_regime_info)
+                    buy_threshold = bt
+                    sell_threshold = -st
+
             # 시그널 기반 목표 포지션 계산
             day_signals = signals.loc[date].dropna()
-            buy_signals = day_signals[day_signals > 0.3].sort_values(ascending=False)
-            sell_signals = day_signals[day_signals < -0.3]
+            buy_signals = day_signals[day_signals > buy_threshold].sort_values(ascending=False)
+            sell_signals = day_signals[day_signals < sell_threshold]
 
             # 매도 처리
             for ticker in sell_signals.index:
@@ -407,6 +450,34 @@ class BacktestEngine:
                 total_signal = buy_signals.sum()
                 if total_signal > 0:
                     available_cash = cash * 0.95  # 5% 현금 유보
+
+                    # ── 변동성 타겟팅 (Volatility Scaling) ──
+                    # 실현 변동성이 목표 대비 높으면 포지션 축소
+                    if self._config.vol_target is not None and i >= self._config.vol_lookback:
+                        equity_series = pd.Series(equity_history)
+                        if len(equity_series) >= self._config.vol_lookback:
+                            recent_returns = equity_series.pct_change().dropna().tail(self._config.vol_lookback)
+                            if len(recent_returns) >= 5:
+                                realized_vol = float(recent_returns.std() * np.sqrt(252))
+                                if realized_vol > 0:
+                                    vol_scale = min(self._config.vol_target / realized_vol, 1.5)
+                                    vol_scale = max(vol_scale, 0.1)
+                                    available_cash *= vol_scale
+
+                    # ── 위기 레짐 포지션 대폭 축소 ──
+                    if current_regime_info is not None:
+                        from core.strategy_ensemble.regime import MarketRegime
+
+                        if current_regime_info.regime == MarketRegime.CRISIS:
+                            available_cash *= 0.20  # 위기 시 최대 20%만 투자
+
+                    # ── 점진적 재진입 스케일링 ──
+                    if reentry_remaining > 0:
+                        reentry_total = self._config.gradual_reentry_days
+                        reentry_progress = 1.0 - (reentry_remaining / reentry_total)
+                        reentry_scale = max(reentry_progress, 0.1)
+                        available_cash *= reentry_scale
+                        reentry_remaining -= 1
 
                     # ── DD 비례 포지션 축소 (쿠션) ──
                     # DD가 cushion_start를 넘으면 선형으로 포지션 축소

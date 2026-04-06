@@ -12,10 +12,10 @@
 |--------|-------|
 | Not Started | 0 |
 | Implemented | 1 |
-| Tested | 125 |
+| Tested | 128 |
 | Production-ready | 0 |
 | Blocked | 0 |
-| **TOTAL** | **126** |
+| **TOTAL** | **129** |
 
 ---
 
@@ -40,7 +40,7 @@
 |--------|---------|--------|-----------|-------|-------|
 | factor_analyzer | 5팩터 분석 (Value·Momentum·Quality·LowVol·Size) | Tested | core/quant_engine/factor_analyzer.py | test_factor_analyzer.py (21) | Z-Score 정규화, Cross-Market 재정규화 |
 | signal_generator | 기술적 시그널 생성 (RSI·MACD·Bollinger) | Tested | core/quant_engine/signal_generator.py | test_signal_generator.py (20) | 5개 기술적 시그널 |
-| backtest_engine | 백테스트 엔진 + 전략 비교 | Tested | core/backtest_engine/engine.py | test_backtest_engine.py (34) | Sharpe/Alpha/Beta/Tracking Error 지표 |
+| backtest_engine | 백테스트 엔진 + 전략 비교 + 성능 개선 | Tested | core/backtest_engine/engine.py | test_backtest_engine.py (34) + test_backtest_improvements.py (22) | Sharpe/Alpha/Beta + CRISIS 방어 + 변동성 스케일링 + 점진적 재진입 + 동적 임계값 |
 
 ---
 
@@ -59,7 +59,7 @@
 | Module | Feature | Status | Code Path | Tests | Notes |
 |--------|---------|--------|-----------|-------|-------|
 | ensemble | 가중 앙상블 (Quant 4 + AI 감성 + Sharpe 재보정) | Tested | core/strategy_ensemble/engine.py | test_ensemble.py (13) | 4개 전략 통합 가중평균 |
-| regime_detector | 실시간 시장 레짐 탐지 (4 regimes) | Tested | core/strategy_ensemble/regime.py | test_regime.py (31) | TRENDING_UP/DOWN/SIDEWAYS/HIGH_VOLATILITY |
+| regime_detector | 실시간 시장 레짐 탐지 (5 regimes) | Tested | core/strategy_ensemble/regime.py | test_regime.py (31) + test_backtest_improvements.py (22) | TRENDING_UP/DOWN/SIDEWAYS/HIGH_VOLATILITY/CRISIS |
 | profile | 투자자 프로필 (위험성향·스타일·손실허용도) | Tested | core/portfolio_manager/profile.py | test_profile.py (22) | 5단계 위험성향 분류 |
 | construction | 포트폴리오 구성 (MVO·Risk Parity·Black-Litterman) | Tested | core/portfolio_manager/construction.py | test_construction.py (77) | 3중 엔진, Ledoit-Wolf 축소, USD 하드캡 |
 | rebalancing | 리밸런싱 (정기·긴급·방어) | Tested | core/portfolio_manager/rebalancing.py | test_rebalancing.py (36) | 3가지 리밸런싱 모드 |
@@ -244,6 +244,9 @@
 | ablation | AblationStudy | Tested | core/backtest_engine/ablation.py | test_performance_validation.py (73) | 레이어별 기여도 분석 |
 | significance | Bootstrap CI + t-test | Tested | core/backtest_engine/significance.py | test_performance_validation.py (73) | 통계적 유의성 검증 |
 | judge | PerformanceJudge (PASS/REVIEW/FAIL) | Tested | core/backtest_engine/pass_fail.py | test_performance_validation.py (73) | 성과 합격 판정 |
+| vol_scaling | 변동성 스케일링 (vol_target) | Tested | core/backtest_engine/engine.py | test_backtest_improvements.py (22) | 실현 변동성 역비례 포지션 조절 |
+| gradual_reentry | 점진적 재진입 (gradual_reentry_days) | Tested | core/backtest_engine/engine.py | test_backtest_improvements.py (22) | 쿨다운 후 10%→100% 선형 복귀 |
+| dynamic_threshold | 동적 임계값 (레짐 기반) | Tested | core/backtest_engine/engine.py + core/strategy_ensemble/regime.py | test_backtest_improvements.py (22) | 레짐별 매수/매도 임계값 자동 조정 |
 
 ### Stage 7: LLM Promotion ✅
 
