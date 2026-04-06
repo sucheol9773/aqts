@@ -29,6 +29,11 @@ coverage.xml
 # ── Docker ──
 docker-compose.override.yml
 
+# ── Canary 배포 상태 ──
+.canary_state
+.last_stable_version
+.env.backup.*
+
 # ── OS ──
 .DS_Store
 Thumbs.db

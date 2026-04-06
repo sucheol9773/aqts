@@ -1,0 +1,127 @@
+# ══════════════════════════════════════════════════════════════════════
+# AQTS Canary Deployment Compose
+# ══════════════════════════════════════════════════════════════════════
+#
+# 사용법:
+#   # 카나리 배포 시작 (기존 인프라 + 카나리 오버레이)
+#   docker compose -f docker-compose.yml -f docker-compose.canary.yml up -d
+#
+#   # 카나리만 업데이트
+#   docker compose -f docker-compose.yml -f docker-compose.canary.yml up -d --no-deps backend-canary
+#
+#   # 카나리 종료 (안정 버전으로 복귀)
+#   docker compose -f docker-compose.yml -f docker-compose.canary.yml down nginx backend-canary backend-stable
+#
+# 트래픽 비중 조절:
+#   nginx/nginx-canary.conf의 split_clients 블록에서 비중 수정 후:
+#   docker compose -f docker-compose.yml -f docker-compose.canary.yml exec nginx nginx -s reload
+#
+# 프로모션 (카나리 → 안정):
+#   1. 카나리 이미지 태그를 안정 태그로 업데이트
+#   2. docker compose up -d (일반 모드로 복귀)
+#   3. docker compose -f docker-compose.yml -f docker-compose.canary.yml down nginx backend-canary backend-stable
+#
+
+services:
+  # ── 기존 backend를 stable로 재명명 ──
+  # docker-compose.yml의 backend 서비스 포트를 비활성화하고
+  # nginx를 통해서만 접근하도록 변경
+  backend:
+    # 기존 backend의 외부 포트 제거 (nginx가 프록시)
+    ports: !override
+      - "127.0.0.1:8001:8000"
+
+  # ── 안정 버전 (v1) — 기존 backend의 별칭 ──
+  backend-stable:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: ${STABLE_IMAGE:-aqts-backend:stable}
+    container_name: aqts-backend-stable
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - AQTS_INSTANCE_ROLE=stable
+      - AQTS_CANARY_MODE=true
+    expose:
+      - "8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - aqts-network
+    stop_grace_period: 60s
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/system/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # ── 카나리 버전 (v2) — 새 이미지 ──
+  backend-canary:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: ${CANARY_IMAGE:-aqts-backend:canary}
+    container_name: aqts-backend-canary
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - AQTS_INSTANCE_ROLE=canary
+      - AQTS_CANARY_MODE=true
+    expose:
+      - "8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - aqts-network
+    stop_grace_period: 60s
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/system/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "1.0"
+
+  # ── nginx 리버스 프록시 (트래픽 분할) ──
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: aqts-nginx-canary
+    restart: unless-stopped
+    ports:
+      - "${CANARY_PORT:-80}:80"
+    volumes:
+      - ./nginx/nginx-canary.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      backend-stable:
+        condition: service_healthy
+      backend-canary:
+        condition: service_healthy
+    networks:
+      - aqts-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/nginx-health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+networks:
+  aqts-network:
+    driver: bridge

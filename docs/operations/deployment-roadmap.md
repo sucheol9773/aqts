@@ -2,7 +2,7 @@
 
 > **문서 번호**: OPS-008
 >
-> **버전**: 1.0 | **최종 수정**: 2026-04-05
+> **버전**: 1.2 | **최종 수정**: 2026-04-07
 >
 > **목적**: 현재 개발 완료 상태에서 실전 운영까지의 단계별 절차, 검증 기준, 의사결정 포인트를 정의합니다.
 
@@ -12,11 +12,14 @@
 
 | 항목 | 상태 |
 |------|------|
-| 코드 구현 | 115개 기능 전체 구현 완료 (100%) |
-| 테스트 | 2,477건 전체 통과 |
-| 릴리즈 게이트 | Gate A~D PASS, Gate E CONDITIONAL (최종 승인 대기) |
+| 코드 구현 | 135개 기능 전체 구현 완료 (100%) |
+| 테스트 | 3,088건 전체 통과 (커버리지 90%) |
+| 릴리즈 게이트 | Gate A~E 전체 PASS (ASC 서명 완료, 2026-04-05) |
+| 부하 테스트 | 28건 스트레스 테스트 통과 (동시성/메모리/스케일링) |
 | 미해결 CVE | torch 2.6.0+ 업그레이드 필요 (배포 환경에서 수행) |
 | 배포 인프라 | Docker Compose 구성 완료 (OPS-007 참조) |
+| 카나리 배포 | nginx 리버스 프록시 + docker-compose.canary.yml 구성 완료 |
+| 배포 스크립트 | pre_deploy_check.sh (7단계 검증) + canary_deploy.sh (5개 명령) |
 
 ---
 
@@ -34,9 +37,9 @@
 
 ### 0-1. 운영책임자 Gate E 최종 승인
 
-- [ ] release-gates.md Gate E 서명란에 운영책임자 서명
-- [ ] 고객 공지(OPS-006) 검토 완료 확인
-- [ ] 롤백 계획(OPS-005) 검토 완료 확인
+- [x] release-gates.md Gate E 서명란에 운영책임자 서명 (ASC, 2026-04-05)
+- [x] 고객 공지(OPS-006) 검토 완료 확인
+- [x] 롤백 계획(OPS-005) 검토 완료 확인
 
 ### 0-2. 클라우드 인프라 프로비저닝
 
@@ -85,6 +88,38 @@ docker exec aqts-backend pip show torch | grep Version
 - `/api/system/health` 200 OK
 - torch >= 2.6.0 확인 → Gate A/B 완전 PASS
 - 텔레그램 테스트 알림 수신 확인
+
+### 0-5. 배포 전 자동 검증
+
+```bash
+# 사전 검증 스크립트 실행 (7단계 자동 검증)
+bash scripts/pre_deploy_check.sh [--skip-docker] [--skip-tests]
+```
+
+검증 항목: Git 상태 → 린트/포맷 → 테스트+커버리지 → 문서 동기화 → Docker 빌드 → 환경 변수 → Release Gates
+
+### 0-6. 카나리 배포 (선택)
+
+업데이트 배포 시 카나리 전략을 사용하여 점진적으로 트래픽을 전환합니다.
+
+```bash
+# 카나리 배포 시작 (10% 트래픽)
+bash scripts/canary_deploy.sh start
+
+# 모니터링 확인 후 비중 증가 (10→30→50→100%)
+bash scripts/canary_deploy.sh promote
+
+# 문제 발생 시 즉시 롤백
+bash scripts/canary_deploy.sh rollback
+
+# 100% 프로모션 완료 후 일반 모드 복귀
+bash scripts/canary_deploy.sh finish
+```
+
+**카나리 인프라 구성**:
+- `nginx/nginx-canary.conf`: split_clients 기반 트래픽 분할
+- `docker-compose.canary.yml`: stable/canary 듀얼 백엔드 + nginx 프록시
+- 롤백 트리거: error_rate > 5%, latency_p95 > 3000ms, health_check_failures >= 3
 
 ---
 
@@ -286,7 +321,7 @@ Phase 3 안정화 완료 후, 실전 데이터가 충분히 쌓인 상태에서 
 ### 4-4. 인프라 고도화
 
 - Kubernetes 마이그레이션 (트래픽 증가 시)
-- Canary 배포 자동화 (rollback-plan.md에 기준 정의됨)
+- ~~Canary 배포 자동화~~ ✅ (nginx split_clients + canary_deploy.sh 구성 완료)
 - 멀티 리전 배포 (해외 시장 확장 시)
 - ~~CI/CD 파이프라인 자동화~~ ✅ (GitHub Actions ci.yml + cd.yml 구성 완료)
 
