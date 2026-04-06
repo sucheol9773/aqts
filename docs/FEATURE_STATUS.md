@@ -12,10 +12,10 @@
 |--------|-------|
 | Not Started | 0 |
 | Implemented | 1 |
-| Tested | 123 |
+| Tested | 124 |
 | Production-ready | 0 |
 | Blocked | 0 |
-| **TOTAL** | **124** |
+| **TOTAL** | **125** |
 
 ---
 
@@ -165,6 +165,7 @@
 | Module | Feature | Status | Code Path | Tests | Notes |
 |--------|---------|--------|-----------|-------|-------|
 | integration | 통합 테스트 (E2E) | Tested | core/pipeline.py | test_integration.py (30) | TradingGuard + ModeManager 연동 |
+| realtime_pipeline_e2e | 실시간 파이프라인 E2E 통합 테스트 | Tested | core/ (scheduler_handlers, realtime_manager, rl/) | test_realtime_pipeline_e2e.py (25) | 마켓 데이 사이클, 장애 복원, RL-앙상블 블렌딩, 데이터 흐름, 레지스트리-추론 연동, Redis 캐시, 스케줄러 상태, IntradayBar 누적 |
 
 ---
 
@@ -324,7 +325,7 @@
 ## Test Coverage Summary
 
 ```
-Total Tests: 2,735 tests (413 smoke-marked) — ALL PASS, Coverage 84%
+Total Tests: 2,760 tests (413 smoke-marked) — ALL PASS, Coverage 84%
 ├── Core Features: 40+ modules with passing tests
 ├── Data Contracts: 154 tests (9 contracts) [smoke]
 ├── Pipeline Gates: 59 tests (12 components)
@@ -360,6 +361,7 @@ Total Tests: 2,735 tests (413 smoke-marked) — ALL PASS, Coverage 84%
 ├── RL v2: 28 tests [NEW] (data_loader/multi_asset_env/hyperopt_rl)
 ├── RL Production: 20 tests [NEW] (model_registry/inference/scheduler 통합)
 ├── Realtime Data: 20 tests [NEW] (kis_websocket/realtime_manager/realtime API)
+├── Realtime Pipeline E2E: 25 tests [NEW] (마켓사이클/장애복원/RL블렌딩/레지스트리연동)
 ├── Integration Tests: 30 tests (E2E scenarios)
 ├── API Tests: 73 tests (all endpoints)
 ├── Smoke Tests: 413 tests (< 13초, CI 필수)
