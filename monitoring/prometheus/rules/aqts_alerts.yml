@@ -1,0 +1,203 @@
+# ══════════════════════════════════════════════════════════════════════
+# AQTS Prometheus Alert Rules
+# ══════════════════════════════════════════════════════════════════════
+#
+# 알림 심각도:
+#   critical — 즉시 대응 (거래 중단/데이터 유실 가능)
+#   warning  — 30분 내 확인 (성능 저하/이상 징후)
+#   info     — 참고용 (운영 현황 보고)
+#
+# 메트릭 참조: backend/core/monitoring/metrics.py
+#
+
+groups:
+  # ─────────────────────────────────────
+  # 1. 서비스 가용성 (Service Availability)
+  # ─────────────────────────────────────
+  - name: aqts_availability
+    rules:
+      - alert: BackendDown
+        expr: up{job="aqts-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "AQTS 백엔드 서비스 다운"
+          description: "aqts-backend 메트릭 수집이 1분 이상 실패. 서비스가 중단되었거나 /metrics 엔드포인트가 응답하지 않음."
+          runbook: "docs/operations/incident-runbook.md"
+
+      - alert: SystemStatusUnhealthy
+        expr: aqts_system_status < 1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AQTS 시스템 상태 비정상 ({{ $value }})"
+          description: "전체 시스템 상태가 2분 이상 healthy(1.0) 미만. 0.5=degraded, 0=unhealthy."
+
+      - alert: ComponentUnhealthy
+        expr: aqts_component_health < 1
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "컴포넌트 {{ $labels.component }} 상태 비정상 ({{ $value }})"
+          description: "{{ $labels.component }} 컴포넌트가 3분 이상 healthy 미만. DB/Redis/Scheduler 연결 확인 필요."
+
+  # ─────────────────────────────────────
+  # 2. API 성능 (API Performance)
+  # ─────────────────────────────────────
+  - name: aqts_api_performance
+    rules:
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(aqts_http_requests_total{status_code=~"5.."}[5m]))
+            /
+            sum(rate(aqts_http_requests_total[5m]))
+          ) > 0.05
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API 5xx 에러율 {{ $value | humanizePercentage }} (임계값: 5%)"
+          description: "3분 이상 5xx 에러율이 5%를 초과. 카나리 롤백 트리거 기준과 동일."
+          runbook: "docs/operations/rollback-plan.md"
+
+      - alert: HighLatencyP95
+        expr: |
+          histogram_quantile(0.95, sum(rate(aqts_http_request_duration_seconds_bucket[5m])) by (le))
+          > 3.0
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API p95 레이턴시 {{ $value | humanizeDuration }} (임계값: 3s)"
+          description: "3분 이상 p95 응답 시간이 3초를 초과. 카나리 롤백 트리거 기준과 동일."
+
+      - alert: HighLatencyP99
+        expr: |
+          histogram_quantile(0.99, sum(rate(aqts_http_request_duration_seconds_bucket[5m])) by (le))
+          > 10.0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API p99 레이턴시 {{ $value | humanizeDuration }} (임계값: 10s)"
+          description: "2분 이상 p99 응답 시간이 10초를 초과. 타임아웃 또는 리소스 고갈 가능성."
+
+      - alert: NoTrafficReceived
+        expr: |
+          sum(rate(aqts_http_requests_total[10m])) == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "10분간 API 트래픽 없음"
+          description: "10분 이상 HTTP 요청이 0. 서비스 접근 불가 또는 클라이언트 장애 의심."
+
+  # ─────────────────────────────────────
+  # 3. 서킷브레이커 (Circuit Breaker)
+  # ─────────────────────────────────────
+  - name: aqts_circuit_breaker
+    rules:
+      - alert: CircuitBreakerOpen
+        expr: aqts_circuit_breaker_state == 1
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "서킷브레이커 OPEN: {{ $labels.service }}"
+          description: "{{ $labels.service }} 서킷브레이커가 OPEN 상태. 외부 서비스 연결 차단 중. 해당 서비스 장애 확인 필요."
+          runbook: "docs/operations/incident-runbook.md"
+
+      - alert: CircuitBreakerHalfOpen
+        expr: aqts_circuit_breaker_state == 0.5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "서킷브레이커 HALF-OPEN: {{ $labels.service }}"
+          description: "{{ $labels.service }} 서킷브레이커가 2분 이상 HALF-OPEN 유지. 외부 서비스 불안정."
+
+      - alert: CircuitBreakerFailureSpike
+        expr: |
+          rate(aqts_circuit_breaker_failures_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "서킷브레이커 실패 급증: {{ $labels.service }} ({{ $value }}/s)"
+          description: "{{ $labels.service }}의 실패율이 2분 이상 0.1/s 초과. OPEN 전환 임박."
+
+  # ─────────────────────────────────────
+  # 4. 데이터 수집 (Data Collection)
+  # ─────────────────────────────────────
+  - name: aqts_data_collection
+    rules:
+      - alert: DataCollectionErrors
+        expr: |
+          rate(aqts_data_collection_errors_total[10m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "데이터 수집 에러 발생: {{ $labels.source }}"
+          description: "{{ $labels.source }} 수집에서 10분 이상 지속적 에러 발생. 외부 API 상태 확인 필요."
+
+      - alert: DataCollectionSlow
+        expr: |
+          histogram_quantile(0.95, rate(aqts_data_collection_duration_seconds_bucket[15m])) > 120
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "데이터 수집 지연: {{ $labels.source }} (p95 > 120s)"
+          description: "{{ $labels.source }} 수집 p95 소요시간이 120초 초과. 네트워크 또는 소스 API 성능 확인."
+
+  # ─────────────────────────────────────
+  # 5. 트레이딩 비즈니스 메트릭
+  # ─────────────────────────────────────
+  - name: aqts_trading
+    rules:
+      - alert: DailyReturnExtreme
+        expr: |
+          abs(aqts_daily_return_pct) > 5
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "일일 수익률 극단값: {{ $value }}%"
+          description: "일일 수익률이 ±5%를 초과. 비정상 시장 또는 알고리즘 이상 가능."
+
+      - alert: PortfolioValueDrop
+        expr: |
+          (aqts_portfolio_value_krw - aqts_portfolio_value_krw offset 1h)
+          / aqts_portfolio_value_krw offset 1h
+          < -0.03
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "포트폴리오 가치 1시간 내 3% 이상 하락"
+          description: "포트폴리오 가치가 1시간 동안 3% 이상 급락. 리스크 관리 상태 확인 필요."
+          runbook: "docs/operations/trading-halt-policy.md"
+
+      - alert: NoSignalsGenerated
+        expr: |
+          rate(aqts_signals_generated_total[1h]) == 0
+        for: 2h
+        labels:
+          severity: warning
+        annotations:
+          summary: "2시간 동안 시그널 미생성"
+          description: "장중 2시간 이상 시그널이 생성되지 않음. 파이프라인 또는 데이터 수집 상태 확인."
+
+      - alert: LowEnsembleConfidence
+        expr: aqts_ensemble_confidence < 0.3
+        for: 30m
+        labels:
+          severity: info
+        annotations:
+          summary: "앙상블 신뢰도 낮음: {{ $value }}"
+          description: "30분 이상 앙상블 신뢰도가 0.3 미만 유지. 시장 불확실성 또는 전략 성능 저하 가능."

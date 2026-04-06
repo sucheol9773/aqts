@@ -101,6 +101,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/rules:/etc/prometheus/rules:ro
       - prometheus_data:/prometheus
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
@@ -110,6 +111,26 @@ services:
     depends_on:
       backend:
         condition: service_started
+    networks:
+      - aqts-network
+
+  # ══════════════════════════════════════
+  # Alertmanager (알림 라우팅)
+  # ══════════════════════════════════════
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: aqts-alertmanager
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    ports:
+      - "${ALERTMANAGER_PORT:-9093}:9093"
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+    depends_on:
+      - prometheus
     networks:
       - aqts-network
 
@@ -141,6 +162,7 @@ volumes:
   mongodb_data:
   redis_data:
   prometheus_data:
+  alertmanager_data:
   grafana_data:
 
 networks:

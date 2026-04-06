@@ -2,6 +2,16 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
+# ── Alertmanager 연동 ──
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+# ── 알림 규칙 파일 ──
+rule_files:
+  - "rules/*.yml"
+
 scrape_configs:
   - job_name: "aqts-backend"
     metrics_path: "/metrics"
@@ -9,3 +19,21 @@ scrape_configs:
       - targets: ["backend:8000"]
         labels:
           service: "aqts-backend"
+
+  # 카나리 배포 시 stable/canary 개별 스크래핑
+  - job_name: "aqts-backend-stable"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: ["backend-stable:8000"]
+        labels:
+          service: "aqts-backend"
+          role: "stable"
+    # 카나리 미사용 시 연결 실패해도 무시됨
+
+  - job_name: "aqts-backend-canary"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: ["backend-canary:8000"]
+        labels:
+          service: "aqts-backend"
+          role: "canary"

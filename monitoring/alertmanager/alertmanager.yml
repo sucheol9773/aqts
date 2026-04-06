@@ -1,0 +1,115 @@
+# ══════════════════════════════════════════════════════════════════════
+# AQTS Alertmanager Configuration
+# ══════════════════════════════════════════════════════════════════════
+#
+# 알림 라우팅:
+#   critical → 텔레그램 즉시 발송
+#   warning  → 5분 그룹핑 후 텔레그램 발송
+#   info     → 15분 그룹핑 후 텔레그램 발송
+#
+# 환경변수:
+#   TELEGRAM_BOT_TOKEN: 텔레그램 봇 토큰
+#   TELEGRAM_CHAT_ID: 알림 수신 채널 ID
+#
+
+global:
+  resolve_timeout: 5m
+
+# ── 알림 중복 방지 (Inhibition) ──
+inhibit_rules:
+  # BackendDown이 발생하면 그 하위 알림 억제
+  - source_matchers:
+      - alertname="BackendDown"
+    target_matchers:
+      - severity=~"warning|info"
+    equal: ["job"]
+
+  # critical이 있으면 같은 alertname의 warning 억제
+  - source_matchers:
+      - severity="critical"
+    target_matchers:
+      - severity="warning"
+    equal: ["alertname"]
+
+# ── 라우팅 트리 ──
+route:
+  # 기본 그룹핑 키
+  group_by: ["alertname", "severity"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  receiver: telegram-warning
+
+  routes:
+    # Critical: 즉시 발송, 1시간마다 재알림
+    - matchers:
+        - severity="critical"
+      receiver: telegram-critical
+      group_wait: 10s
+      group_interval: 1m
+      repeat_interval: 1h
+      continue: false
+
+    # Warning: 5분 그룹핑
+    - matchers:
+        - severity="warning"
+      receiver: telegram-warning
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      continue: false
+
+    # Info: 15분 그룹핑
+    - matchers:
+        - severity="info"
+      receiver: telegram-info
+      group_wait: 1m
+      group_interval: 15m
+      repeat_interval: 12h
+
+# ── 수신자 (Receivers) ──
+receivers:
+  - name: telegram-critical
+    telegram_configs:
+      - bot_token: "${TELEGRAM_BOT_TOKEN}"
+        chat_id: ${TELEGRAM_CHAT_ID}
+        parse_mode: HTML
+        message: |
+          🚨 <b>CRITICAL</b> 🚨
+
+          <b>{{ .GroupLabels.alertname }}</b>
+          {{ range .Alerts }}
+          {{ .Annotations.summary }}
+
+          {{ .Annotations.description }}
+
+          {{ if .Annotations.runbook }}📋 런북: {{ .Annotations.runbook }}{{ end }}
+          {{ end }}
+          ⏰ {{ .CommonAnnotations.summary }}
+
+  - name: telegram-warning
+    telegram_configs:
+      - bot_token: "${TELEGRAM_BOT_TOKEN}"
+        chat_id: ${TELEGRAM_CHAT_ID}
+        parse_mode: HTML
+        message: |
+          ⚠️ <b>WARNING</b>
+
+          {{ range .Alerts }}
+          <b>{{ .Labels.alertname }}</b>: {{ .Annotations.summary }}
+          {{ end }}
+
+  - name: telegram-info
+    telegram_configs:
+      - bot_token: "${TELEGRAM_BOT_TOKEN}"
+        chat_id: ${TELEGRAM_CHAT_ID}
+        parse_mode: HTML
+        message: |
+          ℹ️ <b>INFO</b>
+
+          {{ range .Alerts }}
+          {{ .Labels.alertname }}: {{ .Annotations.summary }}
+          {{ end }}
+
+# ── 알림 템플릿 ──
+templates: []

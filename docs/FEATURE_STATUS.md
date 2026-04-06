@@ -162,6 +162,8 @@
 | json_structured_logging | JSON 구조화 로그 (운영 환경) | Tested | config/logging.py | test_prometheus_metrics.py (26) | 운영: JSON stdout + 파일 로테이션, 개발: 컬러 콘솔 (로깅 테스트 2건 포함) |
 | canary_deployment | 카나리 배포 인프라 | Implemented | nginx/nginx-canary.conf | N/A | nginx split_clients 트래픽 분할 (10→30→50→100%), docker-compose.canary.yml, canary_deploy.sh 5개 명령 |
 | pre_deploy_check | 배포 전 자동 검증 스크립트 | Implemented | scripts/pre_deploy_check.sh | N/A | 7단계 검증 (Git/린트/테스트/문서/Docker/환경변수/릴리즈게이트) |
+| prometheus_alerting | Prometheus 알림 규칙 + Alertmanager | Implemented | monitoring/prometheus/rules/aqts_alerts.yml | N/A | 5그룹 15규칙 (가용성/API성능/서킷브레이커/데이터수집/트레이딩), Alertmanager 텔레그램 연동, 심각도별 라우팅 |
+| alembic_migrations | DB 스키마 마이그레이션 (Alembic) | Implemented | alembic/env.py | N/A | init_db.sql 베이스라인 마이그레이션, settings.py sync_url 연동, black post-write hook |
 
 ---
 

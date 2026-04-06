@@ -2,7 +2,7 @@
 
 > **문서 번호**: OPS-008
 >
-> **버전**: 1.2 | **최종 수정**: 2026-04-07
+> **버전**: 1.3 | **최종 수정**: 2026-04-07
 >
 > **목적**: 현재 개발 완료 상태에서 실전 운영까지의 단계별 절차, 검증 기준, 의사결정 포인트를 정의합니다.
 
@@ -80,6 +80,12 @@ curl https://<도메인>/api/system/health
 # 6. torch CVE 해소 확인
 docker exec aqts-backend pip show torch | grep Version
 # Version: 2.6.0 이상 확인
+
+# 7. DB 마이그레이션 베이스라인 마킹 (init_db.sql로 생성된 기존 DB)
+docker exec aqts-backend alembic stamp head
+
+# 이후 스키마 변경 시: docker exec aqts-backend alembic upgrade head
+# 롤백 시: docker exec aqts-backend alembic downgrade -1
 ```
 
 ### 0-4 완료 기준
