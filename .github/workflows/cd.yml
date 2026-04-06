@@ -115,7 +115,7 @@ jobs:
             echo "Health: $HEALTH"
 
             echo "═══ Container Status ═══"
-            RUNNING=$(docker compose ps --format '{{.Name}} {{.Status}}' | grep -c "Up" || true)
+            RUNNING=$(docker compose ps --format '{{.Name}} {{.Status}}' | grep -ciE "up|running" || true)
             echo "Running containers: $RUNNING/4"
 
             if [ "$RUNNING" -lt 4 ]; then
