@@ -331,7 +331,7 @@
 ## Test Coverage Summary
 
 ```
-Total Tests: 2,809 tests (413 smoke-marked) — ALL PASS, Coverage 85%
+Total Tests: 3,060 tests (413 smoke-marked) — ALL PASS, Coverage 90%
 ├── Core Features: 40+ modules with passing tests
 ├── Data Contracts: 154 tests (9 contracts) [smoke]
 ├── Pipeline Gates: 59 tests (12 components)
@@ -369,6 +369,8 @@ Total Tests: 2,809 tests (413 smoke-marked) — ALL PASS, Coverage 85%
 ├── Realtime Data: 20 tests [NEW] (kis_websocket/realtime_manager/realtime API)
 ├── Realtime Pipeline E2E: 25 tests [NEW] (마켓사이클/장애복원/RL블렌딩/레지스트리연동)
 ├── Integration Tests: 30 tests (E2E scenarios)
+├── API Routes Coverage v2: 76 tests [NEW] (market/portfolio/orders/audit/realtime/profile/alerts/param_sensitivity/oos)
+├── Data Collectors Coverage v2: 81 tests [NEW] (market_data/economic/news/kis_websocket)
 ├── API Tests: 73 tests (all endpoints)
 ├── Smoke Tests: 413 tests (< 13초, CI 필수)
 └── Remaining Uncovered:
