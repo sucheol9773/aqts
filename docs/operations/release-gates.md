@@ -1,8 +1,8 @@
 # 릴리스 승인 게이트 (Release Approval Gates)
 
 **문서 번호**: OPS-004
-**버전**: 1.12
-**최종 수정**: 2026-04-05
+**버전**: 1.13
+**최종 수정**: 2026-04-06
 
 ## 1. 목적
 
@@ -25,7 +25,7 @@ Gate A (개발/QA) → Gate B (보안) → Gate C (리스크/운영) → Gate D 
 
 | 항목 | 기준 | 현재 상태 |
 |------|------|----------|
-| 단위 테스트 전체 통과 | pytest 0 failures | PASS (2,477건 통과) |
+| 단위 테스트 전체 통과 | pytest 0 failures | PASS (2,735건 통과) |
 | 코드 커버리지 | >= 80% | PASS (82%) |
 | 린트/포맷 검사 | ruff/black 위반 0건 | PASS (ruff 0.15.9 + black 26.3.1, 위반 0건) |
 | 의존성 취약점 | pip-audit critical 0건 | PASS (starlette CVE 해소, torch CPU 인덱스 설치로 2.6.0+ 적용 — Dockerfile 반영 완료) |
@@ -115,6 +115,7 @@ Gate E: PASS (ASC 운영책임자 서명 완료, 2026-04-05)
 **결론: Gate A~E 전 게이트 PASS. 배포 승인 완료.**
 
 ### 변경 이력
+- v1.13 (2026-04-06): 테스트 수 2,477→2,735 반영 (RL v2 28 + RL production 20 + Realtime 20 = 68건 추가), 문서 정합성 일괄 수정
 - v1.12 (2026-04-05): CI/CD GitHub Actions 파이프라인 추가 (ci.yml: Lint→Smoke→Test→Docker Build, cd.yml: GCP 자동 배포 + Telegram 알림), doc-sync-check.yml 정리
 - v1.11 (2026-04-05): Gate A~E 전 게이트 PASS — torch CPU Dockerfile 반영으로 Gate A/B 해소, 운영책임자(ASC) Gate E 서명 완료, 배포 스크립트(deploy.sh, verify_deployment.sh) 추가
 - v1.10 (2026-04-05): 인프라 계층 mock 테스트 추가 (database/settings/constants/logging/audit_log, 70 tests), Implemented 6→1, 테스트 2,477건

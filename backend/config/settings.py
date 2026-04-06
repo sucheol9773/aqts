@@ -296,7 +296,7 @@ class RiskManagementSettings(BaseSettings):
     max_position_weight: float = Field(default=0.20, alias="MAX_POSITION_WEIGHT")
     max_sector_weight: float = Field(default=0.40, alias="MAX_SECTOR_WEIGHT")
     consecutive_loss_limit: int = Field(default=5, alias="CONSECUTIVE_LOSS_LIMIT")
-    max_drawdown: float = Field(default=0.20, alias="MAX_DRAWDOWN")
+    max_drawdown: float = Field(default=0.15, alias="MAX_DRAWDOWN")
     stop_loss_percent: float = Field(default=-0.10, alias="STOP_LOSS_PERCENT")
     commission_kr: float = Field(default=0.00015, alias="COMMISSION_KR")
     commission_us: float = Field(default=0.001, alias="COMMISSION_US")

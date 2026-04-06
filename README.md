@@ -53,7 +53,7 @@ aqts/
 │   ├── PRD.md                       # 제품 요구사항 문서
 │   ├── FEATURE_STATUS.md            # 기능 구현 현황 (Single Source of Truth)
 │   ├── backtest/
-│   │   └── oos-analysis-2026-04-06.md  # OOS 분석 리포트 (16개 섹션)
+│   │   └── oos-analysis-2026-04-06.md  # OOS 분석 리포트 (17개 섹션)
 │   └── operations/                  # 운영 문서 (OPS-001 ~ OPS-008)
 │       ├── trading-halt-policy.md   # OPS-001: 매매 중단/재개 정책
 │       ├── incident-runbook.md      # OPS-002: 장애 대응 런북
@@ -156,9 +156,16 @@ aqts/
 │   │   ├── rl/                      # 강화학습 에이전트
 │   │   │   ├── environment.py       # Gymnasium 트레이딩 환경 (11차원 관찰)
 │   │   │   ├── trainer.py           # PPO/SAC 학습 파이프라인
-│   │   │   └── config.py            # RL 설정 (25개 파라미터)
+│   │   │   ├── config.py            # RL 설정 (25개 파라미터)
+│   │   │   ├── data_loader.py       # RL 데이터 로더 (DB OHLCV → 학습 데이터)
+│   │   │   ├── multi_asset_env.py   # 멀티에셋 트레이딩 환경
+│   │   │   ├── hyperopt_rl.py       # RL 하이퍼파라미터 최적화 (Optuna)
+│   │   │   ├── model_registry.py    # 모델 레지스트리 (버전 관리, 챔피언 선정)
+│   │   │   └── inference.py         # RL 추론 서비스 (배치 추론, 앙상블 블렌딩)
 │   │   ├── data_collector/
 │   │   │   ├── daily_collector.py   # 일일 OHLCV 자동 수집 (KIS API)
+│   │   │   ├── kis_websocket.py     # KIS 실시간 WebSocket (체결가+호가)
+│   │   │   └── realtime_manager.py  # 실시간 시세 관리 (인메모리 캐시)
 │   │   ├── scheduler_handlers.py    # 스케줄러 이벤트 핸들러 (5개 시간대)
 │   │   ├── oos/                     # Out-of-Sample 검증
 │   │   │   ├── models.py            # OOS 데이터 모델
@@ -215,7 +222,8 @@ aqts/
 │   │   │   ├── audit.py             # 감사 추적 API
 │   │   │   ├── oos.py               # OOS 검증 API (4 엔드포인트)
 │   │   │   ├── param_sensitivity.py # 민감도 분석 API (3 엔드포인트)
-│   │   │   └── ensemble.py          # 동적 앙상블 API (4 엔드포인트)
+│   │   │   ├── ensemble.py          # 동적 앙상블 API (4 엔드포인트)
+│   │   │   └── realtime.py          # 실시간 시세 API (시세·스냅샷·상태)
 │   │   ├── schemas/
 │   │   │   ├── common.py            # 공통 응답 (APIResponse·PaginatedResponse)
 │   │   │   ├── auth.py              # 인증 스키마

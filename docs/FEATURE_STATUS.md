@@ -4,7 +4,7 @@
 >
 > **성숙도 레벨**: Not Started → In Progress → Implemented → Tested → Production-ready → Blocked
 >
-> Last updated: 2026-04-05
+> Last updated: 2026-04-06
 
 ## Status Summary
 
@@ -12,10 +12,10 @@
 |--------|-------|
 | Not Started | 0 |
 | Implemented | 1 |
-| Tested | 114 |
+| Tested | 123 |
 | Production-ready | 0 |
 | Blocked | 0 |
-| **TOTAL** | **115** |
+| **TOTAL** | **124** |
 
 ---
 
@@ -29,6 +29,8 @@
 | economic_collector | FRED·ECOS 경제지표 수집 | Tested | core/data_collector/economic_collector.py | test_economic_collector.py (17) | 미국 9개 + 한국 5개 지표 |
 | financial_collector | DART 재무제표 (하이브리드) | Tested | core/data_collector/financial_collector.py | test_financial_collector.py (36) | API + 일괄 txt, PER/PBR/ROE 파생 |
 | social_collector | Reddit SNS 데이터 수집 | Tested | core/data_collector/social_collector.py | test_social_collector.py (59) | OAuth2, 8개 서브레딧, 키워드 필터 |
+| kis_websocket | KIS 실시간 WebSocket (체결가+호가) | Tested | core/data_collector/kis_websocket.py | test_realtime.py (20) | H0STCNT0/H0STASP0, PINGPONG, 지수 백오프 재연결, 최대 40 구독 |
+| realtime_manager | 실시간 시세 관리 (인메모리 캐시) | Tested | core/data_collector/realtime_manager.py | test_realtime.py (20) | WebSocket 라이프사이클, IntradayBar OHLCV 누적, 스냅샷 |
 
 ---
 
@@ -38,7 +40,7 @@
 |--------|---------|--------|-----------|-------|-------|
 | factor_analyzer | 5팩터 분석 (Value·Momentum·Quality·LowVol·Size) | Tested | core/quant_engine/factor_analyzer.py | test_factor_analyzer.py (21) | Z-Score 정규화, Cross-Market 재정규화 |
 | signal_generator | 기술적 시그널 생성 (RSI·MACD·Bollinger) | Tested | core/quant_engine/signal_generator.py | test_signal_generator.py (20) | 5개 기술적 시그널 |
-| backtest_engine | 백테스트 엔진 + 전략 비교 | Tested | core/backtest_engine/engine.py | test_backtest_engine.py (27) | Sharpe/Alpha/Beta/Tracking Error 지표 |
+| backtest_engine | 백테스트 엔진 + 전략 비교 | Tested | core/backtest_engine/engine.py | test_backtest_engine.py (34) | Sharpe/Alpha/Beta/Tracking Error 지표 |
 
 ---
 
@@ -108,6 +110,7 @@
 | routes/alerts | 알림 (이력·통계·확인) | Tested | api/routes/alerts.py | test_api.py (59) | 알림 관리 |
 | routes/system | 시스템 (설정·백테스트·리밸런싱) | Tested | api/routes/system.py | test_api.py (59) | 시스템 관리 엔드포인트 |
 | schemas | Pydantic 요청/응답 모델 | Tested | api/schemas/common.py | test_api.py (59) | 18개 클래스, 6개 스키마 모듈 |
+| routes/realtime | 실시간 시세 API (시세·스냅샷·상태) | Tested | api/routes/realtime.py | test_realtime.py (20) | GET /quotes, /quotes/{ticker}, /status |
 | middleware/rate_limiter | API Rate Limiting (slowapi) | Tested | api/middleware/rate_limiter.py | test_rate_limiter.py (7) | 로그인/API 엔드포인트 4개 제한 |
 
 ---
@@ -269,6 +272,17 @@
 | job_manager | OOS 작업 관리자 (싱글톤, 멱등성) | Tested | core/oos/job_manager.py | test_oos.py (55) | 파라미터 해시 기반 중복 방지 |
 | oos_api | OOS REST API (4 엔드포인트) | Tested | api/routes/oos.py | test_oos.py (55) | run/latest/gate-status/detail |
 
+### Stage 9: RL v2 & Production Pipeline ✅
+
+| Item | Feature | Status | Code Path | Tests | Notes |
+|------|---------|--------|-----------|-------|-------|
+| data_loader | RL 데이터 로더 (DB OHLCV → 학습 데이터) | Tested | core/rl/data_loader.py | test_rl_v2.py (28) | 종목별 OHLCV 로드, 정규화, 결측치 보간 |
+| multi_asset_env | 멀티에셋 트레이딩 환경 (Gymnasium) | Tested | core/rl/multi_asset_env.py | test_rl_v2.py (28) | 다종목 동시 관찰·행동, 포트폴리오 보상 |
+| hyperopt_rl | RL 하이퍼파라미터 최적화 (Optuna) | Tested | core/rl/hyperopt_rl.py | test_rl_v2.py (28) | PPO/SAC 하이퍼파라미터 탐색, FrozenTrial 기반 |
+| model_registry | RL 모델 레지스트리 (버전 관리) | Tested | core/rl/model_registry.py | test_rl_production.py (20) | 버전 등록, OOS Sharpe 기반 챔피언 선정, manifest.json |
+| inference | RL 추론 서비스 (배치 추론·시그널 변환) | Tested | core/rl/inference.py | test_rl_production.py (20) | 챔피언 모델 자동 로드, 앙상블 블렌딩 (RL 40% + 앙상블 60%), 섀도 모드 |
+| run_rl_training | RL 학습/평가 CLI (레지스트리 연동) | Tested | scripts/run_rl_training.py | test_rl_production.py (20) | --registry-dir, --no-register, 자동 등록 |
+
 ---
 
 ## Remaining Not Started Items (0)
@@ -310,7 +324,7 @@
 ## Test Coverage Summary
 
 ```
-Total Tests: 2,477 tests (413 smoke-marked) — ALL PASS, Coverage 84%
+Total Tests: 2,735 tests (413 smoke-marked) — ALL PASS, Coverage 84%
 ├── Core Features: 40+ modules with passing tests
 ├── Data Contracts: 154 tests (9 contracts) [smoke]
 ├── Pipeline Gates: 59 tests (12 components)
@@ -343,6 +357,9 @@ Total Tests: 2,477 tests (413 smoke-marked) — ALL PASS, Coverage 84%
 ├── Gate E Monitoring: 53 tests [NEW]
 ├── Audit Visualization: 31 tests [NEW]
 ├── Infrastructure: 70 tests [NEW] (database/settings/constants/logging/audit_log)
+├── RL v2: 28 tests [NEW] (data_loader/multi_asset_env/hyperopt_rl)
+├── RL Production: 20 tests [NEW] (model_registry/inference/scheduler 통합)
+├── Realtime Data: 20 tests [NEW] (kis_websocket/realtime_manager/realtime API)
 ├── Integration Tests: 30 tests (E2E scenarios)
 ├── API Tests: 73 tests (all endpoints)
 ├── Smoke Tests: 413 tests (< 13초, CI 필수)

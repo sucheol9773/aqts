@@ -355,12 +355,14 @@ class TestRedisSettings:
 # settings.py — RiskManagementSettings
 # ============================================================
 class TestRiskManagementSettings:
-    def test_defaults(self):
+    def test_defaults(self, monkeypatch):
+        # 이전 테스트에서 설정된 환경변수 오염 방지
+        monkeypatch.delenv("MAX_DRAWDOWN", raising=False)
         s = RiskManagementSettings()
         assert s.initial_capital_krw == 50_000_000
         assert s.daily_loss_limit_krw == 5_000_000
         assert s.max_positions == 20
-        assert s.max_drawdown == 0.20
+        assert s.max_drawdown == 0.15
         assert s.stop_loss_percent == -0.10
 
     def test_custom_values(self):
