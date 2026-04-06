@@ -27,7 +27,7 @@ jobs:
     name: Deployment Gate
     runs-on: ubuntu-latest
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
-    environment: production
+    # environment: production  # 테스트 기간 비활성화 — 프로덕션 전환 시 주석 해제
     steps:
       - name: Deployment approved
         run: |
