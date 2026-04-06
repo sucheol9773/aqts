@@ -165,7 +165,7 @@
 | Module | Feature | Status | Code Path | Tests | Notes |
 |--------|---------|--------|-----------|-------|-------|
 | integration | 통합 테스트 (E2E) | Tested | core/pipeline.py | test_integration.py (30) | TradingGuard + ModeManager 연동 |
-| realtime_pipeline_e2e | 실시간 파이프라인 E2E 통합 테스트 | Tested | core/ (scheduler_handlers, realtime_manager, rl/) | test_realtime_pipeline_e2e.py (25) | 마켓 데이 사이클, 장애 복원, RL-앙상블 블렌딩, 데이터 흐름, 레지스트리-추론 연동, Redis 캐시, 스케줄러 상태, IntradayBar 누적 |
+| realtime_pipeline_e2e | 실시간 파이프라인 E2E 통합 테스트 | Tested | core/scheduler_handlers.py | test_realtime_pipeline_e2e.py (25) | 마켓 데이 사이클, 장애 복원, RL-앙상블 블렌딩, 데이터 흐름, 레지스트리-추론 연동, Redis 캐시, 스케줄러 상태, IntradayBar 누적 |
 
 ---
 
