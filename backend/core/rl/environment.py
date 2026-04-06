@@ -201,13 +201,14 @@ class TradingEnv(gymnasium.Env):
         if self.portfolio_value > self.peak_value:
             self.peak_value = self.portfolio_value
 
-        # 보상 계산
+        # 보상 계산 (자동 스케일링: initial_capital 기반)
+        reward_scale = self.config.initial_capital / 1e6  # 자본금 비례 스케일
         pnl = self.portfolio_value * daily_return
         drawdown = max(0.0, self.peak_value - self.portfolio_value) / (self.peak_value + 1e-8)
         dd_penalty = self.config.risk_penalty * max(0.0, drawdown - self.config.max_drawdown_limit)
-        cost_penalty = self.config.cost_penalty * (transaction_cost / 1e6)
+        cost_penalty = self.config.cost_penalty * (transaction_cost / (reward_scale * 1e6 + 1e-8))
 
-        reward = pnl / 1e6 - dd_penalty - cost_penalty
+        reward = pnl / (reward_scale * 1e6 + 1e-8) - dd_penalty - cost_penalty
 
         # 에피소드 종료 조건
         terminated = bool(self.current_step >= len(self.close) - 2)

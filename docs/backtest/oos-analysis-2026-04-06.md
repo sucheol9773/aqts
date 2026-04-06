@@ -754,6 +754,51 @@ PYTHONPATH=/install/lib/python3.11/site-packages \
 **검증**: 합성 데이터 21개 테스트 — 추세 감지, 거래량 필터, ADX, 적응적 MA, Sharpe 품질
 **테스트**: 21개 신규 (총 2667 pass)
 
+### 16.11 RL v2 개선 — 데이터 로더, 학습 파이프라인, 멀티에셋, Hyperopt+RL
+
+**목적**: RL 에이전트를 실전 학습 가능한 수준으로 개선
+
+**변경 사항 (5개 모듈)**:
+
+1. **RLDataLoader** (`core/rl/data_loader.py` — 신규)
+   - DB(TimescaleDB), CSV, 합성 데이터 3가지 소스 지원
+   - 합성 데이터 5가지 시장 프로필: TREND_UP, TREND_DOWN, SIDEWAYS, HIGH_VOL, REGIME_SWITCH
+   - 데이터 검증: 최소 312일, 필수 컬럼 확인, NaN 전처리
+   - 설계 근거: 다양한 시장 조건에서 에이전트 학습 → 과적합 방지
+
+2. **학습 파이프라인 개선** (`core/rl/trainer.py`)
+   - 데이터 3분할: 80/20 → 70% 훈련 / 15% 검증 / 15% 테스트
+   - `RewardTrackingCallback`: 에피소드별 보상/길이 추적
+   - `EvalCallback`: 학습 중 best model 자동 체크포인팅
+   - `TrainResult`에 `episode_rewards`, `episode_lengths`, `best_model_path` 추가
+   - `EvalResult`에 `episode_returns` 추가
+   - 설계 근거: 검증 셋으로 조기 중단 판단 + 학습곡선 모니터링
+
+3. **자동 보상 스케일링** (`core/rl/environment.py`)
+   - 기존: 하드코딩 `/1e6` → 변경: `reward_scale = initial_capital / 1e6`
+   - 효과: 10M~100M 자본금에서 보상 크기 100배 이내 차이 보장
+   - 설계 근거: 다양한 자본금에서 하이퍼파라미터 재조정 없이 학습 가능
+
+4. **MultiAssetTradingEnv** (`core/rl/multi_asset_env.py` — 신규)
+   - 관찰 공간: (8 × max_assets + 3)차원 — 종목별 8개 특성 + 포트폴리오 3개 특성
+   - 행동 공간: max_assets차원 연속 [-1, 1], 절대값 합 ≤ 1 정규화
+   - 보상: PnL - drawdown 패널티 - 거래비용 패널티 + HHI 다양화 보너스
+   - 설계 근거: 단일 종목 → 포트폴리오 레벨 의사결정으로 실전 적용성 향상
+
+5. **RLHyperoptOptimizer** (`core/rl/hyperopt_rl.py` — 신규)
+   - Optuna TPE 베이지안 최적화로 14개 파라미터 동시 최적화
+   - 최적화 대상: 보상함수(3) + 학습(6) + 환경(3) + 알고리즘(1) + 기타(1)
+   - 목적함수: OOS Sharpe ratio (검증 셋 기준)
+   - MedianPruner로 조기 중단 지원
+   - 설계 근거: 수동 튜닝 → 자동 탐색으로 최적 설정 발견 효율화
+
+**기타 변경**:
+- `core/rl/__init__.py`: RLDataLoader, MultiAssetTradingEnv, RLHyperoptOptimizer export 추가
+- `scripts/run_rl_training.py`: --data-source (db/csv/synthetic), --csv-dir, --checkpoint-dir 등 인자 추가
+
+**검증**: 28개 테스트 (5개 클래스) — 데이터 로더 7, 멀티에셋 환경 8, 학습 파이프라인 6, Hyperopt+RL 4, 보상 스케일링 3
+**테스트**: 2695 pass (기존 2667 + 신규 28)
+
 ## 17. 다음 단계
 
 1. ~~RL/학습형 에이전트 도입~~ ✅ 1단계 완료 (Optuna 베이지안 최적화)
@@ -766,6 +811,8 @@ PYTHONPATH=/install/lib/python3.11/site-packages \
 8. ~~RL 에이전트 2단계: Gym 환경 + PPO/SAC~~ ✅ 완료
 9. ~~최적화된 하이퍼파라미터 YAML 설정 파일 관리 체계 구축~~ ✅ 완료
 10. ~~DEMO 모드 + 전체 파이프라인 통합 테스트~~ ✅ 완료
-11. RL 에이전트 실전 학습: 전 종목 OHLCV 데이터로 PPO/SAC 학습 및 OOS 비교
-12. 멀티 에셋 RL 환경 확장: 단일 → 포트폴리오 레벨 의사결정
-13. Hyperopt + RL 결합: Optuna로 RL 보상함수 파라미터 최적화
+11. ~~RL 에이전트 실전 학습 파이프라인~~ ✅ v2 완료 (데이터 로더 + 3분할 + 체크포인팅)
+12. ~~멀티 에셋 RL 환경 확장~~ ✅ 완료 (MultiAssetTradingEnv + HHI 다양화)
+13. ~~Hyperopt + RL 결합~~ ✅ 완료 (Optuna TPE 14파라미터 최적화)
+14. RL 에이전트 실전 배포: 전 종목 OHLCV 데이터로 PPO/SAC 학습 및 OOS Sharpe 비교
+15. 실시간 RL 추론 파이프라인: 학습된 모델로 실시간 포지션 시그널 생성

@@ -5,7 +5,19 @@ AQTS RL 모듈 (Reinforcement Learning Module)
 """
 
 from core.rl.config import RLConfig
+from core.rl.data_loader import RLDataLoader
 from core.rl.environment import TradingEnv
+from core.rl.hyperopt_rl import RLHyperoptOptimizer
+from core.rl.multi_asset_env import MultiAssetTradingEnv
 from core.rl.trainer import EvalResult, RLTrainer, TrainResult
 
-__all__ = ["RLConfig", "TradingEnv", "RLTrainer", "TrainResult", "EvalResult"]
+__all__ = [
+    "RLConfig",
+    "RLDataLoader",
+    "TradingEnv",
+    "MultiAssetTradingEnv",
+    "RLTrainer",
+    "RLHyperoptOptimizer",
+    "TrainResult",
+    "EvalResult",
+]
