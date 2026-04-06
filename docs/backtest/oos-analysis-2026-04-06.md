@@ -724,10 +724,40 @@ PYTHONPATH=/install/lib/python3.11/site-packages \
     -r requirements.txt
 ```
 
+### 16.10 TREND_FOLLOWING v2 — 시그널 생성기 전면 개편
+
+**목표**: KR TREND_FOLLOWING Sharpe 0.16 → 0.2+ 개선
+
+**v1 문제점 분석**:
+- MACD 3중 스무딩 → 진입이 늦어 추세의 30-50% 놓침
+- 혼합 추세 시그널 0.3 → 초기 추세에서 포지션 너무 작음
+- 거래량 확인 없음 → 저거래량 거짓 시그널 통과
+- 고정 MA 기간(5/20/60) → 변동성 환경에 적응 못함
+
+**v2 개선 사항**:
+
+| 항목 | v1 | v2 |
+|------|----|----|
+| 보조지표 | MACD (3중 EMA 스무딩) | ROC(20일) + ADX(14) |
+| MA 기간 | 고정 5/20/60 | ATR 기반 적응적 (변동성 비례) |
+| 초기 추세 시그널 | 0.3 | 0.5 (mid MA 방향 확인) |
+| 약한 혼합 시그널 | 0.3 | 0.15 (과잉 진입 방지) |
+| 거래량 필터 | 없음 | 20일 평균 대비 감쇄/부스트 |
+| 시그널 결합 | MA 50% + MACD 50% | MA 60% + 모멘텀 40% |
+| ADX 기반 부스트 | 없음 | ADX>30 시 모멘텀 가중치 50% 증가 |
+
+**코드 변경**:
+- `signal_generator.py`: `TechnicalIndicators.adx()` 메서드 추가
+- `vectorized_signals.py`: `_generate_trend_following()` v2 전면 재작성 + `_adaptive_sma()` 추가
+- `run_backtest.py`: TF 시그널을 `VectorizedSignalGenerator` 재사용으로 코드 중복 제거
+
+**검증**: 합성 데이터 21개 테스트 — 추세 감지, 거래량 필터, ADX, 적응적 MA, Sharpe 품질
+**테스트**: 21개 신규 (총 2667 pass)
+
 ## 17. 다음 단계
 
 1. ~~RL/학습형 에이전트 도입~~ ✅ 1단계 완료 (Optuna 베이지안 최적화)
-2. KR TREND_FOLLOWING Sharpe 개선 (현재 0.16, 목표 > 0.2)
+2. ~~KR TREND_FOLLOWING Sharpe 개선~~ ✅ v2 시그널 생성기 전면 개편 완료
 3. ~~실전 파이프라인에 동적 앙상블 통합~~ ✅ 완료
 4. ~~실시간 데이터 연동~~ ✅ 완료 (KIS API 일봉 자동 수집)
 5. ~~스케줄러 핸들러에 동적 앙상블 배치 실행 연결~~ ✅ 완료

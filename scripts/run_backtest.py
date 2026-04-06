@@ -173,38 +173,15 @@ def generate_strategy_signals_vectorized(ticker: str, ohlcv: pd.DataFrame) -> di
 
     mr_signal = ((rsi_signal + bb_signal) / 2.0).clip(-1.0, 1.0)
 
-    # ── TREND_FOLLOWING: MA 크로스 + MACD ──
-    ma5 = ti.sma(close, 5)
-    ma20 = ti.sma(close, 20)
-    ma60 = ti.sma(close, 60)
+    # ── TREND_FOLLOWING v2: MA 크로스 + 모멘텀(ROC) + ADX + 거래량 확인 ──
+    # VectorizedSignalGenerator와 동일한 로직 (코드 일관성 유지)
+    from core.quant_engine.vectorized_signals import VectorizedSignalGenerator
 
-    macd_line, signal_line, histogram = ti.macd(close)
-    prev_hist = histogram.shift(1)
-
-    # MA 시그널
-    ma_signal = pd.Series(0.0, index=dates)
-    # 정배열
-    bull_mask = (ma5 > ma20) & (ma20 > ma60)
-    spread_bull = ((ma5 - ma60) / ma60 * 10.0).clip(0.0, 1.0)
-    ma_signal = ma_signal.where(~bull_mask, spread_bull)
-    # 역배열
-    bear_mask = (ma5 < ma20) & (ma20 < ma60)
-    spread_bear = -((ma60 - ma5) / ma60 * 10.0).clip(0.0, 1.0)
-    ma_signal = ma_signal.where(~bear_mask, spread_bear)
-    # 혼합
-    mixed_bull = (~bull_mask) & (~bear_mask) & (ma5 > ma20)
-    mixed_bear = (~bull_mask) & (~bear_mask) & (ma5 < ma20)
-    ma_signal = ma_signal.where(~mixed_bull, 0.3)
-    ma_signal = ma_signal.where(~mixed_bear, -0.3)
-
-    # MACD 시그널
-    macd_signal = pd.Series(0.0, index=dates)
-    macd_bull = (histogram > 0) & (histogram > prev_hist)
-    macd_bear = (histogram < 0) & (histogram < prev_hist)
-    macd_signal = macd_signal.where(~macd_bull, 0.3)
-    macd_signal = macd_signal.where(~macd_bear, -0.3)
-
-    tf_signal = (ma_signal + macd_signal).clip(-1.0, 1.0)
+    _vsg = VectorizedSignalGenerator(min_window=0)  # min_window는 아래에서 별도 처리
+    high = ohlcv["high"].astype(float) if "high" in ohlcv.columns else close
+    low = ohlcv["low"].astype(float) if "low" in ohlcv.columns else close
+    volume = ohlcv["volume"].astype(float) if "volume" in ohlcv.columns else None
+    tf_signal = _vsg._generate_trend_following(close, high, low, volume, dates)
 
     # ── RISK_PARITY: 변동성 추세 + 절대 수준 ──
     returns = close.pct_change()

@@ -99,6 +99,48 @@ class TechnicalIndicators:
         true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
         return true_range.rolling(window=period, min_periods=period).mean()
 
+    @staticmethod
+    def adx(
+        high: pd.Series,
+        low: pd.Series,
+        close: pd.Series,
+        period: int = 14,
+    ) -> pd.Series:
+        """ADX (Average Directional Index) — 추세 강도 측정 (0~100)"""
+        prev_high = high.shift(1)
+        prev_low = low.shift(1)
+
+        plus_dm = (high - prev_high).clip(lower=0.0)
+        minus_dm = (prev_low - low).clip(lower=0.0)
+
+        # +DM과 -DM 중 큰 쪽만 유지
+        plus_dm = plus_dm.where(plus_dm > minus_dm, 0.0)
+        minus_dm = minus_dm.where(minus_dm > plus_dm, 0.0)
+
+        # True Range
+        prev_close = close.shift(1)
+        tr1 = high - low
+        tr2 = (high - prev_close).abs()
+        tr3 = (low - prev_close).abs()
+        true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+        # Wilder 스무딩 (EMA alpha=1/period)
+        atr_smooth = true_range.ewm(alpha=1.0 / period, min_periods=period, adjust=False).mean()
+        plus_di = (
+            100.0
+            * plus_dm.ewm(alpha=1.0 / period, min_periods=period, adjust=False).mean()
+            / atr_smooth.replace(0, np.nan)
+        )
+        minus_di = (
+            100.0
+            * minus_dm.ewm(alpha=1.0 / period, min_periods=period, adjust=False).mean()
+            / atr_smooth.replace(0, np.nan)
+        )
+
+        dx = (100.0 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan)).fillna(0.0)
+        adx_val = dx.ewm(alpha=1.0 / period, min_periods=period, adjust=False).mean()
+        return adx_val
+
 
 # ══════════════════════════════════════
 # 전략별 시그널 생성기
