@@ -25,7 +25,7 @@ Gate A (개발/QA) → Gate B (보안) → Gate C (리스크/운영) → Gate D 
 
 | 항목 | 기준 | 현재 상태 |
 |------|------|----------|
-| 단위 테스트 전체 통과 | pytest 0 failures | PASS (3,060건 통과) |
+| 단위 테스트 전체 통과 | pytest 0 failures | PASS (3,088건 통과) |
 | 코드 커버리지 | >= 80% | PASS (90%) |
 | 린트/포맷 검사 | ruff/black 위반 0건 | PASS (ruff 0.15.9 + black 26.3.1, 위반 0건) |
 | 의존성 취약점 | pip-audit critical 0건 | PASS (starlette CVE 해소, torch CPU 인덱스 설치로 2.6.0+ 적용 — Dockerfile 반영 완료) |
@@ -105,7 +105,7 @@ Gate A (개발/QA) → Gate B (보안) → Gate C (리스크/운영) → Gate D 
 ## 8. 현재 게이트 통과 현황
 
 ```
-Gate A: PASS (커버리지 부스트 157 tests 추가, 3,060건 통과, 90% 커버리지)
+Gate A: PASS (스트레스 테스트 28건 추가, 3,088건 통과, 90% 커버리지)
 Gate B: PASS (torch CVE 해소, 보안 전 항목 통과)
 Gate C: PASS (알림 채널 검증 + 백업 알림 구현 완료)
 Gate D: PASS (감사/보존/PII/리포트/비밀키 전 항목 통과, 97 tests)
@@ -115,7 +115,8 @@ Gate E: PASS (ASC 운영책임자 서명 완료, 2026-04-05)
 **결론: Gate A~E 전 게이트 PASS. 배포 승인 완료.**
 
 ### 변경 이력
-- v1.20 (2026-04-07): 커버리지 부스트 90% 달성 — API 라우트 테스트 76건 (9개 모듈: market/portfolio/orders/audit/realtime/profile/alerts/param_sensitivity/oos), 데이터 수집기 테스트 81건 (4개 모듈: market_data/economic/news/kis_websocket), 테스트 2,903→3,060건, 커버리지 85→90%
+- v1.21 (2026-04-07): 부하/스트레스 테스트 28건 추가 — 백테스트 스케일링 (1000일×50종목), 동시 백테스트 (ThreadPool 4건), 상태 머신 동시 전이, API 동시 요청 (20~50건), 파이프라인 동시 실행, 메모리 누수 검증, 서킷 브레이커 급속 트리거, 레짐 탐지 대량 데이터, 테스트 3,060→3,088건
+- v1.20 (2026-04-07): 커버리지 부스트 90% 달성 — API 라우트 테스트 76건 (9개 모듈), 데이터 수집기 테스트 81건 (4개 모듈), 테스트 2,903→3,060건, 커버리지 85→90%
 - v1.19 (2026-04-06): 백테스트 성능 종합 개선 — CRISIS 레짐 (5번째, 2/3 시그널), 변동성 스케일링 (vol_target), 점진적 재진입 (gradual_reentry_days), 동적 임계값 (레짐 기반), 22 tests 추가, 테스트 2,903건
 - v1.18 (2026-04-06): 드라이런 엔진 추가 (DryRunEngine/Session/Order/Report, OrderExecutor dry_run 모드, 6개 API 엔드포인트), 46 tests 추가, 테스트 2,881건
 - v1.16 (2026-04-06): CD 파이프라인 실전 전환 — 수동 승인 게이트, 자동 롤백, 배포 전 스냅샷, CI coverage threshold 60→80%
