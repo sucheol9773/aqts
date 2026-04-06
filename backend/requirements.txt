@@ -70,6 +70,9 @@ praw==7.7.1
 # ── Rate Limiting ──
 slowapi==0.1.9
 
+# ── Monitoring ──
+prometheus_client==0.21.1
+
 # ── Utilities ──
 python-dotenv==1.0.1
 loguru==0.7.2

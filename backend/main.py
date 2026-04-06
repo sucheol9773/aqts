@@ -37,6 +37,7 @@ from config.logging import logger, setup_logging
 from config.settings import get_settings
 from core.data_collector.kis_client import KISClient
 from core.graceful_shutdown import GracefulShutdownManager
+from core.monitoring.metrics import COMPONENT_HEALTH, SYSTEM_STATUS, setup_prometheus
 from core.trading_scheduler import TradingScheduler
 from db.database import MongoDBManager, RedisManager, engine
 
@@ -175,6 +176,9 @@ app.add_middleware(
 # 요청 로깅 미들웨어
 app.add_middleware(RequestLoggingMiddleware)
 
+# Prometheus 메트릭
+setup_prometheus(app)
+
 
 # ══════════════════════════════════════
 # 헬스체크 엔드포인트
@@ -235,6 +239,17 @@ async def health_check():
         health["components"]["kis_api"] = "healthy"
     else:
         health["components"]["kis_api"] = "not_initialized"
+
+    # Prometheus 게이지 업데이트
+    status_map = {"healthy": 1.0, "degraded": 0.5, "unhealthy": 0.0}
+    SYSTEM_STATUS.set(status_map.get(health["status"], 0.0))
+    for comp, comp_status in health["components"].items():
+        if comp_status == "healthy":
+            COMPONENT_HEALTH.labels(component=comp).set(1.0)
+        elif comp_status in ("degraded", "stopped", "not_initialized"):
+            COMPONENT_HEALTH.labels(component=comp).set(0.5)
+        else:
+            COMPONENT_HEALTH.labels(component=comp).set(0.0)
 
     return health
 

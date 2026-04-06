@@ -1,7 +1,7 @@
 # 릴리스 승인 게이트 (Release Approval Gates)
 
 **문서 번호**: OPS-004
-**버전**: 1.16
+**버전**: 1.17
 **최종 수정**: 2026-04-06
 
 ## 1. 목적
@@ -25,7 +25,7 @@ Gate A (개발/QA) → Gate B (보안) → Gate C (리스크/운영) → Gate D 
 
 | 항목 | 기준 | 현재 상태 |
 |------|------|----------|
-| 단위 테스트 전체 통과 | pytest 0 failures | PASS (2,809건 통과) |
+| 단위 테스트 전체 통과 | pytest 0 failures | PASS (2,835건 통과) |
 | 코드 커버리지 | >= 80% | PASS (85%) |
 | 린트/포맷 검사 | ruff/black 위반 0건 | PASS (ruff 0.15.9 + black 26.3.1, 위반 0건) |
 | 의존성 취약점 | pip-audit critical 0건 | PASS (starlette CVE 해소, torch CPU 인덱스 설치로 2.6.0+ 적용 — Dockerfile 반영 완료) |
@@ -125,6 +125,8 @@ Gate E: PASS (ASC 운영책임자 서명 완료, 2026-04-05)
 - v1.9 (2026-04-05): FastAPI 0.135.3 + starlette 1.0.0 CVE 해소, audit_visualization 구현 (31 tests), Not Started 0건, 테스트 2,407건
 - v1.8 (2026-04-05): Gate E 고객 공지 PASS + 롤백 계획 PASS + 모니터링 대시보드 PASS (53 tests), 테스트 2,376건, Gate E → CONDITIONAL
 - v1.7 (2026-04-05): Gate D 규제 리포트 PASS + 비밀키 관리 PASS (40 tests), 테스트 2,323건, Gate D → PASS
+- v1.17 (2026-04-06): Prometheus + Grafana 모니터링 스택 추가 (메트릭 수집/시각화), JSON 구조화 로그 전환, 26 tests 추가, 테스트 2,835건
+- v1.16 (2026-04-06): CD 파이프라인 실전 전환 — SSH bash -s 로그인 스크립트 우회, 자동 롤백, 스냅샷
 - v1.6 (2026-04-05): Gate D 감사 로그 무결성 PASS + 거래 기록 보존 PASS + PII 마스킹 PASS (57 tests), 테스트 2,283건, Gate D → CONDITIONAL
 - v1.5 (2026-04-05): Gate C 알림 채널 검증 PASS + 백업 알림 구현 (NotificationRouter: Telegram→File→Console 폴백, ChannelHealth 추적, 46 tests), 테스트 2,226건, Gate C → PASS
 - v1.4 (2026-04-05): 파라미터 민감도 분석 모듈 PASS (OAT/Grid 스윕, 탄성치, 토네이도 차트, 40 tests), 테스트 2,180건
