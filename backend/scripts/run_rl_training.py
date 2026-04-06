@@ -24,6 +24,7 @@ from pathlib import Path
 
 from config.logging import logger
 from core.rl import RLConfig, RLDataLoader, RLTrainer
+from core.rl.model_registry import ModelRegistry
 
 
 def main():
@@ -98,6 +99,17 @@ def main():
         default="models/checkpoints",
         help="체크포인트 저장 디렉토리",
     )
+    parser.add_argument(
+        "--registry-dir",
+        type=str,
+        default="models/registry",
+        help="모델 레지스트리 디렉토리",
+    )
+    parser.add_argument(
+        "--no-register",
+        action="store_true",
+        help="모델 레지스트리에 등록하지 않음",
+    )
 
     args = parser.parse_args()
 
@@ -165,6 +177,37 @@ def main():
         logger.info("Evaluating trained model...")
         eval_result = trainer.evaluate(train_result.model)
         _print_eval_results(eval_result)
+
+        # 모델 레지스트리 등록
+        if not args.no_register:
+            registry = ModelRegistry(args.registry_dir)
+
+            # 데이터 정보 구성
+            data_info = {
+                "source": args.data_source,
+                "tickers": list(ohlcv_data.keys()),
+                "samples": sum(len(df) for df in ohlcv_data.values()),
+            }
+            if ohlcv_data:
+                first_df = next(iter(ohlcv_data.values()))
+                data_info["start"] = str(first_df.index[0])
+                data_info["end"] = str(first_df.index[-1])
+
+            version = registry.register(
+                model=train_result.model,
+                algorithm=args.algorithm,
+                eval_result=eval_result,
+                config=config,
+                data_info=data_info,
+                train_result=train_result,
+            )
+            logger.info(f"Registered in registry: {version}")
+
+            champion = registry.get_champion_version()
+            if champion == version:
+                logger.info(f"  → New champion! (sharpe={eval_result.sharpe_ratio:.4f})")
+            else:
+                logger.info(f"  → Current champion: {champion}")
 
 
 def _print_eval_results(result):

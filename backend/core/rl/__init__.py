@@ -8,6 +8,8 @@ from core.rl.config import RLConfig
 from core.rl.data_loader import RLDataLoader
 from core.rl.environment import TradingEnv
 from core.rl.hyperopt_rl import RLHyperoptOptimizer
+from core.rl.inference import RLInferenceService
+from core.rl.model_registry import ModelMetadata, ModelRegistry
 from core.rl.multi_asset_env import MultiAssetTradingEnv
 from core.rl.trainer import EvalResult, RLTrainer, TrainResult
 
@@ -20,4 +22,7 @@ __all__ = [
     "RLHyperoptOptimizer",
     "TrainResult",
     "EvalResult",
+    "ModelRegistry",
+    "ModelMetadata",
+    "RLInferenceService",
 ]

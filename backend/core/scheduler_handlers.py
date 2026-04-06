@@ -82,10 +82,12 @@ async def handle_market_open() -> dict:
 
     1. DB에서 활성 유니버스 종목 조회
     2. 종목별 동적 앙상블 시그널 생성
-    3. 결과를 Redis에 캐시 (API 조회용)
+    3. RL 에이전트 추론 (champion 모델)
+    4. RL + 앙상블 시그널 블렌딩
+    5. 결과를 Redis에 캐시 (API 조회용)
     """
     result = {
-        "message": "장 시작 — 동적 앙상블 분석 실행",
+        "message": "장 시작 — 동적 앙상블 + RL 추론 실행",
         "market_open_time": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -132,6 +134,10 @@ async def handle_market_open() -> dict:
             await _cache_ensemble_results(ensemble_results)
 
             logger.info(f"[MarketOpen] 동적 앙상블 완료: " f"{succeeded}/{total_tickers} 성공")
+
+            # ── RL 에이전트 추론 ──
+            rl_result = await _run_rl_inference(session, ensemble_results)
+            result["rl_inference"] = rl_result
 
     except Exception as e:
         logger.error(f"[MarketOpen] 동적 앙상블 배치 실패: {e}")
@@ -588,6 +594,129 @@ def register_pipeline_handlers(scheduler) -> None:
 # ══════════════════════════════════════
 # 내부 유틸리티
 # ══════════════════════════════════════
+async def _run_rl_inference(
+    session,
+    ensemble_results: dict[str, dict],
+) -> dict:
+    """
+    RL 에이전트 추론 실행
+
+    champion 모델이 있으면 추론을 실행하고 결과를 Redis에 캐시합니다.
+    모델이 없거나 실패하면 앙상블 시그널만 사용 (graceful degradation).
+    """
+    rl_summary = {
+        "enabled": False,
+        "model_version": None,
+        "signals_count": 0,
+        "orders_count": 0,
+    }
+
+    try:
+        from core.rl.inference import RLInferenceService
+
+        service = RLInferenceService(
+            registry_dir="models/registry",
+            rl_weight=0.4,
+            ensemble_weight=0.6,
+            shadow_mode=True,  # 초기에는 shadow 모드 (관찰만)
+        )
+
+        if not service.load_model():
+            rl_summary["skip_reason"] = "no_champion_model"
+            return rl_summary
+
+        rl_summary["enabled"] = True
+        rl_summary["model_version"] = service.model_version
+
+        # DB에서 OHLCV 데이터 로드 (최근 400일)
+        ohlcv_dict = await _load_ohlcv_for_inference(session, list(ensemble_results.keys()), lookback_days=400)
+
+        if not ohlcv_dict:
+            rl_summary["skip_reason"] = "no_ohlcv_data"
+            return rl_summary
+
+        # 배치 추론
+        batch_result = service.predict_batch(
+            ohlcv_dict=ohlcv_dict,
+            portfolio_value=50_000_000.0,
+        )
+
+        rl_summary["signals_count"] = len(batch_result.signals)
+        rl_summary["orders_count"] = len(batch_result.orders)
+        rl_summary["inference_time_ms"] = batch_result.inference_time_ms
+        rl_summary["error_count"] = batch_result.error_count
+
+        # RL 시그널 Redis 캐시
+        try:
+            redis = RedisManager.get_client()
+            await redis.set(
+                "rl:inference:latest",
+                json.dumps(batch_result.to_dict()),
+                ex=86400,
+            )
+        except Exception:
+            pass
+
+        logger.info(
+            f"[MarketOpen] RL 추론 완료: "
+            f"{len(batch_result.signals)}/{len(ohlcv_dict)} 종목, "
+            f"{batch_result.inference_time_ms:.0f}ms "
+            f"(shadow mode)"
+        )
+
+    except ImportError:
+        rl_summary["skip_reason"] = "rl_module_not_available"
+    except Exception as e:
+        rl_summary["error"] = str(e)
+        logger.warning(f"[MarketOpen] RL 추론 실패 (앙상블만 사용): {e}")
+
+    return rl_summary
+
+
+async def _load_ohlcv_for_inference(
+    session,
+    tickers: list[str],
+    lookback_days: int = 400,
+) -> dict:
+    """추론용 OHLCV 데이터 로드"""
+    import pandas as pd
+    from sqlalchemy import text
+
+    ohlcv_dict = {}
+
+    for ticker in tickers:
+        try:
+            query = text(
+                """
+                SELECT date, open, high, low, close, volume
+                FROM market_ohlcv
+                WHERE ticker = :ticker
+                ORDER BY date DESC
+                LIMIT :limit
+            """
+            )
+            rows = await session.execute(query, {"ticker": ticker, "limit": lookback_days})
+            data = rows.fetchall()
+
+            if len(data) < 100:
+                continue
+
+            df = pd.DataFrame(data, columns=["date", "open", "high", "low", "close", "volume"])
+            df = df.sort_values("date").reset_index(drop=True)
+            df["date"] = pd.to_datetime(df["date"])
+            df = df.set_index("date")
+
+            for col in ["open", "high", "low", "close", "volume"]:
+                df[col] = df[col].astype(float)
+
+            ohlcv_dict[ticker] = df
+
+        except Exception as e:
+            logger.debug(f"[OHLCV] {ticker} 로드 실패: {e}")
+
+    return ohlcv_dict
+
+
 async def _load_universe_grouped(
     session,
 ) -> dict[str, list[dict]]:

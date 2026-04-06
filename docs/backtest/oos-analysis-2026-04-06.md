@@ -799,6 +799,42 @@ PYTHONPATH=/install/lib/python3.11/site-packages \
 **검증**: 28개 테스트 (5개 클래스) — 데이터 로더 7, 멀티에셋 환경 8, 학습 파이프라인 6, Hyperopt+RL 4, 보상 스케일링 3
 **테스트**: 2695 pass (기존 2667 + 신규 28)
 
+### 16.12 RL 프로덕션 파이프라인 — 모델 레지스트리, 추론 서비스, 스케줄러 통합
+
+**목적**: 학습된 RL 모델을 프로덕션에서 자동 추론/배포할 수 있는 인프라 구축
+
+**변경 사항 (5개 모듈)**:
+
+1. **ModelRegistry** (`core/rl/model_registry.py` — 신규)
+   - 시간순 버전 관리 (v001, v002, ...)
+   - OOS Sharpe 기준 자동 champion 선정/교체
+   - ModelMetadata: 알고리즘, 학습/평가 메트릭, 설정 스냅샷, 데이터 정보 저장
+   - manifest.json으로 전체 이력 관리
+   - 수동 champion 승격, 버전 삭제 (champion 보호)
+
+2. **RLInferenceService** (`core/rl/inference.py` — 신규)
+   - Champion 모델 자동 로드 + 캐싱
+   - 단일/배치 추론: OHLCV → 환경 관찰 → 모델 predict → 포지션 시그널
+   - 시그널 → 주문 변환: 포지션 비율 × 포트폴리오 가치 → 매수/매도 수량
+   - RL + 앙상블 블렌딩: 기본 RL 40% + 앙상블 60%
+   - Shadow 모드: 실제 주문 없이 시그널만 기록
+   - 신뢰도 추정: 정책 entropy 기반
+
+3. **스케줄러 RL 통합** (`core/scheduler_handlers.py`)
+   - handle_market_open()에 RL 추론 단계 추가
+   - _run_rl_inference(): champion 모델 배치 추론 → Redis 캐시
+   - _load_ohlcv_for_inference(): DB에서 추론용 OHLCV 로드
+   - Graceful degradation: 모델 없으면 앙상블만 사용
+
+4. **학습 스크립트 레지스트리 연동** (`scripts/run_rl_training.py`)
+   - --registry-dir, --no-register 인자 추가
+   - 학습 → 평가 → 자동 등록 → champion 판정 일관 흐름
+
+5. **__init__.py 업데이트**: ModelRegistry, ModelMetadata, RLInferenceService export
+
+**검증**: 20개 테스트 (4개 클래스) — 레지스트리 8, 추론 7, 스케줄러 3, E2E 2
+**테스트**: 2715 pass (기존 2695 + 신규 20)
+
 ## 17. 다음 단계
 
 1. ~~RL/학습형 에이전트 도입~~ ✅ 1단계 완료 (Optuna 베이지안 최적화)
@@ -814,5 +850,6 @@ PYTHONPATH=/install/lib/python3.11/site-packages \
 11. ~~RL 에이전트 실전 학습 파이프라인~~ ✅ v2 완료 (데이터 로더 + 3분할 + 체크포인팅)
 12. ~~멀티 에셋 RL 환경 확장~~ ✅ 완료 (MultiAssetTradingEnv + HHI 다양화)
 13. ~~Hyperopt + RL 결합~~ ✅ 완료 (Optuna TPE 14파라미터 최적화)
-14. RL 에이전트 실전 배포: 전 종목 OHLCV 데이터로 PPO/SAC 학습 및 OOS Sharpe 비교
-15. 실시간 RL 추론 파이프라인: 학습된 모델로 실시간 포지션 시그널 생성
+14. ~~RL 프로덕션 파이프라인~~ ✅ 완료 (모델 레지스트리 + 추론 서비스 + 스케줄러 통합)
+15. RL shadow→live 전환: shadow 모드 검증 후 실 주문 연결
+16. 모델 드리프트 감지 + 자동 재학습 파이프라인
