@@ -63,7 +63,7 @@ jobs:
           SERVER_USER: ${{ secrets.GCP_SERVER_USER }}
         run: |
           PREV_SHA=$(ssh -i ~/.ssh/gcp_key ${SERVER_USER}@${SERVER_IP} \
-            "cd ~/aqts && git rev-parse --short HEAD 2>/dev/null || echo 'none'")
+            "cd ~/aqts && git rev-parse --short HEAD 2>/dev/null || echo 'none'" | tail -1)
           echo "previous_sha=${PREV_SHA}" >> $GITHUB_OUTPUT
           echo "📸 Pre-deploy snapshot: commit=${PREV_SHA}"
 
@@ -86,17 +86,21 @@ jobs:
             docker compose -f docker-compose.yml up -d
 
             echo "═══ Step 3: Wait for health check (max 120s) ═══"
+            HEALTHY=false
             for i in $(seq 1 60); do
               if curl -sf http://localhost:8000/api/system/health > /dev/null 2>&1; then
                 echo "✅ Backend healthy after $((i*2))s"
-                exit 0
+                HEALTHY=true
+                break
               fi
               sleep 2
             done
 
-            echo "❌ Health check failed after 120s"
-            docker compose logs backend --tail=50
-            exit 1
+            if [ "$HEALTHY" = false ]; then
+              echo "❌ Health check failed after 120s"
+              docker compose logs backend --tail=50
+              exit 1
+            fi
           DEPLOY_SCRIPT
 
       # ── Step 3: 배포 후 검증 ──
