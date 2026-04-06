@@ -851,5 +851,40 @@ PYTHONPATH=/install/lib/python3.11/site-packages \
 12. ~~멀티 에셋 RL 환경 확장~~ ✅ 완료 (MultiAssetTradingEnv + HHI 다양화)
 13. ~~Hyperopt + RL 결합~~ ✅ 완료 (Optuna TPE 14파라미터 최적화)
 14. ~~RL 프로덕션 파이프라인~~ ✅ 완료 (모델 레지스트리 + 추론 서비스 + 스케줄러 통합)
-15. RL shadow→live 전환: shadow 모드 검증 후 실 주문 연결
-16. 모델 드리프트 감지 + 자동 재학습 파이프라인
+15. ~~실시간 시세 수신~~ ✅ 완료 (KIS WebSocket + 스케줄러 통합 + API)
+16. RL shadow→live 전환: shadow 모드 검증 후 실 주문 연결
+17. 모델 드리프트 감지 + 자동 재학습 파이프라인
+
+### 16.13 실시간 시세 수신 — KIS WebSocket + 스케줄러 통합
+
+**목적**: 장중 실시간 체결가/호가 수신으로 실시간 포지션 모니터링 + RL 추론 입력 확보
+
+**변경 사항 (7개 모듈)**:
+
+1. **KISRealtimeClient** (`core/data_collector/kis_websocket.py` — 신규)
+   - KIS WebSocket 프로토콜 구현: 구독/해제, PINGPONG 자동 응답
+   - 실시간 체결가(H0STCNT0) + 호가(H0STASP0) 지원
+   - 자동 재연결: 지수 백오프 (1s → 2s → ... → 60s 최대)
+   - 콜백 기반 데이터 전달 + Redis 캐시
+   - 최대 40개 종목 동시 구독
+
+2. **RealtimeManager** (`core/data_collector/realtime_manager.py` — 신규)
+   - WebSocket 라이프사이클 관리 (장 시작 → 장 종료)
+   - 인메모리 스냅샷: 종목별 현재가 + 일중 OHLCV 누적 (IntradayBar)
+   - 전 종목 현재가 일괄 조회, 개별 스냅샷 조회
+
+3. **스케줄러 통합** (`core/scheduler_handlers.py`)
+   - handle_market_open(): KR 종목 실시간 수신 자동 시작
+   - handle_market_close(): 실시간 수신 자동 중지
+   - get_realtime_manager(): 외부 접근용 전역 함수
+
+4. **API 엔드포인트** (`api/routes/realtime.py` — 신규)
+   - GET /api/realtime/quotes — 전 종목 실시간 시세
+   - GET /api/realtime/quotes/{ticker} — 단일 종목 시세
+   - GET /api/realtime/status — 수신 상태 조회
+
+5. **main.py**: 실시간 라우터 등록
+6. **api/routes/__init__.py**: realtime 모듈 export
+
+**검증**: 20개 테스트 (5개 클래스) — 파싱 6, 매니저 5, 일중 바 3, 스케줄러 3, API 3
+**테스트**: 2735 pass (기존 2715 + 신규 20)

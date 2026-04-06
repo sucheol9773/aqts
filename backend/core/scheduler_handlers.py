@@ -85,9 +85,10 @@ async def handle_market_open() -> dict:
     3. RL 에이전트 추론 (champion 모델)
     4. RL + 앙상블 시그널 블렌딩
     5. 결과를 Redis에 캐시 (API 조회용)
+    6. 실시간 시세 수신 시작 (KIS WebSocket)
     """
     result = {
-        "message": "장 시작 — 동적 앙상블 + RL 추론 실행",
+        "message": "장 시작 — 동적 앙상블 + RL 추론 + 실시간 시세",
         "market_open_time": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -142,6 +143,10 @@ async def handle_market_open() -> dict:
     except Exception as e:
         logger.error(f"[MarketOpen] 동적 앙상블 배치 실패: {e}")
         result["error"] = str(e)
+
+    # ── 실시간 시세 수신 시작 ──
+    rt_result = await _start_realtime_quotes(result.get("total_tickers", 0))
+    result["realtime"] = rt_result
 
     return result
 
@@ -248,11 +253,14 @@ async def handle_market_close() -> dict:
     """
     장 마감 핸들러 (15:30 KST)
 
-    1. 최종 포지션 및 포트폴리오 가치 조회
-    2. 금일 체결 주문 조회 → 일일 거래 통계
-    3. 포트폴리오 스냅샷 Redis 저장
-    4. 감사 로그 기록
+    1. 실시간 시세 수신 중지
+    2. 최종 포지션 및 포트폴리오 가치 조회
+    3. 금일 체결 주문 조회 → 일일 거래 통계
+    4. 포트폴리오 스냅샷 Redis 저장
+    5. 감사 로그 기록
     """
+    # ── 0. 실시간 시세 수신 중지 ──
+    await _stop_realtime_quotes()
     result = {
         "message": "장 마감 처리",
         "close_time": datetime.now(timezone.utc).isoformat(),
@@ -593,6 +601,71 @@ def register_pipeline_handlers(scheduler) -> None:
 
 # ══════════════════════════════════════
 # 내부 유틸리티
+# ══════════════════════════════════════
+# ══════════════════════════════════════
+# 실시간 시세 관리
+# ══════════════════════════════════════
+_realtime_manager = None
+
+
+async def _start_realtime_quotes(total_tickers: int) -> dict:
+    """실시간 시세 수신 시작"""
+    global _realtime_manager
+    rt_summary = {"enabled": False}
+
+    try:
+        from core.data_collector.realtime_manager import RealtimeManager
+
+        # 활성 종목 조회
+        async with async_session_factory() as session:
+            tickers_by_country = await _load_universe_grouped(session)
+            kr_tickers = []
+            for country, tickers in tickers_by_country.items():
+                if country == "KR":
+                    kr_tickers.extend([t["ticker"] for t in tickers])
+
+        if not kr_tickers:
+            rt_summary["skip_reason"] = "no_kr_tickers"
+            return rt_summary
+
+        _realtime_manager = RealtimeManager(subscribe_orderbook=False)
+        started = await _realtime_manager.start(kr_tickers)
+
+        rt_summary["enabled"] = started
+        rt_summary["tickers_count"] = len(kr_tickers)
+
+        if started:
+            logger.info(f"[MarketOpen] 실시간 시세 수신 시작: {len(kr_tickers)}개 종목")
+
+    except ImportError:
+        rt_summary["skip_reason"] = "realtime_module_not_available"
+    except Exception as e:
+        rt_summary["error"] = str(e)
+        logger.warning(f"[MarketOpen] 실시간 시세 시작 실패: {e}")
+
+    return rt_summary
+
+
+async def _stop_realtime_quotes():
+    """실시간 시세 수신 중지"""
+    global _realtime_manager
+
+    if _realtime_manager is not None:
+        try:
+            await _realtime_manager.stop()
+            logger.info("[MarketClose] 실시간 시세 수신 중지")
+        except Exception as e:
+            logger.warning(f"[MarketClose] 실시간 시세 중지 실패: {e}")
+        _realtime_manager = None
+
+
+def get_realtime_manager():
+    """외부에서 실시간 매니저 접근용"""
+    return _realtime_manager
+
+
+# ══════════════════════════════════════
+# RL 추론
 # ══════════════════════════════════════
 async def _run_rl_inference(
     session,

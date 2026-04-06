@@ -30,6 +30,7 @@ from api.routes import (
     param_sensitivity,
     portfolio,
     profile,
+    realtime,
     system,
 )
 from config.logging import logger, setup_logging
@@ -283,3 +284,4 @@ app.include_router(
 )
 app.include_router(audit.router)
 app.include_router(ensemble.router, prefix="/api/ensemble", tags=["Ensemble"])
+app.include_router(realtime.router, prefix="/api/realtime", tags=["Realtime"])
