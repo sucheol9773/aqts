@@ -74,7 +74,6 @@ jobs:
           SERVER_IP: ${{ secrets.GCP_SERVER_IP }}
           SERVER_USER: ${{ secrets.GCP_SERVER_USER }}
         run: |
-          set +e
           ssh -T -i ~/.ssh/gcp_key ${SERVER_USER}@${SERVER_IP} bash -s << 'DEPLOY_SCRIPT'
             set -e
             cd ~/aqts
@@ -100,9 +99,6 @@ jobs:
             docker compose logs backend --tail=50
             exit 1
           DEPLOY_SCRIPT
-          SSH_EXIT=$?
-          echo "SSH exit code: $SSH_EXIT"
-          exit $SSH_EXIT
 
       # ── Step 3: 배포 후 검증 ──
       - name: Post-deploy verification
@@ -111,7 +107,7 @@ jobs:
           SERVER_IP: ${{ secrets.GCP_SERVER_IP }}
           SERVER_USER: ${{ secrets.GCP_SERVER_USER }}
         run: |
-          ssh -i ~/.ssh/gcp_key ${SERVER_USER}@${SERVER_IP} << 'VERIFY_SCRIPT'
+          ssh -T -i ~/.ssh/gcp_key ${SERVER_USER}@${SERVER_IP} bash -s << 'VERIFY_SCRIPT'
             set -e
             cd ~/aqts
 
@@ -145,7 +141,7 @@ jobs:
           PREV_SHA: ${{ steps.snapshot.outputs.previous_sha }}
         run: |
           echo "🔄 Rolling back to ${PREV_SHA}..."
-          ssh -i ~/.ssh/gcp_key ${SERVER_USER}@${SERVER_IP} << ROLLBACK_SCRIPT
+          ssh -T -i ~/.ssh/gcp_key ${SERVER_USER}@${SERVER_IP} bash -s << ROLLBACK_SCRIPT
             set -e
             cd ~/aqts
 
@@ -179,7 +175,7 @@ jobs:
           DEPLOY_STATUS: ${{ job.status }}
           PREV_SHA: ${{ steps.snapshot.outputs.previous_sha }}
         run: |
-          ssh -i ~/.ssh/gcp_key ${SERVER_USER}@${SERVER_IP} << NOTIFY_SCRIPT
+          ssh -T -i ~/.ssh/gcp_key ${SERVER_USER}@${SERVER_IP} bash -s << NOTIFY_SCRIPT
             cd ~/aqts
             source .env 2>/dev/null || true
             STATUS="${DEPLOY_STATUS}"
