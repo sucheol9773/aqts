@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import RetryError, retry, stop_after_attempt, wait_exponential
 
 from config.logging import logger
 from config.settings import TradingMode, get_settings
@@ -49,7 +49,16 @@ class KISTokenManager:
         return self._access_token
 
     async def _issue_token(self) -> None:
-        """접근 토큰 발급"""
+        """접근 토큰 발급
+
+        실패 시 로그 정책:
+            - tenacity RetryError 로 감싸인 원래 예외를 풀어서 HTTPStatusError 인 경우
+              status code, KIS error_code, error_description 을 명시적으로 로그에 남긴다.
+            - timeout/connection 오류는 예외 타입을 그대로 노출.
+            - app_key 등 시크릿 값은 로그에 절대 남기지 않는다.
+            - 진단 후 KISAPIError 로 일관되게 raise 하여 호출자(main lifespan)가
+              이미 사용 중인 'KIS 토큰 초기화 실패 (degraded)' 경로를 그대로 탈 수 있게 한다.
+        """
         url = f"{self._settings.base_url}/oauth2/tokenP"
         body = {
             "grant_type": "client_credentials",
@@ -68,7 +77,18 @@ class KISTokenManager:
                 response.raise_for_status()
                 return response.json()
 
-        data = await _do_issue()
+        try:
+            data = await _do_issue()
+        except RetryError as retry_err:
+            # tenacity 가 감싼 마지막 예외를 추출하여 진단 정보를 남긴다.
+            original = retry_err.last_attempt.exception() if retry_err.last_attempt else None
+            self._log_token_issue_failure(original)
+            raise self._wrap_token_issue_error(original) from original
+        except httpx.HTTPError as http_err:
+            # retry 가 0회로 설정된 경우 등 RetryError 로 감싸이지 않는 케이스.
+            self._log_token_issue_failure(http_err)
+            raise self._wrap_token_issue_error(http_err) from http_err
+
         self._access_token = data["access_token"]
         expires_in = int(data.get("expires_in", 86400))
         self._token_expires_at = datetime.now() + timedelta(seconds=expires_in)
@@ -78,6 +98,66 @@ class KISTokenManager:
             f"KIS [{mode_label}] access token issued. "
             f"Expires at: {self._token_expires_at.strftime('%Y-%m-%d %H:%M:%S')}"
         )
+
+    # ── 토큰 발급 실패 진단 헬퍼 ──
+    @staticmethod
+    def _parse_kis_error_body(text: str) -> tuple[Optional[str], Optional[str]]:
+        """KIS 응답 body 에서 (error_code, error_description) 을 추출.
+
+        KIS 는 에러 응답을 다음 형식으로 반환한다:
+            {"error_description": "...", "error_code": "EGW00133"}
+        파싱 실패 시 (None, None) 반환.
+        """
+        import json as _json
+
+        try:
+            payload = _json.loads(text)
+        except (ValueError, TypeError):
+            return None, None
+        if not isinstance(payload, dict):
+            return None, None
+        return payload.get("error_code"), payload.get("error_description")
+
+    def _log_token_issue_failure(self, exc: Optional[BaseException]) -> None:
+        """토큰 발급 실패 시 진단 정보를 명시적으로 로그에 남긴다.
+
+        시크릿(app_key/app_secret) 은 절대 로깅하지 않는다.
+        """
+        mode_label = "LIVE" if self._settings.is_live else "DEMO"
+        prefix = f"KIS [{mode_label}] 토큰 발급 실패"
+
+        if isinstance(exc, httpx.HTTPStatusError):
+            response = exc.response
+            status = response.status_code
+            text = (response.text or "")[:500]
+            err_code, err_desc = self._parse_kis_error_body(text)
+            logger.error(
+                f"{prefix}: HTTP {status} "
+                f"kis_error_code={err_code or '-'} "
+                f"kis_error_description={err_desc or '-'} "
+                f"raw_body={text}"
+            )
+        elif isinstance(exc, httpx.TimeoutException):
+            logger.error(f"{prefix}: timeout — {type(exc).__name__}: {exc}")
+        elif isinstance(exc, httpx.HTTPError):
+            logger.error(f"{prefix}: network — {type(exc).__name__}: {exc}")
+        elif exc is not None:
+            logger.error(f"{prefix}: 예상치 못한 예외 {type(exc).__name__}: {exc}")
+        else:
+            logger.error(f"{prefix}: 원인 예외 정보 없음")
+
+    def _wrap_token_issue_error(self, exc: Optional[BaseException]) -> "KISAPIError":
+        """원래 예외를 KISAPIError 로 감싼다 (호출자 호환 유지)."""
+        if isinstance(exc, httpx.HTTPStatusError):
+            response = exc.response
+            err_code, err_desc = self._parse_kis_error_body(response.text or "")
+            return KISAPIError(
+                code=err_code or f"HTTP{response.status_code}",
+                message=err_desc or f"HTTP {response.status_code}",
+            )
+        if exc is not None:
+            return KISAPIError(code=type(exc).__name__, message=str(exc))
+        return KISAPIError(code="UNKNOWN", message="토큰 발급 실패 (원인 미상)")
 
     async def get_websocket_key(self) -> str:
         """WebSocket 접속키 발급"""

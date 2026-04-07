@@ -128,29 +128,31 @@ class TestKISTokenExpiry(unittest.IsolatedAsyncioTestCase):
 
     @patch("core.data_collector.kis_client.get_settings")
     async def test_token_issue_http_error_propagates(self, mock_get_settings):
-        """토큰 발급 시 HTTP 오류가 전파되어야 함 (tenacity retry 후 RetryError)"""
-        from tenacity import RetryError
+        """토큰 발급 시 HTTP 오류가 KISAPIError 로 unwrap 되어 전파되어야 함.
 
+        이전에는 tenacity RetryError 가 그대로 새어나가서 호출자(main lifespan)가
+        status code/KIS error_code 를 볼 수 없는 회귀가 있었다. 이제는 RetryError
+        를 풀어서 KISAPIError(code=HTTP4xx 또는 KIS error_code) 로 일관되게 raise
+        한다. 본 테스트는 그 새 계약을 검증한다.
+        """
         mock_get_settings.return_value = self._make_settings()
-        from core.data_collector.kis_client import KISTokenManager
+        from core.data_collector.kis_client import KISAPIError, KISTokenManager
 
         manager = KISTokenManager()
 
+        request = httpx.Request("POST", "https://example.invalid/oauth2/tokenP")
+        response = httpx.Response(status_code=401, content=b"", request=request)
+        http_err = httpx.HTTPStatusError("401 Unauthorized", request=request, response=response)
+
         with patch("httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
-            mock_response = MagicMock()
-            mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
-                "401 Unauthorized",
-                request=MagicMock(),
-                response=MagicMock(status_code=401),
-            )
-            mock_client.post.return_value = mock_response
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-            mock_client_cls.return_value = mock_client
+            mock_client.post = AsyncMock(side_effect=http_err)
+            mock_client_cls.return_value.__aenter__.return_value = mock_client
 
-            with pytest.raises(RetryError):
+            with pytest.raises(KISAPIError) as exc_info:
                 await manager._issue_token()
+
+        assert exc_info.value.code == "HTTP401"
 
     @patch("core.data_collector.kis_client.get_settings")
     async def test_token_expiry_boundary_exact_10min(self, mock_get_settings):
