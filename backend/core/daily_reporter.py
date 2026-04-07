@@ -186,8 +186,14 @@ class DailyReporter:
         losing = [t for t in trades if t.pnl is not None and t.pnl < 0]
 
         # Top/Bottom 3 종목 (F-09-01)
+        # 보유 포지션이 6개 미만이면 동일 종목이 Top 과 Bottom 양쪽에 노출되는
+        # 표시 버그가 있었다 (예: 1종목 보유 시 같은 티커가 🏆 와 💀 양쪽에 등장).
+        # bottom3 는 top3 와 겹치지 않도록 ticker 기준으로 제외한다.
+        # → 1~3종목: bottom3 비어있음 (top3 만 노출)
+        # → 4종목: bottom3 = 1개, 5종목: bottom3 = 2개, 6종목+: 정식 3+3
         top3 = sorted(positions, key=lambda p: p.pnl_percent, reverse=True)[:3]
-        bottom3 = sorted(positions, key=lambda p: p.pnl_percent)[:3]
+        top3_tickers = {p.ticker for p in top3}
+        bottom3 = [p for p in sorted(positions, key=lambda p: p.pnl_percent) if p.ticker not in top3_tickers][:3]
 
         report = DailyReport(
             report_date=report_date,

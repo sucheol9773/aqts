@@ -89,7 +89,7 @@
 | health_checker | 시스템 건전성 검사 (5항목) | Tested | core/health_checker.py | test_health_checker.py (19) | DB·설정·모드 종합 점검 |
 | trading_scheduler | 자동화 스케줄러 (KRX 장 시간 기반) | Tested | core/trading_scheduler.py | test_trading_scheduler.py (76) | 5단계 자동화, 거래일 판별 |
 | daily_reporter | 일일 리포트 생성 및 발송 | Tested | core/daily_reporter.py | test_daily_reporter.py (70) | 수익률·거래·Top3 리포트 |
-| daily_reporter_top_bottom | Top/Bottom 3 종목 자동 추출 | Tested | core/daily_reporter.py | test_daily_reporter_top_bottom.py (5) | 수익률 기준 상위/하위 종목 |
+| daily_reporter_top_bottom | Top/Bottom 3 종목 자동 추출 | Tested | core/daily_reporter.py | test_daily_reporter_top_bottom.py (7) | 수익률 기준 상위/하위 종목 |
 | periodic_reporter | 주간/월간 리포트 | Tested | core/periodic_reporter.py | test_periodic_reporter.py (27) | MDD/Sharpe 분석, 벤치마크 비교 |
 | market_calendar | 마켓 캘린더 (KRX + NYSE) | Tested | core/market_calendar.py | test_market_calendar.py (44) | 미국 공휴일 자동 산출, DST 판별 |
 | graceful_shutdown | 그레이스풀 셧다운 매니저 | Tested | core/graceful_shutdown.py | test_graceful_shutdown.py (25) | 3단계 셧다운, 주문 드레이닝 |
@@ -347,7 +347,7 @@
 ## Test Coverage Summary
 
 ```
-Total Tests: 3,243 tests (413 smoke-marked) — ALL PASS, Coverage 90%
+Total Tests: 3,245 tests (413 smoke-marked) — ALL PASS, Coverage 90%
 ├── Core Features: 40+ modules with passing tests
 ├── Data Contracts: 154 tests (9 contracts) [smoke]
 ├── Pipeline Gates: 59 tests (12 components)
