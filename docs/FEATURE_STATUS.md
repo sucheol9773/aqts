@@ -12,10 +12,10 @@
 |--------|-------|
 | Not Started | 0 |
 | Implemented | 1 |
-| Tested | 128 |
+| Tested | 135 |
 | Production-ready | 0 |
 | Blocked | 0 |
-| **TOTAL** | **129** |
+| **TOTAL** | **136** |
 
 ---
 
@@ -101,9 +101,13 @@
 
 | Module | Feature | Status | Code Path | Tests | Notes |
 |--------|---------|--------|-----------|-------|-------|
-| middleware/auth | JWT 인증 (HS256 Bearer Token) | Tested | api/middleware/auth.py | test_api.py (59), test_jwt_security.py (17) | Key Rotation (kid), jti + revocation, bcrypt 전용 |
+| middleware/auth | JWT 인증 (HS256 Bearer Token) + RBAC + TOTP MFA | Tested | api/middleware/auth.py | test_api.py (59), test_jwt_security.py (17), test_rbac.py (8), test_mfa.py (15) | Key Rotation (kid), jti + revocation, bcrypt, username/password 인증, role 클레임, TOTP 2FA |
+| middleware/rbac | 역할 기반 접근 제어 (viewer/operator/admin) | Tested | api/middleware/rbac.py | test_rbac.py (8) | require_viewer/operator/admin 의존성, 권한 검증 |
 | middleware/request_logger | 요청 로깅 미들웨어 | Tested | api/middleware/request_logger.py | test_api.py (59) | HTTP 요청/응답 로깅 |
-| routes/auth | 인증 (로그인·토큰 갱신·로그아웃) | Tested | api/routes/auth.py | test_api.py (59) | 로그인, 토큰 갱신, 로그아웃(revoke) 엔드포인트 |
+| routes/auth | 인증 (로그인·토큰·MFA·로그아웃) | Tested | api/routes/auth.py | test_api.py (59), test_mfa.py (15) | username/password 로그인, 토큰 갱신, MFA enroll/verify/disable, 로그아웃 |
+| routes/users | 사용자 관리 (Admin only) | Tested | api/routes/users.py | test_users_api.py (8) | CRUD, 비밀번호 리셋, 잠금/해제, 역할 변경 |
+| schemas/auth | 인증 스키마 | Tested | api/schemas/auth.py | test_api.py (59) | LoginRequest (username/password/totp), MFAEnrollResponse, TokenResponse |
+| schemas/users | 사용자 관리 스키마 | Tested | api/schemas/users.py | test_users_api.py (8) | UserCreateRequest, UserUpdateRequest, UserResponse |
 | routes/portfolio | 포트폴리오 (요약·보유·성과) | Tested | api/routes/portfolio.py | test_api.py (59) | 포트폴리오 조회, 성과 분석 |
 | routes/orders | 주문 (생성·배치·조회·취소) | Tested | api/routes/orders.py | test_api.py (59) | 주문 CRUD 작업 |
 | routes/profile | 투자자 프로필 (조회·수정) | Tested | api/routes/profile.py | test_api.py (59) | 프로필 조회 및 수정 |

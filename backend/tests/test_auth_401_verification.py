@@ -62,8 +62,8 @@ class TestAuth401Behavior:
         from api.middleware.auth import AuthService
         from main import app
 
-        # 직접 토큰 생성
-        token = AuthService.create_access_token({"sub": "admin"})
+        # 직접 토큰 생성 (RBAC v1.29+: uid, role 포함)
+        token = AuthService.create_access_token({"sub": "admin", "uid": "test-admin-uuid", "role": "admin"})
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:

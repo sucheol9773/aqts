@@ -33,6 +33,7 @@ from api.routes import (
     profile,
     realtime,
     system,
+    users,
 )
 from config.logging import logger, setup_logging
 from config.settings import get_settings
@@ -304,6 +305,7 @@ async def dashboard():
 # API 라우터 등록 (Phase 5, Stage 4)
 # ══════════════════════════════════════
 app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
+app.include_router(users.router, prefix="/api", tags=["Users"])
 app.include_router(portfolio.router, prefix="/api/portfolio", tags=["Portfolio"])
 app.include_router(orders.router, prefix="/api/orders", tags=["Orders"])
 app.include_router(profile.router, prefix="/api/profile", tags=["Profile"])

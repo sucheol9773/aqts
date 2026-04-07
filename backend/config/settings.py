@@ -259,7 +259,10 @@ class TelegramSettings(BaseSettings):
 # 대시보드 설정
 # ══════════════════════════════════════
 class DashboardSettings(BaseSettings):
-    """대시보드 설정"""
+    """대시보드 설정
+
+    RBAC v1.29+: DASHBOARD_PASSWORD 제거, ADMIN_BOOTSTRAP_* 환경변수로 admin 시드 생성
+    """
 
     model_config = SettingsConfigDict(env_prefix="DASHBOARD_")
 
@@ -268,7 +271,6 @@ class DashboardSettings(BaseSettings):
         default=None,
         description="이전 JWT 시크릿 키 (key rotation 기간 동안 검증용)",
     )
-    password: str = Field(..., description="대시보드 로그인 비밀번호 (bcrypt 해시)")
     access_token_expire_hours: int = Field(default=24)
     refresh_token_expire_days: int = Field(default=7)
 

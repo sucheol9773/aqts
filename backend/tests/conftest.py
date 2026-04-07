@@ -37,9 +37,10 @@ def pytest_configure(config):
         # Telegram
         "TELEGRAM_BOT_TOKEN": "test-bot-token",
         "TELEGRAM_CHAT_ID": "test-chat-id",
-        # Dashboard
+        # Dashboard (RBAC v1.29+)
         "DASHBOARD_SECRET_KEY": "test-secret-key",
-        "DASHBOARD_PASSWORD": "$2b$12$VzL4GUmOF2MSYpRTg0oWH.BkJEsU6l0HQaTY.0Xds2bJ1feOJBvJS",  # bcrypt hash of "test-dashboard-password"
+        "ADMIN_BOOTSTRAP_USERNAME": "admin",
+        "ADMIN_BOOTSTRAP_PASSWORD": "test-admin-password",
     }
     for key, value in test_env_vars.items():
         os.environ.setdefault(key, value)
@@ -304,3 +305,45 @@ def sample_news_data():
             "category": "macro",
         },
     ]
+
+
+# ══════════════════════════════════════
+# RBAC 테스트 Fixture (v1.29+)
+# ══════════════════════════════════════
+@pytest.fixture
+def admin_token():
+    """Admin 역할 JWT 토큰"""
+    from api.middleware.auth import AuthService
+
+    data = {
+        "sub": "admin",
+        "uid": "test-admin-uuid",
+        "role": "admin",
+    }
+    return AuthService.create_access_token(data)
+
+
+@pytest.fixture
+def operator_token():
+    """Operator 역할 JWT 토큰"""
+    from api.middleware.auth import AuthService
+
+    data = {
+        "sub": "operator",
+        "uid": "test-operator-uuid",
+        "role": "operator",
+    }
+    return AuthService.create_access_token(data)
+
+
+@pytest.fixture
+def viewer_token():
+    """Viewer 역할 JWT 토큰"""
+    from api.middleware.auth import AuthService
+
+    data = {
+        "sub": "viewer",
+        "uid": "test-viewer-uuid",
+        "role": "viewer",
+    }
+    return AuthService.create_access_token(data)

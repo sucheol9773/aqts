@@ -6,17 +6,22 @@ JWT 인증 미들웨어 (강화 버전)
   2. Token ID (jti): 고유 토큰 식별자로 revocation 지원
   3. Token Revocation: Redis 기반 블랙리스트 (로그아웃/강제 만료)
   4. bcrypt 전용: 평문 비밀번호 비교 제거, bcrypt 해시 필수
+  5. TOTP: pyotp 기반 2FA (MFA)
+  6. RBAC: username/password + role 기반 접근 제어
+  7. 계정 잠금: 5회 연속 실패 시 자동 잠금
 """
 
 import hashlib
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Set, Tuple
+from typing import NamedTuple, Optional, Set, Tuple
 
+import pyotp
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from config.settings import get_settings
 
@@ -36,6 +41,17 @@ _KID_PREVIOUS = "previous"
 def _compute_kid(secret_key: str) -> str:
     """시크릿 키의 SHA256 앞 8자를 kid로 사용"""
     return hashlib.sha256(secret_key.encode()).hexdigest()[:8]
+
+
+# ══════════════════════════════════════
+# 인증된 사용자 정보
+# ══════════════════════════════════════
+class AuthenticatedUser(NamedTuple):
+    """인증된 사용자 정보"""
+
+    id: str  # UUID
+    username: str
+    role: str  # operator / viewer / admin
 
 
 # ══════════════════════════════════════
@@ -107,6 +123,47 @@ class AuthService:
         return pwd_context.hash(password)
 
     @staticmethod
+    def generate_totp_secret() -> str:
+        """TOTP 시크릿 생성
+
+        Returns:
+            Base32 인코딩된 시크릿
+        """
+        return pyotp.random_base32()
+
+    @staticmethod
+    def verify_totp(secret: str, code: str) -> bool:
+        """TOTP 코드 검증
+
+        Args:
+            secret: Base32 인코딩된 TOTP 시크릿
+            code: 6자리 코드
+
+        Returns:
+            True if code matches, False otherwise
+        """
+        try:
+            totp = pyotp.TOTP(secret)
+            return totp.verify(code)
+        except Exception:
+            return False
+
+    @staticmethod
+    def get_provisioning_uri(secret: str, username: str, issuer: str = "AQTS") -> str:
+        """QR 코드 프로비저닝 URI 생성
+
+        Args:
+            secret: TOTP 시크릿
+            username: 사용자명
+            issuer: 발급자명
+
+        Returns:
+            provisioning URI (QR 코드 생성용)
+        """
+        totp = pyotp.TOTP(secret)
+        return totp.provisioning_uri(name=username, issuer_name=issuer)
+
+    @staticmethod
     def _get_signing_key() -> Tuple[str, str]:
         """현재 서명 키와 kid 반환
 
@@ -122,7 +179,7 @@ class AuthService:
         """JWT Access Token 생성
 
         Args:
-            data: 페이로드 데이터 (sub 필수)
+            data: 페이로드 데이터 (sub, uid, role 포함)
 
         Returns:
             kid 헤더 + jti 포함 JWT 토큰
@@ -154,7 +211,7 @@ class AuthService:
         """JWT Refresh Token 생성
 
         Args:
-            data: 페이로드 데이터 (sub 필수)
+            data: 페이로드 데이터 (sub, uid, role 포함)
 
         Returns:
             kid 헤더 + jti 포함 JWT 토큰
@@ -282,41 +339,105 @@ class AuthService:
         return None
 
     @staticmethod
-    def authenticate(password: str) -> Tuple[str, str]:
-        """비밀번호 인증 후 토큰 쌍 발급
-
-        bcrypt 해시 비밀번호만 지원. 평문 비교는 보안 위험으로 제거됨.
+    async def authenticate(
+        username: str,
+        password: str,
+        totp_code: Optional[str] = None,
+        db_session: Optional[AsyncSession] = None,
+    ) -> Tuple[str, str]:
+        """사용자 인증 및 토큰 발급
 
         Args:
+            username: 사용자명
             password: 평문 비밀번호
+            totp_code: TOTP 6자리 코드 (TOTP 활성화 시 필수)
+            db_session: DB 세션 (필수)
 
         Returns:
             Tuple of (access_token, refresh_token)
 
         Raises:
-            HTTPException: 비밀번호 불일치 또는 bcrypt 해시 미설정
+            HTTPException: 인증 실패, 계정 잠금, TOTP 오류 등
         """
-        settings = get_settings()
-        stored = settings.dashboard.password
-
-        # bcrypt 해시 필수 ($2b$ 또는 $2a$ 접두사)
-        if stored.startswith(("$2b$", "$2a$")):
-            valid = AuthService.verify_password(password, stored)
-        else:
+        if not db_session:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Password must be stored as bcrypt hash. "
-                "Generate with: python -c \"from passlib.hash import bcrypt; print(bcrypt.hash('your_password'))\"",
+                detail="Database session not available",
             )
 
-        if not valid:
+        from db.models.user import User
+
+        # DB에서 사용자 조회
+        user = None
+        try:
+            from sqlalchemy import select
+
+            result = await db_session.execute(select(User).where(User.username == username))
+            user = result.scalars().first()
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Database error: {str(e)}",
+            ) from e
+
+        # 사용자 미존재
+        if not user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect password",
+                detail="Invalid username or password",
             )
 
-        # Single-user system, subject is "admin"
-        data = {"sub": "admin"}
+        # 비활성 사용자
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User account is inactive",
+            )
+
+        # 잠금 확인
+        if user.is_locked:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="User account is locked. Contact administrator.",
+            )
+
+        # 비밀번호 검증
+        if not AuthService.verify_password(password, user.password_hash):
+            # 실패 횟수 증가
+            user.failed_login_attempts += 1
+            if user.failed_login_attempts >= 5:
+                user.is_locked = True
+            await db_session.commit()
+
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid username or password",
+            )
+
+        # TOTP 검증 (활성화 시)
+        if user.totp_enabled:
+            if not totp_code:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="TOTP code required",
+                )
+            if not user.totp_secret or not AuthService.verify_totp(user.totp_secret, totp_code):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid TOTP code",
+                )
+
+        # 성공 — 상태 업데이트
+        user.failed_login_attempts = 0
+        user.last_login_at = datetime.now(timezone.utc)
+        await db_session.commit()
+
+        # 토큰 발급
+        data = {
+            "sub": user.username,
+            "uid": user.id,
+            "role": user.role.name,
+        }
         access_token = AuthService.create_access_token(data)
         refresh_token = AuthService.create_refresh_token(data)
 
@@ -325,14 +446,14 @@ class AuthService:
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-) -> str:
+) -> AuthenticatedUser:
     """FastAPI 의존성: Authorization 헤더에서 JWT 토큰 검증
 
     Args:
         credentials: HTTP Bearer credentials
 
     Returns:
-        Username/subject from token payload
+        AuthenticatedUser (id, username, role)
 
     Raises:
         HTTPException: 토큰 미제공, 무효, 만료
@@ -346,10 +467,14 @@ async def get_current_user(
     token = credentials.credentials
     payload = AuthService.verify_token(token)
     username: str = payload.get("sub")
-    if username is None:
+    user_id: str = payload.get("uid")
+    role: str = payload.get("role", "viewer")
+
+    if not username or not user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return username
+
+    return AuthenticatedUser(id=user_id, username=username, role=role)

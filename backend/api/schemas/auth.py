@@ -13,10 +13,13 @@ class LoginRequest(BaseModel):
     """
     로그인 요청
 
-    대시보드 접근을 위한 비밀번호 인증에 사용됩니다.
+    사용자명/비밀번호 인증 + 선택적 TOTP 코드.
+    TOTP 활성화 시 totp_code 필수.
     """
 
-    password: str = Field(..., min_length=1, description="대시보드 로그인 비밀번호")
+    username: str = Field(..., min_length=1, max_length=50, description="사용자명")
+    password: str = Field(..., min_length=1, description="비밀번호")
+    totp_code: str = Field(default=None, description="TOTP 6자리 코드 (TOTP 활성 시 필수)")
 
 
 class TokenResponse(BaseModel):
@@ -40,3 +43,37 @@ class RefreshTokenRequest(BaseModel):
     """
 
     refresh_token: str = Field(..., description="갱신할 리프레시 토큰")
+
+
+class MFAEnrollResponse(BaseModel):
+    """
+    MFA 등록 응답
+
+    TOTP 시크릿 + QR 코드 프로비저닝 URI.
+    """
+
+    secret: str = Field(..., description="Base32 인코딩된 TOTP 시크릿")
+    provisioning_uri: str = Field(
+        ...,
+        description="QR 코드 생성용 provisioning URI (otpauth://)",
+    )
+
+
+class MFAVerifyRequest(BaseModel):
+    """
+    MFA 검증 요청
+
+    TOTP 코드로 MFA 등록 완료.
+    """
+
+    totp_code: str = Field(..., description="6자리 TOTP 코드")
+
+
+class MFADisableRequest(BaseModel):
+    """
+    MFA 비활성화 요청
+
+    현재 비밀번호로 인증하고 MFA 비활성.
+    """
+
+    password: str = Field(..., description="현재 비밀번호 (확인용)")
