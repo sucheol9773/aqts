@@ -1,0 +1,68 @@
+# grype 화이트리스트 — 컨테이너 이미지 CVE 게이트
+#
+# 규칙 (backend/.pip-audit-ignore 와 동일):
+#   1. 모든 항목은 만료일 명시 (영구 예외 금지)
+#   2. 만료일 이후 자동 무효화 → CI 가 재차단 (수동 갱신 필요)
+#   3. 사유는 추상적 표현 금지 — 구체적 코드 경로/우회 명시
+#   4. won't-fix upstream 만 등록 (fix 가능한 항목은 베이스 이미지 패치로 해소)
+#
+# Dockerfile 전략 메모:
+#   - python:3.11-slim-bookworm rolling tag + apt-get upgrade -y 로 fix 가능한
+#     OS/Python 패치는 매 빌드마다 흡수.
+#   - 본 화이트리스트는 upstream 이 won't-fix 선언했거나 debian 12 버전 트랙에서
+#     백포트되지 않은 CVE 만 등록한다.
+#   - protobuf/pyasn1/ecdsa 는 backend/.pip-audit-ignore 에서 동일 추적.
+
+ignore:
+  # ─── glibc (libc-bin/libc6) — debian 12 LTS 수명 동안 backport 되지 않은 CVE ───
+  # 영향: Python/uvicorn 의 표준 libc 호출 경로. 컨테이너 런타임 격리 + 비루트
+  # 사용자 + 외부 공개 포트 1개(8000)로 영향 표면 최소화.
+  # 후속: bookworm 보안 피드에 backport 되거나 trixie 로 베이스 변경 시 해소.
+  - vulnerability: CVE-2025-15281  # 2026-06-06
+  - vulnerability: CVE-2026-4046   # 2026-06-06
+  - vulnerability: CVE-2026-4437   # 2026-06-06
+  - vulnerability: CVE-2026-0915   # 2026-06-06
+  - vulnerability: CVE-2026-0861   # 2026-06-06
+
+  # ─── libsqlite3-0 — debian 12 백포트 미제공 ───
+  # 영향: Python sqlite3 stdlib 사용 — 코드 검색 결과 직접 sqlite 사용처 없음
+  # (PostgreSQL/MongoDB/Redis 만 사용). Optuna/sklearn 의 내부 캐시 경로 가능성.
+  - vulnerability: CVE-2025-7458   # 2026-06-06 (Critical, sqlite upstream won't-fix)
+
+  # ─── libldap-2.5-0 — debian 12 백포트 미제공 ───
+  # 영향: 코드 검색 결과 LDAP 클라이언트 직접 사용 없음. python-jose/curl 의
+  # transitive 의존. python-jose 제거(GHSA-jr27-m4p2-rc6r 후속)와 함께 표면 축소.
+  - vulnerability: CVE-2023-2953   # 2026-06-06
+
+  # ─── libexpat1 — 일부 CVE 백포트 누락 ───
+  # 영향: XML 파싱 — 코드 검색 결과 직접 XML 입력 처리 경로 없음.
+  - vulnerability: CVE-2025-59375  # 2026-06-06
+  - vulnerability: CVE-2026-25210  # 2026-06-06
+
+  # ─── dpkg — 빌드 도구, 런타임 미사용 ───
+  - vulnerability: CVE-2025-6297   # 2026-06-06
+  - vulnerability: CVE-2026-2219   # 2026-06-06
+
+  # ─── libtasn1-6 — gnutls transitive ───
+  - vulnerability: CVE-2025-13151  # 2026-06-06
+
+  # ─── ncurses (libncursesw6/libtinfo6/ncurses-base/ncurses-bin) ───
+  # 영향: TTY 라이브러리. uvicorn 비대화형 실행 환경에서 사용 경로 없음.
+  - vulnerability: CVE-2025-69720  # 2026-06-06
+
+  # ─── libnghttp2-14 — HTTP/2 라이브러리 ───
+  # 영향: curl HTTPS 호출의 HTTP/2 전송 경로. KIS API 클라이언트는 HTTP/1.1 사용.
+  - vulnerability: CVE-2026-27135  # 2026-06-06
+
+  # ─── Python 3.11 인터프리터 — 백포트 안 된 단일 CVE ───
+  # 영향: 후속 3.11.x patch release 또는 3.12 메이저 업그레이드 시 해소.
+  - vulnerability: CVE-2026-4519   # 2026-06-06
+
+  # ─── Python 패키지 (backend/.pip-audit-ignore 와 동일 추적) ───
+  # protobuf: OTel 1.27+ 업그레이드 PR 대기
+  - vulnerability: GHSA-7gcm-g887-7qv7  # 2026-06-06
+  # pyasn1, ecdsa: python-jose → PyJWT 마이그레이션 PR 대기
+  - vulnerability: GHSA-jr27-m4p2-rc6r  # 2026-06-06
+  - vulnerability: GHSA-wj6h-64fc-37mp  # 2026-06-06
+
+# fail-on/severity-cutoff 는 워크플로(--fail-on high) 에서 강제하므로 여기서는 미설정.
