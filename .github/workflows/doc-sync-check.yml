@@ -35,3 +35,6 @@ jobs:
 
       - name: Run bool literal check
         run: python scripts/check_bool_literals.py
+
+      - name: Run status SSOT check
+        run: python scripts/gen_status.py

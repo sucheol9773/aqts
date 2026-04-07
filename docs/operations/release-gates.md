@@ -25,7 +25,7 @@ Gate A (개발/QA) → Gate B (보안) → Gate C (리스크/운영) → Gate D 
 
 | 항목 | 기준 | 현재 상태 |
 |------|------|----------|
-| 단위 테스트 전체 통과 | pytest 0 failures | PASS (3,088건 통과) |
+| 단위 테스트 전체 통과 | pytest 0 failures | PASS (3,201건 통과) |
 | 코드 커버리지 | >= 80% | PASS (90%) |
 | 린트/포맷 검사 | ruff/black 위반 0건 | PASS (ruff 0.15.9 + black 26.3.1, 위반 0건) |
 | 의존성 취약점 | pip-audit critical 0건 | PASS (starlette CVE 해소, torch CPU 인덱스 설치로 2.6.0+ 적용 — Dockerfile 반영 완료) |
@@ -105,7 +105,7 @@ Gate A (개발/QA) → Gate B (보안) → Gate C (리스크/운영) → Gate D 
 ## 8. 현재 게이트 통과 현황
 
 ```
-Gate A: PASS (스트레스 테스트 28건 추가, 3,088건 통과, 90% 커버리지)
+Gate A: PASS (스트레스 테스트 28건 추가, 3,201건 통과, 90% 커버리지)
 Gate B: PASS (torch CVE 해소, 보안 전 항목 통과)
 Gate C: PASS (알림 채널 검증 + 백업 알림 구현 완료)
 Gate D: PASS (감사/보존/PII/리포트/비밀키 전 항목 통과, 97 tests)
@@ -115,6 +115,7 @@ Gate E: PASS (ASC 운영책임자 서명 완료, 2026-04-05)
 **결론: Gate A~E 전 게이트 PASS. 배포 승인 완료.**
 
 ### 변경 이력
+- v1.28 (2026-04-07): 문서 SSOT 자동화 — `scripts/gen_status.py` 신설 (FEATURE_STATUS/README/release-gates의 테스트 수치를 backend/tests AST 카운트로 자동 갱신), `--check`/`--update`/`--print` 모드, changelog 라인 보존 정책, Doc Sync 워크플로 통합, enterprise-gap-roadmap 8위 완료, 14 tests 추가, 테스트 3,201건
 - v1.27 (2026-04-07): 환경변수 bool 표기 표준화 — `core.utils.env.env_bool()` 단일 진입점, 표준 'true'/'false' 강제, 하위호환(1/0/yes/no/on/off) 경고 1회 + Prometheus counter `aqts_env_bool_nonstandard_total`, `AQTS_STRICT_BOOL` Phase 2 승격 스위치, 정적 검사 `scripts/check_bool_literals.py` (Doc Sync 워크플로 통합), `tracing.py`/`rate_limiter.py`/`main.py` ad-hoc 파싱 제거, conftest TESTING='true' 통일, 34 tests 추가, 테스트 3,200건
 - v1.26 (2026-04-07): 관측성 고도화 — OpenTelemetry 분산 추적 (FastAPI/SQLAlchemy/httpx/Redis 자동 계측), OTel Collector + Jaeger docker-compose 서비스, trace_id 로그/응답 헤더 전파, NoOp fallback (graceful degradation), 28 tests 추가, 테스트 3,166건
 - v1.25 (2026-04-07): 신뢰성/가용성 보강 + 아키텍처 분리 — DB 백업 자동화 (pg_dump/mongodump cron 컨테이너 + GCS 업로드 + 복원 스크립트), PostgreSQL PITR (WAL 아카이빙, wal_level=replica), 스케줄러 컨테이너 분리 (장애 격리, SCHEDULER_ENABLED 환경변수), 33 tests 추가, 테스트 3,138건

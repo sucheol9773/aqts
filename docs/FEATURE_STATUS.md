@@ -74,7 +74,7 @@
 | Module | Feature | Status | Code Path | Tests | Notes |
 |--------|---------|--------|-----------|-------|-------|
 | executor | 주문 집행 (시장가·지정가·TWAP·VWAP) | Tested | core/order_executor/executor.py | test_executor.py (33) | TWAP 6분할, VWAP 가중치, 배치 실행, dry_run 모드 지원 |
-| dry_run_engine | 드라이런 엔진 (주문 인터셉트 + 가상 기록) | Tested | core/dry_run/engine.py | test_dry_run_engine.py (34) + test_dry_run_api.py (12) | DryRunSession/Order/Report, 6개 API 엔드포인트 |
+| dry_run_engine | 드라이런 엔진 (주문 인터셉트 + 가상 기록) | Tested | core/dry_run/engine.py | test_dry_run_engine.py (33) + test_dry_run_api.py (13) | DryRunSession/Order/Report, 6개 API 엔드포인트 |
 | trading_guard | 트레이딩 안전 장치 (7계층 보호) | Tested | core/trading_guard.py | test_trading_guard.py (72) | 환경·자본·손실·MDD·연속손실 검증 |
 | emergency_monitor | 비상 리밸런싱 5분 모니터 | Tested | core/emergency_monitor.py | test_emergency_monitor.py (64) | 동적 손절, 방어 포트폴리오 전환 |
 
@@ -171,6 +171,7 @@
 | scheduler_separation | 스케줄러 컨테이너 분리 (장애 격리) | Tested | scheduler_main.py | test_scheduler_separation.py (33) | SCHEDULER_ENABLED 환경변수, 헬스체크 external 상태, API/스케줄러 독립 장애 격리 |
 | otel_tracing | OpenTelemetry 분산 추적 | Tested | core/monitoring/tracing.py | test_otel_tracing.py (28) | FastAPI/SQLAlchemy/httpx/Redis 자동 계측, OTel Collector + Jaeger, trace_id 로그/헤더 전파, NoOp fallback |
 | env_bool_standardization | 환경변수 bool 표기 표준화 (env_bool 단일 진입점) | Tested | core/utils/env.py | test_env_bool.py (20) | 표준 'true'/'false' 강제, 하위호환 1/yes/on 경고 1회 + Prometheus counter, AQTS_STRICT_BOOL Phase 2 승격, 정적 검사 scripts/check_bool_literals.py |
+| docs_ssot_automation | 문서 SSOT 자동화 (테스트 수/총계 자동 동기화) | Tested | scripts/gen_status.py | test_gen_status.py (14) | FEATURE_STATUS/README/release-gates 테스트 수치를 backend/tests AST 카운트로 자동 갱신, --check/--update 모드, changelog 라인 보존, Doc Sync 워크플로 통합 |
 
 ---
 
@@ -342,7 +343,7 @@
 ## Test Coverage Summary
 
 ```
-Total Tests: 3,088 tests (413 smoke-marked) — ALL PASS, Coverage 90%
+Total Tests: 3,201 tests (413 smoke-marked) — ALL PASS, Coverage 90%
 ├── Core Features: 40+ modules with passing tests
 ├── Data Contracts: 154 tests (9 contracts) [smoke]
 ├── Pipeline Gates: 59 tests (12 components)
