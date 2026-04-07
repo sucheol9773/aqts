@@ -63,7 +63,7 @@ class TestKISRecoveryWiring(unittest.TestCase):
 
         original_alert_manager = alerts_module._alert_manager
         mock_alert_manager = MagicMock()
-        mock_alert_manager.create_alert = MagicMock()
+        mock_alert_manager.create_and_persist_alert = AsyncMock()
         alerts_module._alert_manager = mock_alert_manager
 
         try:
@@ -82,8 +82,8 @@ class TestKISRecoveryWiring(unittest.TestCase):
                     assert body["components"]["kis_api"] == "degraded"
 
                 # 정확히 1회 발송
-                assert mock_alert_manager.create_alert.call_count == 1
-                call_kwargs = mock_alert_manager.create_alert.call_args.kwargs
+                assert mock_alert_manager.create_and_persist_alert.await_count == 1
+                call_kwargs = mock_alert_manager.create_and_persist_alert.await_args.kwargs
                 assert call_kwargs["alert_type"] == AlertType.SYSTEM_ERROR
                 assert call_kwargs["level"] == AlertLevel.ERROR
                 metadata = call_kwargs["metadata"]
@@ -94,7 +94,7 @@ class TestKISRecoveryWiring(unittest.TestCase):
                 # 추가 호출 — 중복 발송 없음
                 state.next_attempt_at = datetime.utcnow() - timedelta(seconds=1)
                 client.get("/api/system/health")
-                assert mock_alert_manager.create_alert.call_count == 1
+                assert mock_alert_manager.create_and_persist_alert.await_count == 1
                 assert state.alert_dispatched is True
         finally:
             alerts_module._alert_manager = original_alert_manager
@@ -135,7 +135,7 @@ class TestKISRecoveryWiring(unittest.TestCase):
 
         original_alert_manager = alerts_module._alert_manager
         mock_alert_manager = MagicMock()
-        mock_alert_manager.create_alert = MagicMock()
+        mock_alert_manager.create_and_persist_alert = AsyncMock()
         alerts_module._alert_manager = mock_alert_manager
 
         try:
@@ -148,7 +148,7 @@ class TestKISRecoveryWiring(unittest.TestCase):
                 # 1) 실패 — 알림 발송
                 state.next_attempt_at = datetime.utcnow() - timedelta(seconds=1)
                 client.get("/api/system/health")
-                assert mock_alert_manager.create_alert.call_count == 1
+                assert mock_alert_manager.create_and_persist_alert.await_count == 1
                 assert state.alert_dispatched is True
 
                 # 2) 성공 — 회복 + 상태 리셋
@@ -160,7 +160,7 @@ class TestKISRecoveryWiring(unittest.TestCase):
                 assert state.consecutive_failures == 0
                 assert state.alert_dispatched is False
                 # 회복 성공으로 추가 알림 없음
-                assert mock_alert_manager.create_alert.call_count == 1
+                assert mock_alert_manager.create_and_persist_alert.await_count == 1
         finally:
             alerts_module._alert_manager = original_alert_manager
             main.app.state.kis_recovery_state = old_state

@@ -103,6 +103,14 @@ async def lifespan(app: FastAPI):
         await MongoDBManager.connect()
         logger.info("MongoDB connected successfully")
 
+        # AlertManager 싱글톤에 MongoDB 컬렉션 주입 (영속화 활성화)
+        try:
+            from api.routes.alerts import _alert_manager
+
+            _alert_manager.set_collection(MongoDBManager.get_collection("alerts"))
+        except Exception as e:
+            logger.warning(f"AlertManager MongoDB 주입 실패 (in-memory 폴백): {e}")
+
         await RedisManager.connect()
         logger.info("Redis connected successfully")
 
@@ -328,7 +336,7 @@ async def health_check():
             from config.constants import AlertType
             from core.notification.alert_manager import AlertLevel
 
-            _alert_manager.create_alert(
+            await _alert_manager.create_and_persist_alert(
                 alert_type=AlertType.SYSTEM_ERROR,
                 level=AlertLevel.ERROR,
                 title="KIS API 자동 복원 연속 실패",

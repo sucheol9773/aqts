@@ -190,6 +190,43 @@ class AlertManager:
         self._collection = mongo_collection
         self._in_memory_alerts: list[Alert] = []
 
+    def set_collection(self, mongo_collection) -> None:
+        """런타임에 MongoDB 컬렉션을 주입한다.
+
+        모듈 레벨 싱글톤(`api.routes.alerts._alert_manager`)은 import 시점에
+        DB 가 아직 연결되지 않은 상태로 생성되므로, FastAPI startup 단계에서
+        이 메서드로 컬렉션을 주입한다.
+        """
+        self._collection = mongo_collection
+        logger.info(
+            f"AlertManager: MongoDB 컬렉션 주입 완료 ({'enabled' if mongo_collection is not None else 'disabled'})"
+        )
+
+    async def create_and_persist_alert(
+        self,
+        alert_type: AlertType,
+        level: AlertLevel = AlertLevel.INFO,
+        title: str = "",
+        message: str = "",
+        metadata: Optional[dict] = None,
+    ) -> Alert:
+        """알림을 생성하고, 컬렉션이 주입되어 있으면 MongoDB에 영속화한다.
+
+        - `_collection` 이 None 이면 in-memory 만 저장하고 반환 (회귀 동작 호환).
+        - `_collection` 이 있으면 `save_alert` 까지 호출하여 영속화한다.
+        - DB 쓰기 실패는 예외를 그대로 올린다 (호출자가 try/except 로 swallow 하도록).
+        """
+        alert = self.create_alert(
+            alert_type=alert_type,
+            level=level,
+            title=title,
+            message=message,
+            metadata=metadata,
+        )
+        if self._collection is not None:
+            await self.save_alert(alert)
+        return alert
+
     # ── 알림 생성 ──
     def create_alert(
         self,

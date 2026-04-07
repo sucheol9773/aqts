@@ -245,7 +245,51 @@ GET /api/system/health
 | `test_alert_callback_dispatched_through_health_check_route` | 임계값 도달 시 `_alert_manager.create_alert` 가 정확히 1회 호출 + metadata(consecutive_failures/last_error/alert_threshold) 검증 + 추가 호출 시 중복 발송 없음 |
 | `test_recovery_success_resets_alert_state_through_health_check` | 알림 발송 후 회복 성공 시 `consecutive_failures=0`, `alert_dispatched=False` 로 리셋되고 추가 알림 없음 |
 
-### 8.6 회고: 통합 테스트가 잡아낸 wiring 버그
+### 8.6 알림 영속화
+
+통합 테스트가 `_alert_manager.create_alert` 호출을 검증하긴 했지만, 그 시점까지
+`AlertManager` 는 `mongo_collection=None` 인 in-memory 모드였다. 즉 알림이 만들어
+져도 프로세스가 재시작되면 사라졌고 운영자가 `/api/alerts` 로 조회해도 비어 있을
+가능성이 있었다.
+
+이 갭을 메우기 위해 다음 두 가지가 추가되었다:
+
+1. `AlertManager.set_collection(collection)` — 런타임에 컬렉션을 주입할 수 있는
+   메서드. 모듈 레벨 싱글톤은 import 시점에 DB 가 아직 연결되지 않은 상태로
+   생성되므로 startup 단계에서 이 메서드로 주입한다.
+2. `AlertManager.create_and_persist_alert(...)` — 기존 `create_alert` 의 async
+   래퍼. 컬렉션이 주입되어 있으면 `save_alert` 까지 호출해 MongoDB 의 `alerts`
+   컬렉션에 영속화한다. 컬렉션이 없으면 in-memory 만 동작 (회귀 안전).
+
+main.py wiring:
+
+```python
+# startup (lifespan)
+await MongoDBManager.connect()
+from api.routes.alerts import _alert_manager
+_alert_manager.set_collection(MongoDBManager.get_collection("alerts"))
+
+# KIS recovery callback (health_check 내부)
+await _alert_manager.create_and_persist_alert(
+    alert_type=AlertType.SYSTEM_ERROR,
+    level=AlertLevel.ERROR,
+    title="KIS API 자동 복원 연속 실패",
+    message=...,
+    metadata={...},
+)
+```
+
+테스트 (`backend/tests/test_alert_manager_persistence.py`, 5 케이스):
+
+| 케이스 | 검증 |
+|--------|------|
+| `test_create_and_persist_without_collection_falls_back_to_memory` | 컬렉션 미주입 시 in-memory 만 동작, 회귀 안전 |
+| `test_create_and_persist_with_collection_calls_insert_one` | 컬렉션 주입 시 `insert_one` 호출 + 직렬화된 doc 검증 |
+| `test_create_and_persist_propagates_db_error` | DB 쓰기 실패는 호출자로 예외 전파 (callback 의 try/except 에서 swallow) |
+| `test_main_startup_injects_alerts_collection_into_singleton` | lifespan startup 이 실제로 `set_collection("alerts")` 를 호출함을 통합 검증 |
+| `test_set_collection_can_be_called_multiple_times` | 재주입/None 주입 안전성 |
+
+### 8.7 회고: 통합 테스트가 잡아낸 wiring 버그
 
 본 통합 테스트를 추가하면서 `main.py` 의 lazy import 가 잘못된 모듈을 참조하던
 버그를 발견했다:
