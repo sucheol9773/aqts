@@ -22,7 +22,7 @@ import sys
 from logging.config import fileConfig
 from pathlib import Path
 
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import create_engine, pool
 
 from alembic import context
 
@@ -42,9 +42,11 @@ if config.config_file_name is not None:
 # SQLAlchemy MetaData (autogenerate 대상)
 target_metadata = Base.metadata
 
-# settings.py에서 동기 DB URL 주입
+# settings.py에서 동기 DB URL 로드
+# 주의: configparser 의 interpolation 충돌을 피하기 위해 set_main_option 을 거치지 않고
+# create_engine 에 URL 을 직접 전달한다. (비밀번호의 % 인코딩이 % 로 해석되는 문제 방지)
 settings = get_settings()
-config.set_main_option("sqlalchemy.url", settings.db.sync_url)
+DB_URL = settings.db.sync_url
 
 
 def run_migrations_offline() -> None:
@@ -52,9 +54,8 @@ def run_migrations_offline() -> None:
 
     DB 연결 없이 마이그레이션 SQL을 stdout에 출력한다.
     """
-    url = config.get_main_option("sqlalchemy.url")
     context.configure(
-        url=url,
+        url=DB_URL,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -69,11 +70,7 @@ def run_migrations_online() -> None:
 
     DB에 연결하여 마이그레이션을 실행한다.
     """
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    connectable = create_engine(DB_URL, poolclass=pool.NullPool)
 
     with connectable.connect() as connection:
         context.configure(

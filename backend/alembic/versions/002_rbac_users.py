@@ -114,12 +114,14 @@ def _create_admin_seed() -> None:
     # admin role id는 3 (INSERT 순서: viewer=1, operator=2, admin=3)
     admin_role_id = 3
 
-    op.execute(
+    # op.execute() 는 두 번째 인자를 받지 않으므로 bind 를 통해 직접 실행한다.
+    bind = op.get_bind()
+    bind.execute(
         sa.text(
             """
             INSERT INTO users (id, username, email, password_hash, role_id, is_active, is_locked, failed_login_attempts)
             VALUES (:id, :username, :email, :password_hash, :role_id, true, false, 0)
-        """
+            """
         ),
         {
             "id": admin_id,
