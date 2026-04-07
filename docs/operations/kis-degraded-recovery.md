@@ -139,17 +139,40 @@ python ../scripts/gen_status.py --update                # doc-sync 갱신
 - "1시간 동안 회복 실패율":
   `1 - rate(aqts_kis_recovery_success_total[1h]) / rate(aqts_kis_recovery_attempts_total[1h])`
 
-## 7. 비범위 (별도 PR 로 분리)
+## 7. Startup jittered backoff
 
-본 PR 은 **자동 복원 경로 + Prometheus 메트릭** 까지만 책임진다. 아래는 별도 후속.
+`core/data_collector/kis_startup.py::jittered_token_issue` 가 lifespan startup
+시점의 토큰 발급 호출을 감싼다. 동시 부팅 컨테이너들이 KIS 발급 윈도우를 균등
+하게 나눠 쓰도록 `[0, jitter_max_seconds)` 구간 균등분포 jitter 후 1회 발급한다.
+
+| 환경변수 | 기본 | 의미 |
+|----------|------|------|
+| `KIS_STARTUP_JITTER_MAX_SECONDS` | `15.0` | jitter 상한 (초). `0` 이하면 비활성, 기존 동작 유지. |
+
+설계 결정:
+- **in-startup 재시도는 두지 않는다.** 1차 실패는 그대로 degraded 진입 → 75초
+  쿨다운 후 health_check 의 `try_recover_kis()` 가 회복을 책임진다. 책임 분리
+  (single-purpose 모듈) + k8s readiness probe 와의 충돌 회피.
+- **테스트 가능성**: `sleep_fn` / `random_fn` 을 주입 가능하게 하여 실제 시간
+  대기 없이 단위 테스트로 검증한다 (`tests/test_kis_startup.py`, 7 cases).
+- **운영 영향**: 평균 startup 지연 ≈ jitter_max/2 (기본 7.5s). 상한 15s 는 일반
+  적인 readiness probe 임계(30s+) 보다 충분히 작다.
+
+기대 효과:
+- N 개 컨테이너가 동시에 부팅할 때 토큰 발급 호출이 [0, 15s) 균등 분산되어,
+  KIS 1분 1회 제한 윈도우 안에서 충돌하는 컨테이너 수를 줄인다.
+- 효과 측정은 §6 의 `aqts_kis_degraded` 게이지가 1로 진입하는 빈도로 가능.
+
+## 8. 비범위 (별도 PR 로 분리)
+
+본 PR 은 **자동 복원 + 메트릭 + startup jitter** 까지 책임진다. 아래는 별도 후속.
 
 - 회복이 N 회 연속 실패 시 알림(웹훅/슬랙) 트리거.
-- lifespan startup 의 jittered backoff (배포 직후 EGW00133 1차 충돌 자체를 더 줄임).
 
 CLAUDE.md 의 **"bug fix 커밋에 무관한 변경 끼워넣기 금지"** 원칙에 따라 책임 범위
 를 분리한다.
 
-## 8. 변경 파일
+## 9. 변경 파일
 
 - 신규: `backend/core/data_collector/kis_recovery.py`
 - 신규: `backend/tests/test_kis_recovery.py`

@@ -46,6 +46,12 @@ from core.data_collector.kis_recovery import (
     KISRecoveryState,
     try_recover_kis,
 )
+from core.data_collector.kis_startup import (
+    DEFAULT_JITTER_MAX_SECONDS as KIS_STARTUP_DEFAULT_JITTER,
+)
+from core.data_collector.kis_startup import (
+    jittered_token_issue,
+)
 from core.graceful_shutdown import GracefulShutdownManager
 from core.monitoring.metrics import COMPONENT_HEALTH, SYSTEM_STATUS, setup_prometheus
 from core.monitoring.tracing import setup_tracing
@@ -132,12 +138,24 @@ async def lifespan(app: FastAPI):
             cooldown = KIS_RECOVERY_DEFAULT_COOLDOWN
         kis_recovery_state = KISRecoveryState(cooldown_seconds=cooldown)
         app.state.kis_recovery_state = kis_recovery_state
+
+        # KIS_STARTUP_JITTER_MAX_SECONDS: 동시 부팅 컨테이너 간 EGW00133 1차 충돌
+        # 빈도를 줄이기 위한 균등분포 jitter 상한 (기본 15s, 0 이하면 비활성).
         try:
-            kis_client = KISClient()
+            jitter_max = float(os.environ.get("KIS_STARTUP_JITTER_MAX_SECONDS", str(KIS_STARTUP_DEFAULT_JITTER)))
+        except ValueError:
+            logger.warning("KIS_STARTUP_JITTER_MAX_SECONDS 파싱 실패 — 기본값 사용 " f"({KIS_STARTUP_DEFAULT_JITTER}s)")
+            jitter_max = KIS_STARTUP_DEFAULT_JITTER
+
+        try:
             if not settings.kis.is_backtest:
-                await kis_client._token_manager.get_access_token()
+                kis_client = await jittered_token_issue(
+                    client_factory=KISClient,
+                    jitter_max_seconds=jitter_max,
+                )
                 logger.info("KIS API 토큰 초기화 완료")
             else:
+                kis_client = KISClient()
                 logger.info("KIS BACKTEST 모드 — 토큰 발급 건너뜀")
         except Exception as e:
             logger.warning(f"KIS 토큰 초기화 실패 (degraded, 자동 복원 대기): {e}")
