@@ -40,6 +40,9 @@ from config.logging import logger, setup_logging
 from config.settings import get_settings
 from core.data_collector.kis_client import KISClient
 from core.data_collector.kis_recovery import (
+    DEFAULT_ALERT_THRESHOLD as KIS_RECOVERY_DEFAULT_ALERT_THRESHOLD,
+)
+from core.data_collector.kis_recovery import (
     DEFAULT_COOLDOWN_SECONDS as KIS_RECOVERY_DEFAULT_COOLDOWN,
 )
 from core.data_collector.kis_recovery import (
@@ -136,7 +139,22 @@ async def lifespan(app: FastAPI):
                 "KIS_RECOVERY_COOLDOWN_SECONDS 파싱 실패 — 기본값 사용 " f"({KIS_RECOVERY_DEFAULT_COOLDOWN}s)"
             )
             cooldown = KIS_RECOVERY_DEFAULT_COOLDOWN
-        kis_recovery_state = KISRecoveryState(cooldown_seconds=cooldown)
+        try:
+            alert_threshold = int(
+                os.environ.get(
+                    "KIS_RECOVERY_ALERT_THRESHOLD",
+                    str(KIS_RECOVERY_DEFAULT_ALERT_THRESHOLD),
+                )
+            )
+        except ValueError:
+            logger.warning(
+                "KIS_RECOVERY_ALERT_THRESHOLD 파싱 실패 — 기본값 사용 " f"({KIS_RECOVERY_DEFAULT_ALERT_THRESHOLD})"
+            )
+            alert_threshold = KIS_RECOVERY_DEFAULT_ALERT_THRESHOLD
+        kis_recovery_state = KISRecoveryState(
+            cooldown_seconds=cooldown,
+            alert_threshold=alert_threshold,
+        )
         app.state.kis_recovery_state = kis_recovery_state
 
         # KIS_STARTUP_JITTER_MAX_SECONDS: 동시 부팅 컨테이너 간 EGW00133 1차 충돌
@@ -301,7 +319,35 @@ async def health_check():
             await client._token_manager.get_access_token()
             return client
 
-        recovered = await try_recover_kis(state_obj, _kis_client_factory)
+        async def _kis_alert_callback(state: KISRecoveryState) -> None:
+            """연속 실패 임계값 도달 시 운영자 알림 1회 발송.
+
+            AlertManager 는 lazy import 로 가져와 순환 의존성을 회피한다.
+            """
+            from api.routes.alerts import _alert_manager
+            from config.constants import AlertLevel, AlertType
+
+            _alert_manager.create_alert(
+                alert_type=AlertType.SYSTEM_ERROR,
+                level=AlertLevel.ERROR,
+                title="KIS API 자동 복원 연속 실패",
+                message=(
+                    f"KIS 토큰 재발급이 {state.consecutive_failures}회 연속 실패했습니다. "
+                    f"마지막 오류: {state.last_error}"
+                ),
+                metadata={
+                    "consecutive_failures": state.consecutive_failures,
+                    "attempt_count": state.attempt_count,
+                    "last_error": state.last_error,
+                    "alert_threshold": state.alert_threshold,
+                },
+            )
+
+        recovered = await try_recover_kis(
+            state_obj,
+            _kis_client_factory,
+            alert_callback=_kis_alert_callback,
+        )
         if recovered is not None:
             global kis_client
             kis_client = recovered

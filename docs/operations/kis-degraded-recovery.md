@@ -163,14 +163,67 @@ python ../scripts/gen_status.py --update                # doc-sync 갱신
   KIS 1분 1회 제한 윈도우 안에서 충돌하는 컨테이너 수를 줄인다.
 - 효과 측정은 §6 의 `aqts_kis_degraded` 게이지가 1로 진입하는 빈도로 가능.
 
-## 8. 비범위 (별도 PR 로 분리)
+## 8. 연속 실패 운영자 알림
 
-본 PR 은 **자동 복원 + 메트릭 + startup jitter** 까지 책임진다. 아래는 별도 후속.
+회복이 `KISRecoveryState.alert_threshold` (기본 5회) 회 연속 실패하면 운영자에게
+1회 알림을 발송한다. 같은 incident 안에서는 중복 발송하지 않으며, 회복에 성공하면
+`mark_recovered()` 가 `consecutive_failures = 0`, `alert_dispatched = False` 로
+리셋하여 다음 incident 부터 다시 발송 가능 상태가 된다.
 
-- 회복이 N 회 연속 실패 시 알림(웹훅/슬랙) 트리거.
+### 8.1 설계
 
-CLAUDE.md 의 **"bug fix 커밋에 무관한 변경 끼워넣기 금지"** 원칙에 따라 책임 범위
-를 분리한다.
+- `try_recover_kis(..., alert_callback)` 에 비동기 콜백을 주입한다.
+- 실패 경로(KISAPIError / 일반 예외 모두)에서 `consecutive_failures += 1` 후
+  `_maybe_dispatch_alert()` 가 임계값/중복 여부를 확인하고 필요 시 callback 을
+  await 한다.
+- callback 자체가 예외를 던져도 `_maybe_dispatch_alert` 가 swallow 하므로 회복
+  경로는 영향을 받지 않는다 (`alert_dispatched` 도 True 로 마킹하지 않아 다음
+  실패에서 재시도 가능).
+- core 모듈은 알림 구현체(`AlertManager`)에 의존하지 않는다 — wiring 은 main.py
+  가 lazy import 로 담당해 순환 의존성을 회피한다.
+
+### 8.2 main.py wiring
+
+```python
+async def _kis_alert_callback(state: KISRecoveryState) -> None:
+    from api.routes.alerts import _alert_manager
+    from config.constants import AlertLevel, AlertType
+
+    _alert_manager.create_alert(
+        alert_type=AlertType.SYSTEM_ERROR,
+        level=AlertLevel.ERROR,
+        title="KIS API 자동 복원 연속 실패",
+        message=f"KIS 토큰 재발급이 {state.consecutive_failures}회 연속 실패했습니다. "
+                f"마지막 오류: {state.last_error}",
+        metadata={
+            "consecutive_failures": state.consecutive_failures,
+            "attempt_count": state.attempt_count,
+            "last_error": state.last_error,
+            "alert_threshold": state.alert_threshold,
+        },
+    )
+
+recovered = await try_recover_kis(state_obj, _kis_client_factory,
+                                   alert_callback=_kis_alert_callback)
+```
+
+### 8.3 환경변수
+
+| 환경변수 | 기본 | 의미 |
+|----------|------|------|
+| `KIS_RECOVERY_ALERT_THRESHOLD` | `5` | 같은 incident 에서 알림 1회 발송에 도달하는 연속 실패 횟수. 파싱 실패 시 기본값 + 경고 로그. |
+
+### 8.4 테스트
+
+`backend/tests/test_kis_recovery.py::TestKISRecoveryAlerting` — 5 케이스.
+
+| 케이스 | 검증 |
+|--------|------|
+| `test_alert_dispatched_when_consecutive_failures_reach_threshold` | 임계값 도달 시 callback 1회 await + state 인자 확인 |
+| `test_alert_not_re_dispatched_on_subsequent_failures` | 임계값 초과 후에도 추가 발송 없음 |
+| `test_alert_state_reset_on_successful_recovery` | 회복 성공 시 `consecutive_failures=0`, `alert_dispatched=False` |
+| `test_alert_callback_exception_does_not_break_recovery_path` | callback 예외가 try_recover_kis 흐름을 막지 않음 + dispatched 미마킹 |
+| `test_no_callback_provided_does_not_raise` | callback 미주입 시 안전하게 동작 |
 
 ## 9. 변경 파일
 

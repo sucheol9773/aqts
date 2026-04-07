@@ -30,6 +30,7 @@ from loguru import logger
 from core.data_collector.kis_client import KISAPIError, KISClient
 
 DEFAULT_COOLDOWN_SECONDS = 75
+DEFAULT_ALERT_THRESHOLD = 5
 
 
 def _record_attempt() -> None:
@@ -72,6 +73,9 @@ class KISRecoveryState:
         attempt_count: 누적 회복 시도 횟수 (성공/실패 모두 포함).
         recovery_count: 누적 회복 성공 횟수.
         cooldown_seconds: 다음 시도까지 대기할 초.
+        consecutive_failures: 현재 incident 의 연속 실패 횟수. 성공 시 0 으로 리셋.
+        alert_threshold: 같은 incident 에서 알림을 1회 발송할 임계 연속 실패 횟수.
+        alert_dispatched: 같은 incident 안에서 알림을 이미 발송했는지 (중복 발송 방지).
         lock: 동시 호출 직렬화를 위한 asyncio.Lock.
     """
 
@@ -81,6 +85,9 @@ class KISRecoveryState:
     attempt_count: int = 0
     recovery_count: int = 0
     cooldown_seconds: int = DEFAULT_COOLDOWN_SECONDS
+    consecutive_failures: int = 0
+    alert_threshold: int = DEFAULT_ALERT_THRESHOLD
+    alert_dispatched: bool = False
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     def mark_degraded(self, error: str, now: Optional[datetime] = None) -> None:
@@ -91,18 +98,43 @@ class KISRecoveryState:
         _record_degraded()
 
     def mark_recovered(self) -> None:
-        """회복 성공 — degraded 해제 + 카운터 증가."""
+        """회복 성공 — degraded 해제 + 카운터 증가 + 알림 상태 리셋."""
         self.degraded = False
         self.last_error = None
         self.next_attempt_at = None
         self.recovery_count += 1
+        self.consecutive_failures = 0
+        self.alert_dispatched = False
         _record_success()
+
+
+async def _maybe_dispatch_alert(
+    state: KISRecoveryState,
+    alert_callback: Optional[Callable[["KISRecoveryState"], Awaitable[None]]],
+) -> None:
+    """연속 실패가 임계값에 도달했고 아직 알림을 보내지 않았다면 1회 발송.
+
+    callback 자체가 실패해도 회복 경로를 막지 않도록 예외는 swallow 한다 (경고 로그만).
+    """
+    if alert_callback is None:
+        return
+    if state.alert_dispatched:
+        return
+    if state.consecutive_failures < state.alert_threshold:
+        return
+    try:
+        await alert_callback(state)
+        state.alert_dispatched = True
+        logger.warning(f"KIS recovery 연속 실패 {state.consecutive_failures}회 — 운영자 알림 발송 완료")
+    except Exception as exc:  # pragma: no cover - 알림 실패는 회복을 막지 않음
+        logger.warning(f"KIS recovery 알림 발송 실패 (회복 경로는 정상): {exc}")
 
 
 async def try_recover_kis(
     state: KISRecoveryState,
     client_factory: Callable[[], Awaitable[KISClient]],
     now: Optional[datetime] = None,
+    alert_callback: Optional[Callable[["KISRecoveryState"], Awaitable[None]]] = None,
 ) -> Optional[KISClient]:
     """쿨다운 만료 시 KIS 토큰 재발급을 시도하고, 성공하면 새 KISClient 를 반환.
 
@@ -140,15 +172,23 @@ async def try_recover_kis(
         except KISAPIError as exc:
             state.last_error = f"{exc.code}: {exc.message}"
             state.next_attempt_at = current + timedelta(seconds=state.cooldown_seconds)
+            state.consecutive_failures += 1
             logger.warning(
-                f"KIS recovery 실패 #{state.attempt_count}: {state.last_error} "
+                f"KIS recovery 실패 #{state.attempt_count} "
+                f"(연속 {state.consecutive_failures}회): {state.last_error} "
                 f"(다음 시도: {state.next_attempt_at:%H:%M:%S})"
             )
+            await _maybe_dispatch_alert(state, alert_callback)
             return None
         except Exception as exc:
             state.last_error = f"{type(exc).__name__}: {exc}"
             state.next_attempt_at = current + timedelta(seconds=state.cooldown_seconds)
-            logger.warning(f"KIS recovery 실패 #{state.attempt_count}: {state.last_error}")
+            state.consecutive_failures += 1
+            logger.warning(
+                f"KIS recovery 실패 #{state.attempt_count} "
+                f"(연속 {state.consecutive_failures}회): {state.last_error}"
+            )
+            await _maybe_dispatch_alert(state, alert_callback)
             return None
 
         state.mark_recovered()

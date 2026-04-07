@@ -282,3 +282,118 @@ class TestKISRecoveryMetrics:
         # 쿨다운 미만이면 메트릭 카운터도 증가하지 않아야 한다.
         assert self._read_counter(KIS_RECOVERY_ATTEMPTS_TOTAL) == before
         factory.assert_not_called()
+
+
+class TestKISRecoveryAlerting:
+    """연속 실패 시 운영자 알림 콜백 검증."""
+
+    @pytest.mark.asyncio
+    async def test_alert_dispatched_when_consecutive_failures_reach_threshold(self):
+        now = datetime(2026, 4, 7, 12, 0, 0)
+        state = KISRecoveryState(cooldown_seconds=60, alert_threshold=3)
+        state.mark_degraded("err", now=now)
+
+        factory = AsyncMock(side_effect=KISAPIError(code="EGW00133", message="rate limit"))
+        callback = AsyncMock()
+
+        # 3회 실패 누적 → 임계값 도달 시 1회 발송
+        for i in range(3):
+            t = now + timedelta(seconds=61 + i * 61)
+            state.next_attempt_at = t  # 즉시 시도 가능하도록
+            await try_recover_kis(state, factory, now=t, alert_callback=callback)
+
+        assert state.consecutive_failures == 3
+        assert state.alert_dispatched is True
+        callback.assert_awaited_once()
+        # callback 인자가 state 본인인지 확인
+        assert callback.await_args.args[0] is state
+
+    @pytest.mark.asyncio
+    async def test_alert_not_re_dispatched_on_subsequent_failures(self):
+        now = datetime(2026, 4, 7, 12, 0, 0)
+        state = KISRecoveryState(cooldown_seconds=60, alert_threshold=2)
+        state.mark_degraded("err", now=now)
+
+        factory = AsyncMock(side_effect=RuntimeError("boom"))
+        callback = AsyncMock()
+
+        # 5회 연속 실패 — 임계값(2) 도달 후에도 추가 발송 없어야 함
+        for i in range(5):
+            t = now + timedelta(seconds=61 + i * 61)
+            state.next_attempt_at = t
+            await try_recover_kis(state, factory, now=t, alert_callback=callback)
+
+        assert state.consecutive_failures == 5
+        assert state.alert_dispatched is True
+        callback.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_alert_state_reset_on_successful_recovery(self):
+        now = datetime(2026, 4, 7, 12, 0, 0)
+        state = KISRecoveryState(cooldown_seconds=60, alert_threshold=2)
+        state.mark_degraded("err", now=now)
+
+        new_client = AsyncMock(spec=KISClient)
+        factory = AsyncMock(
+            side_effect=[
+                KISAPIError(code="EGW00133", message="rl"),
+                KISAPIError(code="EGW00133", message="rl"),
+                new_client,
+            ]
+        )
+        callback = AsyncMock()
+
+        # 2회 실패 → 알림 발송
+        for i in range(2):
+            t = now + timedelta(seconds=61 + i * 61)
+            state.next_attempt_at = t
+            await try_recover_kis(state, factory, now=t, alert_callback=callback)
+        assert state.alert_dispatched is True
+        assert state.consecutive_failures == 2
+
+        # 3번째 시도 — 성공
+        t3 = now + timedelta(seconds=61 + 2 * 61)
+        state.next_attempt_at = t3
+        result = await try_recover_kis(state, factory, now=t3, alert_callback=callback)
+
+        assert result is new_client
+        assert state.consecutive_failures == 0
+        assert state.alert_dispatched is False
+        callback.assert_awaited_once()  # 회복 성공으로 추가 발송 없음
+
+    @pytest.mark.asyncio
+    async def test_alert_callback_exception_does_not_break_recovery_path(self):
+        now = datetime(2026, 4, 7, 12, 0, 0)
+        state = KISRecoveryState(cooldown_seconds=60, alert_threshold=1)
+        state.mark_degraded("err", now=now)
+
+        factory = AsyncMock(side_effect=RuntimeError("boom"))
+        callback = AsyncMock(side_effect=RuntimeError("alert sink down"))
+
+        result = await try_recover_kis(
+            state,
+            factory,
+            now=now + timedelta(seconds=61),
+            alert_callback=callback,
+        )
+
+        # 알림 실패에도 회복 함수는 None 을 정상 반환해야 한다
+        assert result is None
+        assert state.consecutive_failures == 1
+        # 알림 발송이 예외로 실패했으므로 alert_dispatched 는 여전히 False (재시도 여지)
+        assert state.alert_dispatched is False
+        callback.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_no_callback_provided_does_not_raise(self):
+        now = datetime(2026, 4, 7, 12, 0, 0)
+        state = KISRecoveryState(cooldown_seconds=60, alert_threshold=1)
+        state.mark_degraded("err", now=now)
+
+        factory = AsyncMock(side_effect=RuntimeError("boom"))
+
+        result = await try_recover_kis(state, factory, now=now + timedelta(seconds=61))
+
+        assert result is None
+        assert state.consecutive_failures == 1
+        assert state.alert_dispatched is False
