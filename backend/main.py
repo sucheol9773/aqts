@@ -39,6 +39,7 @@ from config.settings import get_settings
 from core.data_collector.kis_client import KISClient
 from core.graceful_shutdown import GracefulShutdownManager
 from core.monitoring.metrics import COMPONENT_HEALTH, SYSTEM_STATUS, setup_prometheus
+from core.monitoring.tracing import setup_tracing
 from core.trading_scheduler import TradingScheduler
 from db.database import MongoDBManager, RedisManager, engine
 
@@ -188,6 +189,9 @@ app.add_middleware(RequestLoggingMiddleware)
 
 # Prometheus 메트릭
 setup_prometheus(app)
+
+# OpenTelemetry 분산 추적
+setup_tracing(app)
 
 
 # ══════════════════════════════════════

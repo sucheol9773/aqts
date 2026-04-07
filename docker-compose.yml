@@ -224,6 +224,40 @@ services:
     networks:
       - aqts-network
 
+  # ══════════════════════════════════════
+  # OpenTelemetry Collector (분산 추적 수집)
+  # ══════════════════════════════════════
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.102.0
+    container_name: aqts-otel-collector
+    restart: unless-stopped
+    command: ["--config=/etc/otel-collector-config.yml"]
+    volumes:
+      - ./monitoring/otel-collector/otel-collector-config.yml:/etc/otel-collector-config.yml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "13133:13133" # Health check
+    depends_on:
+      - jaeger
+    networks:
+      - aqts-network
+
+  # ══════════════════════════════════════
+  # Jaeger (분산 추적 UI)
+  # ══════════════════════════════════════
+  jaeger:
+    image: jaegertracing/all-in-one:1.57
+    container_name: aqts-jaeger
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "${JAEGER_UI_PORT:-16686}:16686"  # Jaeger UI
+      - "14250:14250"                      # gRPC (Collector)
+    networks:
+      - aqts-network
+
 volumes:
   postgres_data:
   postgres_wal_archive:

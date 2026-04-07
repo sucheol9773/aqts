@@ -1,0 +1,51 @@
+# ══════════════════════════════════════════════════════════════
+# AQTS OpenTelemetry Collector 설정
+# ══════════════════════════════════════════════════════════════
+# 수신: OTLP gRPC (4317), OTLP HTTP (4318)
+# 처리: 배치 처리 (10s 타임아웃, 512 스팬 단위)
+# 내보내기: Jaeger (분산 추적 UI), Prometheus (메트릭 연동)
+# ══════════════════════════════════════════════════════════════
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: "0.0.0.0:4317"
+      http:
+        endpoint: "0.0.0.0:4318"
+
+processors:
+  batch:
+    timeout: 10s
+    send_batch_size: 512
+    send_batch_max_size: 1024
+
+  # 리소스 속성 강화
+  resource:
+    attributes:
+      - key: service.namespace
+        value: aqts
+        action: upsert
+
+exporters:
+  # Jaeger로 trace 내보내기 (OTLP 프로토콜)
+  otlp/jaeger:
+    endpoint: "jaeger:4317"
+    tls:
+      insecure: true
+
+  # 디버그 로깅 (개발 시에만 사용)
+  debug:
+    verbosity: basic
+
+extensions:
+  health_check:
+    endpoint: "0.0.0.0:13133"
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [resource, batch]
+      exporters: [otlp/jaeger]
