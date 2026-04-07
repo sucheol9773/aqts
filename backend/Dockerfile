@@ -27,7 +27,13 @@ RUN pip install --no-cache-dir --upgrade pip "setuptools>=78.1.1" "wheel>=0.46.2
     && PYTHONPATH=/install/lib/python3.11/site-packages \
        pip install --no-cache-dir --prefix=/install \
        --extra-index-url https://download.pytorch.org/whl/cpu \
-       -r requirements.txt
+       -r requirements.txt \
+    && pip install --no-cache-dir --prefix=/install --upgrade \
+       "setuptools>=78.1.1" "wheel>=0.46.2"
+# 마지막 줄: requirements.txt 설치 시 transitive 로 끌려온 구버전 setuptools/wheel 을
+# /install 트리에서도 강제로 최신 패치 버전으로 덮어쓴다 (GHSA-5rjg-fvgr-3xxf,
+# GHSA-8rrh-rw8j-w5fx 대응). 빌더 system python 업그레이드만으로는 /install 에
+# 별도로 들어간 70.2.0 / 0.44.0 이 그대로 남아 grype 가 검출함.
 
 
 # ══════════════════════════════════════
