@@ -307,16 +307,27 @@ jobs:
       # 2) SARIF 출력 + fail-on high (실제 게이트)
       # anchore/scan-action@v6 는 최신 grype + 자동 DB 갱신 사용
       # (v3 는 벤더링된 grype v0.74.4 + 묵은 DB 로 max-age 5d 정책에 차단됨).
-      - name: List CVEs (grype table, debug)
+      - name: List High/Critical CVEs (grype, debug)
         if: github.ref == 'refs/heads/main'
         continue-on-error: true
-        uses: anchore/scan-action@v6
-        with:
-          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
-          fail-build: false
-          severity-cutoff: high
-          only-fixed: false
-          output-format: table
+        run: |
+          set -e
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh \
+            | sh -s -- -b /usr/local/bin v0.97.1
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}"
+          echo "=== Severity counts ==="
+          grype "$IMAGE" -o json 2>/dev/null \
+            | jq -r '.matches[].vulnerability.severity' \
+            | sort | uniq -c | sort -rn
+          echo
+          echo "=== High/Critical CVEs (with fix availability) ==="
+          grype "$IMAGE" -o json 2>/dev/null \
+            | jq -r '.matches[]
+                | select(.vulnerability.severity == "High" or .vulnerability.severity == "Critical")
+                | [.vulnerability.severity, .artifact.name, .artifact.version,
+                   (.vulnerability.fix.versions // [] | join(",") | if . == "" then "(no-fix)" else . end),
+                   .vulnerability.id] | @tsv' \
+            | column -t -s $'\t'
 
       - name: Scan image for vulnerabilities (grype)
         if: github.ref == 'refs/heads/main'
