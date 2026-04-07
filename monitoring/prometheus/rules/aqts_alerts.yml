@@ -201,3 +201,59 @@ groups:
         annotations:
           summary: "앙상블 신뢰도 낮음: {{ $value }}"
           description: "30분 이상 앙상블 신뢰도가 0.3 미만 유지. 시장 불확실성 또는 전략 성능 저하 가능."
+
+  # ─────────────────────────────────────
+  # 6. KIS 자동 복원 (KIS Recovery)
+  # ─────────────────────────────────────
+  #
+  # 앱 내부 알림(backend/main.py → AlertManager)과 이중화된 인프라 레벨 알림.
+  # 앱 프로세스가 다운되어 in-app 알림이 발송되지 못하는 상황에서도 Prometheus
+  # 는 /metrics scrape 를 통해 상태를 감지할 수 있다.
+  #
+  # 관련 문서: docs/operations/kis-degraded-recovery.md
+  - name: aqts_kis_recovery
+    rules:
+      - alert: KISDegraded
+        expr: aqts_kis_degraded == 1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "KIS API degraded 상태 지속 ({{ $value }})"
+          description: "KIS API 가 2분 이상 degraded 상태. 자동 복원(health_check 주기적 시도) 진행 중. 10분 이상 지속되면 KISDegradedProlonged 로 승격."
+          runbook: "docs/operations/kis-degraded-recovery.md"
+
+      - alert: KISDegradedProlonged
+        expr: aqts_kis_degraded == 1
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "KIS API degraded 10분 이상 지속"
+          description: "자동 복원이 10분 이상 실패. 운영자가 KIS appkey/appsecret, 레이트리밋 상태를 직접 확인해야 함. 앱 내부 알림(SYSTEM_ERROR)도 동시에 발송되었어야 함."
+          runbook: "docs/operations/kis-degraded-recovery.md"
+
+      - alert: KISRecoveryAttemptsSpike
+        expr: |
+          rate(aqts_kis_recovery_attempts_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "KIS 복원 시도 빈도 급증 ({{ $value | humanize }}/s)"
+          description: "5분 이상 KIS 복원 시도율이 0.05/s (≈ 15회/5분) 초과. 쿨다운(75s) 기준으로는 반복 실패 상태. alert_threshold 도달 여부 확인."
+
+      - alert: KISRecoveryStalling
+        expr: |
+          (
+            increase(aqts_kis_recovery_attempts_total[15m]) > 5
+            and
+            increase(aqts_kis_recovery_success_total[15m]) == 0
+          )
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "KIS 복원 정체: 15분간 시도 {{ $value }}+ 회, 성공 0"
+          description: "최근 15분 동안 5회 이상 복원을 시도했지만 단 1건도 성공하지 못함. KIS 서비스 자체 장애 또는 appkey/appsecret 문제 가능성. 수동 개입 필요."
+          runbook: "docs/operations/kis-degraded-recovery.md"

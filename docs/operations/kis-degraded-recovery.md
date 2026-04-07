@@ -289,7 +289,42 @@ await _alert_manager.create_and_persist_alert(
 | `test_main_startup_injects_alerts_collection_into_singleton` | lifespan startup 이 실제로 `set_collection("alerts")` 를 호출함을 통합 검증 |
 | `test_set_collection_can_be_called_multiple_times` | 재주입/None 주입 안전성 |
 
-### 8.7 회고: 통합 테스트가 잡아낸 wiring 버그
+### 8.7 인프라 레벨 알림 (Prometheus AlertRule)
+
+앱 내부 알림(`AlertManager`)은 프로세스가 정상 동작 중일 때만 발송된다. 프로세스
+자체가 다운되거나 in-app 알림 경로가 막힌 경우를 대비해 Prometheus AlertRule 로
+이중화한다. 두 경로는 독립적으로 동작한다:
+
+| 경로 | 트리거 | 장단점 |
+|------|--------|--------|
+| 앱 내부 (`AlertManager`) | `consecutive_failures >= alert_threshold` | 정확한 컨텍스트(last_error, attempt_count) 포함, but 프로세스 다운 시 발송 불가 |
+| Prometheus (`aqts_kis_recovery` group) | `/metrics` scrape 기반 | 프로세스 다운 시에도 BackendDown alert 로 커버됨, but 컨텍스트 제한적 |
+
+`monitoring/prometheus/rules/aqts_alerts.yml` 에 추가된 4개 rule (그룹 `aqts_kis_recovery`):
+
+| alert | 조건 | severity | for | 의도 |
+|-------|------|----------|-----|------|
+| `KISDegraded` | `aqts_kis_degraded == 1` | warning | 2m | 자동 복원 진행 중 — 운영자 인지 |
+| `KISDegradedProlonged` | `aqts_kis_degraded == 1` | critical | 10m | 자동 복원 실패 지속 — 수동 개입 필요 |
+| `KISRecoveryAttemptsSpike` | `rate(aqts_kis_recovery_attempts_total[5m]) > 0.05` | warning | 5m | 쿨다운(75s) 기준 이상의 빈번한 시도 = 반복 실패 |
+| `KISRecoveryStalling` | 15분간 시도 > 5 AND 성공 == 0 | critical | 5m | 복원 경로 자체가 정체 — appkey/appsecret 의심 |
+
+### 8.8 Grafana 대시보드
+
+`monitoring/grafana/dashboards/aqts-overview.json` 에 4개 패널 추가 (row y=36~):
+
+| 패널 | 쿼리 | 타입 |
+|------|------|------|
+| KIS API Degraded | `aqts_kis_degraded` | stat (HEALTHY/DEGRADED mapping) |
+| KIS Recovery Success Ratio | `aqts_kis_recovery_success_total / clamp_min(aqts_kis_recovery_attempts_total, 1)` | stat (percentunit) |
+| KIS Recovery Attempts (5m rate) | `rate(attempts_total[5m])`, `rate(success_total[5m])` | timeseries |
+| KIS Recovery Totals | `attempts_total`, `success_total` | timeseries |
+
+`clamp_min(..., 1)` 로 0 분모를 회피한다. Success Ratio 는 누적 기준이므로 장기
+운영 관점에서는 안정적인 값을 유지하지만, 최근 incident 의 실시간 회복 여부는
+5m rate 패널로 확인한다.
+
+### 8.9 회고: 통합 테스트가 잡아낸 wiring 버그
 
 본 통합 테스트를 추가하면서 `main.py` 의 lazy import 가 잘못된 모듈을 참조하던
 버그를 발견했다:

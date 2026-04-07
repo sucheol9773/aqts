@@ -215,6 +215,91 @@
           "legendFormat": "{{endpoint}} 5xx"
         }
       ]
+    },
+    {
+      "title": "KIS API Degraded",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 36 },
+      "targets": [
+        {
+          "expr": "aqts_kis_degraded",
+          "legendFormat": "KIS"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          },
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "HEALTHY" }, "1": { "text": "DEGRADED" } } }
+          ]
+        }
+      }
+    },
+    {
+      "title": "KIS Recovery Success Ratio (cumulative)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 36 },
+      "targets": [
+        {
+          "expr": "aqts_kis_recovery_success_total / clamp_min(aqts_kis_recovery_attempts_total, 1)",
+          "legendFormat": "success ratio"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0.3 },
+              { "color": "green", "value": 0.7 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "KIS Recovery Attempts (5m rate)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 36 },
+      "targets": [
+        {
+          "expr": "rate(aqts_kis_recovery_attempts_total[5m])",
+          "legendFormat": "attempts/s"
+        },
+        {
+          "expr": "rate(aqts_kis_recovery_success_total[5m])",
+          "legendFormat": "success/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      }
+    },
+    {
+      "title": "KIS Recovery Totals",
+      "type": "timeseries",
+      "gridPos": { "h": 4, "w": 12, "x": 0, "y": 40 },
+      "targets": [
+        {
+          "expr": "aqts_kis_recovery_attempts_total",
+          "legendFormat": "attempts_total"
+        },
+        {
+          "expr": "aqts_kis_recovery_success_total",
+          "legendFormat": "success_total"
+        }
+      ]
     }
   ],
   "refresh": "30s",
