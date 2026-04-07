@@ -347,3 +347,95 @@ def viewer_token():
         "role": "viewer",
     }
     return AuthService.create_access_token(data)
+
+
+# ══════════════════════════════════════
+# Database Fixtures (v1.29+)
+# ══════════════════════════════════════
+@pytest.fixture
+def test_user_admin():
+    """Test admin user object (for mocking)"""
+    from api.middleware.auth import AuthService
+    from db.models.user import Role, User
+
+    admin_role = Role(id=1, name="admin", description="Administrator")
+    user = User(
+        id="test-admin-uuid",
+        username="admin",
+        password_hash=AuthService.hash_password("test-admin-password"),
+        email="admin@test.local",
+        role_id=1,
+        is_active=True,
+        is_locked=False,
+        totp_enabled=False,
+        totp_secret=None,
+        failed_login_attempts=0,
+    )
+    user.role = admin_role
+    return user
+
+
+@pytest.fixture
+def test_user_operator():
+    """Test operator user object (for mocking)"""
+    from api.middleware.auth import AuthService
+    from db.models.user import Role, User
+
+    operator_role = Role(id=2, name="operator", description="Operator")
+    user = User(
+        id="test-operator-uuid",
+        username="operator",
+        password_hash=AuthService.hash_password("test-operator-password"),
+        email="operator@test.local",
+        role_id=2,
+        is_active=True,
+        is_locked=False,
+        totp_enabled=False,
+        totp_secret=None,
+        failed_login_attempts=0,
+    )
+    user.role = operator_role
+    return user
+
+
+@pytest.fixture
+def db_session(test_user_admin):
+    """Mock AsyncSession for unit tests - supports mutable state"""
+    from unittest.mock import AsyncMock, MagicMock
+
+    # Create an AsyncMock for the session itself
+    session = AsyncMock()
+
+    # Keep a reference to test_user to support modifications (mutable state)
+    # Users are keyed by username for easy lookup
+    users_db = {"admin": test_user_admin}
+
+    # Mock execute to return the test user when queried by username
+    async def mock_execute(query):
+        # Build result object
+        result = MagicMock()
+        scalars_obj = MagicMock()
+
+        # Try to extract username from query or just return admin for any select(User) query
+        # In the authenticate method, it does: select(User).where(User.username == username)
+        # We'll just return the test_user for admin queries and None for others
+        found_user = None
+        query_str = str(query).lower()
+
+        # For "admin" or default, return test_user_admin
+        # This handles both explicit "admin" queries and the test case
+        if "select" in query_str and "user" in query_str.lower():
+            # Default to returning admin user for select(User) queries
+            # In real tests, the username parameter is passed separately
+            found_user = test_user_admin
+
+        scalars_obj.first = MagicMock(return_value=found_user)
+        result.scalars = MagicMock(return_value=scalars_obj)
+        return result
+
+    session.execute = mock_execute
+    # Make sure methods are directly callable as coroutines
+    session.commit = AsyncMock(return_value=None)
+    session.refresh = AsyncMock(return_value=None)  # Refresh is a no-op for in-memory objects
+    session.rollback = AsyncMock(return_value=None)
+    return session

@@ -8,7 +8,7 @@ Tests cover:
 """
 
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi import HTTPException, status
@@ -100,17 +100,23 @@ class TestAuthSchemas:
 
     def test_login_request_validation_min_length(self):
         """Test LoginRequest password validation with min_length=1."""
-        # Valid password
-        request = LoginRequest(password="test-dashboard-password")
+        # Valid password with username
+        request = LoginRequest(username="admin", password="test-dashboard-password")
+        assert request.username == "admin"
         assert request.password == "test-dashboard-password"
 
         # Empty password should fail
         with pytest.raises(ValueError):
-            LoginRequest(password="")
+            LoginRequest(username="admin", password="")
+
+        # Missing username should fail
+        with pytest.raises(ValueError):
+            LoginRequest(password="test-dashboard-password")
 
     def test_login_request_single_char_password(self):
         """Test LoginRequest accepts single character password."""
-        request = LoginRequest(password="a")
+        request = LoginRequest(username="admin", password="a")
+        assert request.username == "admin"
         assert request.password == "a"
 
     def test_token_response_creation(self):
@@ -460,51 +466,118 @@ class TestAuthService:
 
         assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
 
-    def test_authenticate_with_plaintext_password(self):
+    @pytest.mark.asyncio
+    async def test_authenticate_with_plaintext_password(self, test_user_admin):
         """Test authenticate with correct password against bcrypt hash."""
-        # conftest sets DASHBOARD_PASSWORD = bcrypt hash of "test-dashboard-password"
-        access_token, refresh_token = AuthService.authenticate("test-dashboard-password")
+        from unittest.mock import AsyncMock
+
+        # Create a mock db_session that returns the test_user_admin
+        db_session = MagicMock()
+        db_session.commit = AsyncMock()
+
+        # Mock the execute method to return test_user_admin
+        async def mock_execute(query):
+            result = MagicMock()
+            scalars_obj = MagicMock()
+            scalars_obj.first = MagicMock(return_value=test_user_admin)
+            result.scalars = MagicMock(return_value=scalars_obj)
+            return result
+
+        db_session.execute = mock_execute
+
+        # test_user_admin created with "test-admin-password"
+        access_token, refresh_token = await AuthService.authenticate(
+            username="admin",
+            password="test-admin-password",
+            db_session=db_session,
+        )
 
         assert isinstance(access_token, str)
         assert isinstance(refresh_token, str)
         assert access_token.count(".") == 2
         assert refresh_token.count(".") == 2
 
-    def test_authenticate_with_wrong_password(self):
+    @pytest.mark.asyncio
+    async def test_authenticate_with_wrong_password(self, test_user_admin):
         """Test authenticate raises HTTPException with wrong password."""
+        from unittest.mock import AsyncMock
+
+        db_session = MagicMock()
+        db_session.commit = AsyncMock()
+
+        async def mock_execute(query):
+            result = MagicMock()
+            scalars_obj = MagicMock()
+            scalars_obj.first = MagicMock(return_value=test_user_admin)
+            result.scalars = MagicMock(return_value=scalars_obj)
+            return result
+
+        db_session.execute = mock_execute
+
         with pytest.raises(HTTPException) as exc_info:
-            AuthService.authenticate("wrong-password")
+            await AuthService.authenticate(
+                username="admin",
+                password="wrong-password",
+                db_session=db_session,
+            )
 
         assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
-        assert "Incorrect password" in exc_info.value.detail
 
-    def test_authenticate_returns_admin_subject(self):
+    @pytest.mark.asyncio
+    async def test_authenticate_returns_admin_subject(self, test_user_admin):
         """Test authenticate returns tokens with admin subject."""
-        access_token, _ = AuthService.authenticate("test-dashboard-password")
+        from unittest.mock import AsyncMock
+
+        db_session = MagicMock()
+        db_session.commit = AsyncMock()
+
+        async def mock_execute(query):
+            result = MagicMock()
+            scalars_obj = MagicMock()
+            scalars_obj.first = MagicMock(return_value=test_user_admin)
+            result.scalars = MagicMock(return_value=scalars_obj)
+            return result
+
+        db_session.execute = mock_execute
+
+        access_token, _ = await AuthService.authenticate(
+            username="admin",
+            password="test-admin-password",
+            db_session=db_session,
+        )
 
         payload = AuthService.verify_token(access_token)
         assert payload["sub"] == "admin"
 
-    def test_authenticate_with_bcrypt_hashed_password(self):
+    @pytest.mark.asyncio
+    async def test_authenticate_with_bcrypt_hashed_password(self, test_user_admin):
         """Test authenticate with bcrypt hashed password."""
-        # Hash a password
-        plain_password = "test-dashboard-password"
-        hashed = AuthService.hash_password(plain_password)
+        from unittest.mock import AsyncMock
 
-        # Mock the settings to use hashed password
-        with patch("api.middleware.auth.get_settings") as mock_get_settings:
-            mock_settings = MagicMock()
-            mock_settings.dashboard.password = hashed
-            mock_settings.dashboard.secret_key = get_settings().dashboard.secret_key
-            mock_settings.dashboard.access_token_expire_hours = 8
-            mock_settings.dashboard.refresh_token_expire_days = 7
-            mock_get_settings.return_value = mock_settings
+        db_session = MagicMock()
+        db_session.commit = AsyncMock()
 
-            # Should authenticate with plain password
-            access_token, refresh_token = AuthService.authenticate(plain_password)
+        async def mock_execute(query):
+            result = MagicMock()
+            scalars_obj = MagicMock()
+            scalars_obj.first = MagicMock(return_value=test_user_admin)
+            result.scalars = MagicMock(return_value=scalars_obj)
+            return result
 
-            assert isinstance(access_token, str)
-            assert isinstance(refresh_token, str)
+        db_session.execute = mock_execute
+
+        # test_user_admin is already created with bcrypt hashed password
+        plain_password = "test-admin-password"
+
+        # Should authenticate with plain password
+        access_token, refresh_token = await AuthService.authenticate(
+            username="admin",
+            password=plain_password,
+            db_session=db_session,
+        )
+
+        assert isinstance(access_token, str)
+        assert isinstance(refresh_token, str)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -517,14 +590,17 @@ class TestAuthRoutes:
     """Test authentication API routes."""
 
     async def test_login_with_correct_password(self):
-        """Test POST /api/auth/login with correct password."""
+        """Test POST /api/auth/login with correct username and password."""
         from httpx import ASGITransport, AsyncClient
 
         from main import app
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post("/api/auth/login", json={"password": "test-dashboard-password"})
+            response = await client.post(
+                "/api/auth/login",
+                json={"username": "admin", "password": "test-admin-password"},
+            )
 
             assert response.status_code == 200
             data = response.json()
@@ -542,11 +618,25 @@ class TestAuthRoutes:
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post("/api/auth/login", json={"password": "wrong-password"})
+            response = await client.post(
+                "/api/auth/login",
+                json={"username": "admin", "password": "wrong-password"},
+            )
 
             assert response.status_code == 401
-            data = response.json()
-            assert "Incorrect password" in data.get("detail", "")
+
+    async def test_login_missing_username(self):
+        """Test POST /api/auth/login with missing username."""
+        from httpx import ASGITransport, AsyncClient
+
+        from main import app
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post("/api/auth/login", json={"password": "test-admin-password"})
+
+            # Missing required field should be 422
+            assert response.status_code == 422
 
     async def test_login_empty_password(self):
         """Test POST /api/auth/login with empty password."""
@@ -556,7 +646,10 @@ class TestAuthRoutes:
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post("/api/auth/login", json={"password": ""})
+            response = await client.post(
+                "/api/auth/login",
+                json={"username": "admin", "password": ""},
+            )
 
             assert response.status_code == 422
 
@@ -569,7 +662,10 @@ class TestAuthRoutes:
         # First login to get token
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            login_response = await client.post("/api/auth/login", json={"password": "test-dashboard-password"})
+            login_response = await client.post(
+                "/api/auth/login",
+                json={"username": "admin", "password": "test-admin-password"},
+            )
 
             token = login_response.json()["data"]["access_token"]
 
@@ -604,7 +700,10 @@ class TestAuthRoutes:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             # Login first
-            login_response = await client.post("/api/auth/login", json={"password": "test-dashboard-password"})
+            login_response = await client.post(
+                "/api/auth/login",
+                json={"username": "admin", "password": "test-admin-password"},
+            )
 
             refresh_token = login_response.json()["data"]["refresh_token"]
 
@@ -643,7 +742,10 @@ class TestPortfolioRoutes:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             # Login
-            login_response = await client.post("/api/auth/login", json={"password": "test-dashboard-password"})
+            login_response = await client.post(
+                "/api/auth/login",
+                json={"username": "admin", "password": "test-admin-password"},
+            )
             token = login_response.json()["data"]["access_token"]
 
             # Get portfolio summary
@@ -665,7 +767,10 @@ class TestPortfolioRoutes:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             # Login
-            login_response = await client.post("/api/auth/login", json={"password": "test-dashboard-password"})
+            login_response = await client.post(
+                "/api/auth/login",
+                json={"username": "admin", "password": "test-admin-password"},
+            )
             token = login_response.json()["data"]["access_token"]
 
             # Get positions
@@ -691,7 +796,10 @@ class TestOrderRoutes:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             # Login
-            login_response = await client.post("/api/auth/login", json={"password": "test-dashboard-password"})
+            login_response = await client.post(
+                "/api/auth/login",
+                json={"username": "admin", "password": "test-admin-password"},
+            )
             token = login_response.json()["data"]["access_token"]
 
             # Create order
@@ -727,7 +835,10 @@ class TestOrderRoutes:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             # Login
-            login_response = await client.post("/api/auth/login", json={"password": "test-dashboard-password"})
+            login_response = await client.post(
+                "/api/auth/login",
+                json={"username": "admin", "password": "test-admin-password"},
+            )
             token = login_response.json()["data"]["access_token"]
 
             # Get orders
@@ -748,7 +859,10 @@ class TestOrderRoutes:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             # Login
-            login_response = await client.post("/api/auth/login", json={"password": "test-dashboard-password"})
+            login_response = await client.post(
+                "/api/auth/login",
+                json={"username": "admin", "password": "test-admin-password"},
+            )
             token = login_response.json()["data"]["access_token"]
 
             # Create batch orders

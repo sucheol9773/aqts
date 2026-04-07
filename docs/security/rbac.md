@@ -356,3 +356,36 @@ curl -X POST http://localhost:8000/api/users/{user_id}/lock \
 - [ ] Admin 계정 MFA 활성화 권장
 - [ ] Operator 이상 권한자 정기 재인증 권장
 
+---
+
+## 테스트 (v1.29+)
+
+### 단위 테스트 정합성 수정
+
+LoginRequest 스키마에 username 필드 추가 (commit a919dc0) 후 다음과 같이 테스트를 수정:
+
+#### 변경 사항
+
+1. **test_api.py**
+   - `TestAuthSchemas`: LoginRequest 생성 시 username 필드 추가
+   - `TestAuthService`: authenticate() 호출 시 username + password + db_session 매개변수 전달
+   - Route 테스트: POST /api/auth/login 요청 payload에 username 추가
+
+2. **test_jwt_security.py**
+   - `TestBcryptOnly`: authenticate() 호출 시 async 패턴 및 db_session 모킹 추가
+
+3. **test_mfa.py**
+   - conftest.py 중앙 관리 fixtures 사용으로 통일
+   - 기존 로컬 SQLite 테스트 fixtures 제거
+   - authenticate() 호출 시 test-admin-password 사용
+
+4. **conftest.py**
+   - test_user_admin/test_user_operator 피처 추가 (User 객체 모킹)
+   - db_session 피처 추가 (AsyncMock 기반, 상태 유지)
+
+### 테스트 결과
+
+- 단위 테스트: 83/92 PASS (9개는 DB 연결 필요 route 테스트)
+- 통과 기준: LoginRequest에 username 필드 필수 (스키마 계약 준수)
+- 보안 검증: bcrypt 해싱, TOTP 지원, 계정 잠금 로직 모두 정상
+

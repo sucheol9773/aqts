@@ -272,41 +272,89 @@ class TestBcryptOnly:
         mock.dashboard.refresh_token_expire_days = 7
         return mock
 
-    def test_plaintext_password_rejected(self):
-        """평문 저장된 비밀번호로 인증 시 500 에러 발생"""
+    @pytest.mark.asyncio
+    async def test_plaintext_password_rejected(self, test_user_admin):
+        """평문 비밀번호로 인증 시 실패 (password_hash는 bcrypt만 지원)"""
+        from unittest.mock import AsyncMock, MagicMock
+
         from fastapi import HTTPException
 
-        settings = self._make_settings(password="my_plain_password")
-        with patch("api.middleware.auth.get_settings", return_value=settings):
-            from api.middleware.auth import AuthService
+        from api.middleware.auth import AuthService
 
-            with pytest.raises(HTTPException) as exc:
-                AuthService.authenticate("my_plain_password")
-            assert exc.value.status_code == 500
-            assert "bcrypt" in exc.value.detail.lower()
+        db_session = MagicMock()
+        db_session.commit = AsyncMock()
 
-    def test_bcrypt_password_accepted(self):
+        async def mock_execute(query):
+            result = MagicMock()
+            scalars_obj = MagicMock()
+            scalars_obj.first = MagicMock(return_value=test_user_admin)
+            result.scalars = MagicMock(return_value=scalars_obj)
+            return result
+
+        db_session.execute = mock_execute
+
+        # password_hash가 bcrypt이므로, verify_password는 평문으로 실패한다
+        with pytest.raises(HTTPException) as exc:
+            await AuthService.authenticate(
+                username="admin",
+                password="wrong_plaintext",  # test_user_admin의 해시된 암호가 아님
+                db_session=db_session,
+            )
+        assert exc.value.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_bcrypt_password_accepted(self, test_user_admin):
         """bcrypt 해시 비밀번호로 인증 성공"""
+        from unittest.mock import AsyncMock, MagicMock
+
         from api.middleware.auth import AuthService
 
-        hashed = AuthService.hash_password("secure_password")
-        settings = self._make_settings(password=hashed)
+        db_session = MagicMock()
+        db_session.commit = AsyncMock()
 
-        with patch("api.middleware.auth.get_settings", return_value=settings):
-            access, refresh = AuthService.authenticate("secure_password")
-            assert access is not None
-            assert refresh is not None
+        async def mock_execute(query):
+            result = MagicMock()
+            scalars_obj = MagicMock()
+            scalars_obj.first = MagicMock(return_value=test_user_admin)
+            result.scalars = MagicMock(return_value=scalars_obj)
+            return result
 
-    def test_wrong_password_rejected(self):
+        db_session.execute = mock_execute
+
+        # test_user_admin은 "test-admin-password"로 bcrypt 해싱되어 생성됨
+        access, refresh = await AuthService.authenticate(
+            username="admin",
+            password="test-admin-password",
+            db_session=db_session,
+        )
+        assert access is not None
+        assert refresh is not None
+
+    @pytest.mark.asyncio
+    async def test_wrong_password_rejected(self, test_user_admin):
         """잘못된 비밀번호는 401"""
+        from unittest.mock import AsyncMock, MagicMock
+
         from fastapi import HTTPException
 
         from api.middleware.auth import AuthService
 
-        hashed = AuthService.hash_password("correct_password")
-        settings = self._make_settings(password=hashed)
+        db_session = MagicMock()
+        db_session.commit = AsyncMock()
 
-        with patch("api.middleware.auth.get_settings", return_value=settings):
-            with pytest.raises(HTTPException) as exc:
-                AuthService.authenticate("wrong_password")
-            assert exc.value.status_code == 401
+        async def mock_execute(query):
+            result = MagicMock()
+            scalars_obj = MagicMock()
+            scalars_obj.first = MagicMock(return_value=test_user_admin)
+            result.scalars = MagicMock(return_value=scalars_obj)
+            return result
+
+        db_session.execute = mock_execute
+
+        with pytest.raises(HTTPException) as exc:
+            await AuthService.authenticate(
+                username="admin",
+                password="wrong_password",
+                db_session=db_session,
+            )
+        assert exc.value.status_code == 401

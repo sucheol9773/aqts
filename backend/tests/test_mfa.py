@@ -110,7 +110,7 @@ class TestAuthServiceAuthenticate:
 
         access_token, refresh_token = await AuthService.authenticate(
             test_user_admin.username,
-            "test-password",
+            "test-admin-password",  # test_user_admin created with this password
             db_session=db_session,
         )
 
@@ -133,7 +133,7 @@ class TestAuthServiceAuthenticate:
         with pytest.raises(HTTPException) as exc_info:
             await AuthService.authenticate(
                 test_user_admin.username,
-                "test-password",
+                "test-admin-password",
                 db_session=db_session,
             )
 
@@ -152,7 +152,7 @@ class TestAuthServiceAuthenticate:
         with pytest.raises(HTTPException) as exc_info:
             await AuthService.authenticate(
                 test_user_admin.username,
-                "test-password",
+                "test-admin-password",
                 db_session=db_session,
             )
 
@@ -211,7 +211,7 @@ class TestAuthServiceAuthenticate:
         with pytest.raises(HTTPException) as exc_info:
             await AuthService.authenticate(
                 test_user_admin.username,
-                "test-password",
+                "test-admin-password",
                 db_session=db_session,
                 # totp_code 없음
             )
@@ -233,7 +233,7 @@ class TestAuthServiceAuthenticate:
         with pytest.raises(HTTPException) as exc_info:
             await AuthService.authenticate(
                 test_user_admin.username,
-                "test-password",
+                "test-admin-password",
                 totp_code="000000",
                 db_session=db_session,
             )
@@ -259,7 +259,7 @@ class TestAuthServiceAuthenticate:
 
         access_token, refresh_token = await AuthService.authenticate(
             test_user_admin.username,
-            "test-password",
+            "test-admin-password",
             totp_code=code,
             db_session=db_session,
         )
@@ -268,59 +268,4 @@ class TestAuthServiceAuthenticate:
         assert refresh_token is not None
 
 
-# ══════════════════════════════════════
-# Test Fixtures (DB 세션)
-# ══════════════════════════════════════
-@pytest.fixture
-async def db_session():
-    """테스트용 DB 세션 (in-memory SQLite)"""
-    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
-    from db.database import Base
-    from db.models.user import Role
-
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-    async_session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-    async with async_session_factory() as session:
-        # 기본 역할 생성
-        admin_role = Role(id=3, name="admin", description="Admin role")
-        session.add(admin_role)
-        await session.commit()
-
-        yield session
-
-    await engine.dispose()
-
-
-@pytest.fixture
-async def test_user_admin(db_session):
-    """테스트용 admin 사용자"""
-    from uuid import uuid4
-
-    # Admin role 조회
-    from sqlalchemy import select
-
-    from api.middleware.auth import AuthService
-    from db.models.user import Role, User
-
-    result = await db_session.execute(select(Role).where(Role.name == "admin"))
-    admin_role = result.scalars().first()
-
-    user = User(
-        id=str(uuid4()),
-        username="testadmin",
-        email="admin@example.com",
-        password_hash=AuthService.hash_password("test-password"),
-        role_id=admin_role.id,
-        is_active=True,
-    )
-    db_session.add(user)
-    await db_session.commit()
-    await db_session.refresh(user)
-
-    return user
+# Fixtures are defined in conftest.py

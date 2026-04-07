@@ -101,20 +101,20 @@
 
 | Module | Feature | Status | Code Path | Tests | Notes |
 |--------|---------|--------|-----------|-------|-------|
-| middleware/auth | JWT 인증 (HS256 Bearer Token) + RBAC + TOTP MFA | Tested | api/middleware/auth.py | test_api.py (59), test_jwt_security.py (17), test_rbac.py (8), test_mfa.py (15) | Key Rotation (kid), jti + revocation, bcrypt, username/password 인증, role 클레임, TOTP 2FA |
+| middleware/auth | JWT 인증 (HS256 Bearer Token) + RBAC + TOTP MFA | Tested | api/middleware/auth.py | test_api.py (60), test_jwt_security.py (17), test_rbac.py (8), test_mfa.py (15) | Key Rotation (kid), jti + revocation, bcrypt, username/password 인증, role 클레임, TOTP 2FA |
 | middleware/rbac | 역할 기반 접근 제어 (viewer/operator/admin) | Tested | api/middleware/rbac.py | test_rbac.py (8) | require_viewer/operator/admin 의존성, 권한 검증 |
-| middleware/request_logger | 요청 로깅 미들웨어 | Tested | api/middleware/request_logger.py | test_api.py (59) | HTTP 요청/응답 로깅 |
-| routes/auth | 인증 (로그인·토큰·MFA·로그아웃) | Tested | api/routes/auth.py | test_api.py (59), test_mfa.py (15) | username/password 로그인, 토큰 갱신, MFA enroll/verify/disable, 로그아웃 |
+| middleware/request_logger | 요청 로깅 미들웨어 | Tested | api/middleware/request_logger.py | test_api.py (60) | HTTP 요청/응답 로깅 |
+| routes/auth | 인증 (로그인·토큰·MFA·로그아웃) | Tested | api/routes/auth.py | test_api.py (60), test_mfa.py (15) | username/password 로그인, 토큰 갱신, MFA enroll/verify/disable, 로그아웃 |
 | routes/users | 사용자 관리 (Admin only) | Tested | api/routes/users.py | test_users_api.py (8) | CRUD, 비밀번호 리셋, 잠금/해제, 역할 변경 |
-| schemas/auth | 인증 스키마 | Tested | api/schemas/auth.py | test_api.py (59) | LoginRequest (username/password/totp), MFAEnrollResponse, TokenResponse |
+| schemas/auth | 인증 스키마 | Tested | api/schemas/auth.py | test_api.py (60) | LoginRequest (username/password/totp), MFAEnrollResponse, TokenResponse |
 | schemas/users | 사용자 관리 스키마 | Tested | api/schemas/users.py | test_users_api.py (8) | UserCreateRequest, UserUpdateRequest, UserResponse |
-| routes/portfolio | 포트폴리오 (요약·보유·성과) | Tested | api/routes/portfolio.py | test_api.py (59) | 포트폴리오 조회, 성과 분석 |
-| routes/orders | 주문 (생성·배치·조회·취소) | Tested | api/routes/orders.py | test_api.py (59) | 주문 CRUD 작업 |
-| routes/profile | 투자자 프로필 (조회·수정) | Tested | api/routes/profile.py | test_api.py (59) | 프로필 조회 및 수정 |
-| routes/market | 시장 정보 (환율·지수·지표·유니버스) | Tested | api/routes/market.py | test_api.py (59) | 시장 데이터 조회 |
-| routes/alerts | 알림 (이력·통계·확인) | Tested | api/routes/alerts.py | test_api.py (59) | 알림 관리 |
-| routes/system | 시스템 (설정·백테스트·리밸런싱) | Tested | api/routes/system.py | test_api.py (59) | 시스템 관리 엔드포인트 |
-| schemas | Pydantic 요청/응답 모델 | Tested | api/schemas/common.py | test_api.py (59) | 18개 클래스, 6개 스키마 모듈 |
+| routes/portfolio | 포트폴리오 (요약·보유·성과) | Tested | api/routes/portfolio.py | test_api.py (60) | 포트폴리오 조회, 성과 분석 |
+| routes/orders | 주문 (생성·배치·조회·취소) | Tested | api/routes/orders.py | test_api.py (60) | 주문 CRUD 작업 |
+| routes/profile | 투자자 프로필 (조회·수정) | Tested | api/routes/profile.py | test_api.py (60) | 프로필 조회 및 수정 |
+| routes/market | 시장 정보 (환율·지수·지표·유니버스) | Tested | api/routes/market.py | test_api.py (60) | 시장 데이터 조회 |
+| routes/alerts | 알림 (이력·통계·확인) | Tested | api/routes/alerts.py | test_api.py (60) | 알림 관리 |
+| routes/system | 시스템 (설정·백테스트·리밸런싱) | Tested | api/routes/system.py | test_api.py (60) | 시스템 관리 엔드포인트 |
+| schemas | Pydantic 요청/응답 모델 | Tested | api/schemas/common.py | test_api.py (60) | 18개 클래스, 6개 스키마 모듈 |
 | routes/realtime | 실시간 시세 API (시세·스냅샷·상태) | Tested | api/routes/realtime.py | test_realtime.py (20) | GET /quotes, /quotes/{ticker}, /status |
 | middleware/rate_limiter | API Rate Limiting (slowapi) | Tested | api/middleware/rate_limiter.py | test_rate_limiter.py (7) | 로그인/API 엔드포인트 4개 제한 |
 
@@ -347,7 +347,7 @@
 ## Test Coverage Summary
 
 ```
-Total Tests: 3,201 tests (413 smoke-marked) — ALL PASS, Coverage 90%
+Total Tests: 3,233 tests (413 smoke-marked) — ALL PASS, Coverage 90%
 ├── Core Features: 40+ modules with passing tests
 ├── Data Contracts: 154 tests (9 contracts) [smoke]
 ├── Pipeline Gates: 59 tests (12 components)
