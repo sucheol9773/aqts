@@ -355,10 +355,13 @@ def viewer_token():
 @pytest.fixture
 def test_user_admin():
     """Test admin user object (for mocking)"""
+    from datetime import datetime, timezone
+
     from api.middleware.auth import AuthService
     from db.models.user import Role, User
 
     admin_role = Role(id=1, name="admin", description="Administrator")
+    now = datetime.now(timezone.utc)
     user = User(
         id="test-admin-uuid",
         username="admin",
@@ -370,6 +373,8 @@ def test_user_admin():
         totp_enabled=False,
         totp_secret=None,
         failed_login_attempts=0,
+        created_at=now,
+        updated_at=now,
     )
     user.role = admin_role
     return user
@@ -378,10 +383,13 @@ def test_user_admin():
 @pytest.fixture
 def test_user_operator():
     """Test operator user object (for mocking)"""
+    from datetime import datetime, timezone
+
     from api.middleware.auth import AuthService
     from db.models.user import Role, User
 
     operator_role = Role(id=2, name="operator", description="Operator")
+    now = datetime.now(timezone.utc)
     user = User(
         id="test-operator-uuid",
         username="operator",
@@ -393,22 +401,56 @@ def test_user_operator():
         totp_enabled=False,
         totp_secret=None,
         failed_login_attempts=0,
+        created_at=now,
+        updated_at=now,
     )
     user.role = operator_role
     return user
 
 
 @pytest.fixture
-def db_session(test_user_admin):
+def test_user_viewer():
+    """Test viewer user object (for mocking)"""
+    from datetime import datetime, timezone
+
+    from api.middleware.auth import AuthService
+    from db.models.user import Role, User
+
+    viewer_role = Role(id=3, name="viewer", description="Viewer")
+    now = datetime.now(timezone.utc)
+    user = User(
+        id="test-viewer-uuid",
+        username="viewer",
+        password_hash=AuthService.hash_password("test-viewer-password"),
+        email="viewer@test.local",
+        role_id=3,
+        is_active=True,
+        is_locked=False,
+        totp_enabled=False,
+        totp_secret=None,
+        failed_login_attempts=0,
+        created_at=now,
+        updated_at=now,
+    )
+    user.role = viewer_role
+    return user
+
+
+@pytest.fixture
+def db_session(test_user_admin, test_user_operator, test_user_viewer):
     """Mock AsyncSession for unit tests - supports mutable state"""
     from unittest.mock import AsyncMock, MagicMock
 
     # Create an AsyncMock for the session itself
     session = AsyncMock()
 
-    # Keep a reference to test_user to support modifications (mutable state)
+    # Keep a reference to test users to support modifications (mutable state)
     # Users are keyed by username for easy lookup
-    users_db = {"admin": test_user_admin}
+    users_db = {
+        "admin": test_user_admin,
+        "operator": test_user_operator,
+        "viewer": test_user_viewer,
+    }
 
     # Mock execute to return the test user when queried by username
     async def mock_execute(query):
@@ -430,6 +472,7 @@ def db_session(test_user_admin):
             found_user = test_user_admin
 
         scalars_obj.first = MagicMock(return_value=found_user)
+        scalars_obj.all = MagicMock(return_value=list(users_db.values()))
         result.scalars = MagicMock(return_value=scalars_obj)
         return result
 
@@ -439,3 +482,82 @@ def db_session(test_user_admin):
     session.refresh = AsyncMock(return_value=None)  # Refresh is a no-op for in-memory objects
     session.rollback = AsyncMock(return_value=None)
     return session
+
+
+# ══════════════════════════════════════
+# Integration Testing Fixtures
+# ══════════════════════════════════════
+@pytest.fixture
+def authenticated_app(test_user_admin, test_user_operator, test_user_viewer):
+    """FastAPI app with dependency overrides for integration tests"""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from db.database import get_db_session
+    from main import app
+
+    # Build in-memory user repository
+    users_db = {
+        "admin": test_user_admin,
+        "operator": test_user_operator,
+        "viewer": test_user_viewer,
+    }
+
+    # Create mock AsyncSession
+    async def get_mock_db_session():
+        session = AsyncMock()
+
+        # Keep state for the session
+        _users = dict(users_db)
+
+        async def mock_execute_impl(query, *args, **kwargs):
+            """Mock execute that handles both select() and text() queries"""
+            from sqlalchemy.sql import Select
+
+            result = MagicMock()
+            scalars_obj = MagicMock()
+
+            # Handle select() queries
+            if isinstance(query, Select):
+                # Get the table being selected
+                query_str = str(query).lower()
+
+                # Check if it's a User query
+                if "user" in query_str:
+                    # Check for where clause
+                    if hasattr(query, "whereclause") and query.whereclause is not None:
+                        # This is a select(User).where(...) query
+                        # We need to return the matching user
+                        # For now, return the first (admin) user as default
+                        # This is a simplification - in real scenarios, we'd need to parse the clause
+                        found_user = next(iter(_users.values()), None)
+                    else:
+                        # No where clause: return all users
+                        found_user = None
+                        scalars_obj.all = MagicMock(return_value=list(_users.values()))
+
+                    scalars_obj.first = MagicMock(return_value=found_user)
+                    result.scalars = MagicMock(return_value=scalars_obj)
+                    return result
+
+            # For text() and other queries, return empty result
+            scalars_obj.first = MagicMock(return_value=None)
+            scalars_obj.all = MagicMock(return_value=[])
+            result.scalars = MagicMock(return_value=scalars_obj)
+            return result
+
+        # Use AsyncMock's side_effect to call our implementation
+        session.execute = AsyncMock(side_effect=mock_execute_impl)
+        session.commit = AsyncMock(return_value=None)
+        session.refresh = AsyncMock(return_value=None)
+        session.rollback = AsyncMock(return_value=None)
+        session.get = AsyncMock(return_value=None)
+
+        return session
+
+    # Override the get_db_session dependency
+    app.dependency_overrides[get_db_session] = get_mock_db_session
+
+    yield app
+
+    # Cleanup: remove overrides
+    app.dependency_overrides.clear()

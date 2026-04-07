@@ -589,13 +589,11 @@ class TestAuthService:
 class TestAuthRoutes:
     """Test authentication API routes."""
 
-    async def test_login_with_correct_password(self):
+    async def test_login_with_correct_password(self, authenticated_app):
         """Test POST /api/auth/login with correct username and password."""
         from httpx import ASGITransport, AsyncClient
 
-        from main import app
-
-        transport = ASGITransport(app=app)
+        transport = ASGITransport(app=authenticated_app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.post(
                 "/api/auth/login",
@@ -610,13 +608,11 @@ class TestAuthRoutes:
             assert "refresh_token" in data["data"]
             assert data["data"]["token_type"] == "bearer"
 
-    async def test_login_with_wrong_password(self):
+    async def test_login_with_wrong_password(self, authenticated_app):
         """Test POST /api/auth/login with wrong password."""
         from httpx import ASGITransport, AsyncClient
 
-        from main import app
-
-        transport = ASGITransport(app=app)
+        transport = ASGITransport(app=authenticated_app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.post(
                 "/api/auth/login",
@@ -653,14 +649,12 @@ class TestAuthRoutes:
 
             assert response.status_code == 422
 
-    async def test_get_me_with_valid_token(self):
+    async def test_get_me_with_valid_token(self, authenticated_app):
         """Test GET /api/auth/me with valid token."""
         from httpx import ASGITransport, AsyncClient
 
-        from main import app
-
         # First login to get token
-        transport = ASGITransport(app=app)
+        transport = ASGITransport(app=authenticated_app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             login_response = await client.post(
                 "/api/auth/login",
@@ -691,13 +685,11 @@ class TestAuthRoutes:
             # 인증 헤더 미제공 시 401 Unauthorized (RFC 7235)
             assert response.status_code == 401
 
-    async def test_refresh_token_with_valid_refresh_token(self):
+    async def test_refresh_token_with_valid_refresh_token(self, authenticated_app):
         """Test POST /api/auth/refresh with valid refresh token."""
         from httpx import ASGITransport, AsyncClient
 
-        from main import app
-
-        transport = ASGITransport(app=app)
+        transport = ASGITransport(app=authenticated_app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             # Login first
             login_response = await client.post(
@@ -730,16 +722,15 @@ class TestAuthRoutes:
 
 
 @pytest.mark.asyncio
+@pytest.mark.asyncio
 class TestPortfolioRoutes:
     """Test portfolio API routes."""
 
-    async def test_get_portfolio_summary_with_auth(self):
+    async def test_get_portfolio_summary_with_auth(self, authenticated_app):
         """Test GET /api/portfolio/summary with authentication."""
         from httpx import ASGITransport, AsyncClient
 
-        from main import app
-
-        transport = ASGITransport(app=app)
+        transport = ASGITransport(app=authenticated_app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             # Login
             login_response = await client.post(
@@ -758,13 +749,11 @@ class TestPortfolioRoutes:
             assert "data" in data
             assert "total_value" in data["data"]
 
-    async def test_get_portfolio_positions_with_auth(self):
+    async def test_get_portfolio_positions_with_auth(self, authenticated_app):
         """Test GET /api/portfolio/positions with authentication."""
         from httpx import ASGITransport, AsyncClient
 
-        from main import app
-
-        transport = ASGITransport(app=app)
+        transport = ASGITransport(app=authenticated_app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             # Login
             login_response = await client.post(
@@ -787,13 +776,11 @@ class TestPortfolioRoutes:
 class TestOrderRoutes:
     """Test order API routes."""
 
-    async def test_create_order_with_auth(self):
+    async def test_create_order_with_auth(self, authenticated_app):
         """Test POST /api/orders/ with authentication."""
         from httpx import ASGITransport, AsyncClient
 
-        from main import app
-
-        transport = ASGITransport(app=app)
+        transport = ASGITransport(app=authenticated_app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             # Login
             login_response = await client.post(
@@ -826,13 +813,11 @@ class TestOrderRoutes:
             # 인증 헤더 미제공 시 401 Unauthorized (RFC 7235)
             assert response.status_code == 401
 
-    async def test_get_orders_with_auth(self):
+    async def test_get_orders_with_auth(self, authenticated_app):
         """Test GET /api/orders/ with authentication."""
         from httpx import ASGITransport, AsyncClient
 
-        from main import app
-
-        transport = ASGITransport(app=app)
+        transport = ASGITransport(app=authenticated_app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             # Login
             login_response = await client.post(
@@ -850,13 +835,11 @@ class TestOrderRoutes:
             assert data["success"] is True
             assert isinstance(data["data"], list)
 
-    async def test_create_batch_orders_with_auth(self):
+    async def test_create_batch_orders_with_auth(self, authenticated_app):
         """Test POST /api/orders/batch with authentication."""
         from httpx import ASGITransport, AsyncClient
 
-        from main import app
-
-        transport = ASGITransport(app=app)
+        transport = ASGITransport(app=authenticated_app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             # Login
             login_response = await client.post(

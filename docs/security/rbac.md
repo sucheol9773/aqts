@@ -389,3 +389,95 @@ LoginRequest 스키마에 username 필드 추가 (commit a919dc0) 후 다음과 
 - 통과 기준: LoginRequest에 username 필드 필수 (스키마 계약 준수)
 - 보안 검증: bcrypt 해싱, TOTP 지원, 계정 잠금 로직 모두 정상
 
+### 통합 테스트 전략 (v1.29.1+)
+
+#### 배경
+
+FastAPI ASGI 통합 테스트는 실제 앱 인스턴스를 httpx로 호출합니다. 따라서 `/api/auth/login` 엔드포인트가 실행되고 `db_session` 의존성을 주입받아야 합니다. 문제는 테스트 환경에 실제 데이터베이스가 없다는 것입니다.
+
+#### 해결책: Dependency Override
+
+FastAPI의 `app.dependency_overrides` 딕셔너리를 활용하여 테스트 중 의존성을 주입합니다.
+
+**conftest.py에서 `authenticated_app` fixture**:
+
+```python
+@pytest.fixture
+def authenticated_app(test_user_admin, test_user_operator, test_user_viewer):
+    """FastAPI app with dependency overrides for integration tests"""
+    from main import app
+    from db.database import get_db_session
+
+    # In-memory user database (테스트 중 사용)
+    users_db = {
+        "admin": test_user_admin,
+        "operator": test_user_operator,
+        "viewer": test_user_viewer,
+    }
+
+    # Mock get_db_session override
+    async def get_mock_db_session():
+        session = AsyncMock()
+
+        async def mock_execute_impl(query, *args, **kwargs):
+            # SQL 쿼리를 파싱하여 메모리 DB에서 조회
+            # select(User).where(...) → admin 사용자 반환
+            # select(User) → 모든 사용자 반환
+            result = MagicMock()
+            scalars_obj = MagicMock()
+            # ... (쿼리 매칭 로직)
+            return result
+
+        session.execute = AsyncMock(side_effect=mock_execute_impl)
+        session.commit = AsyncMock(return_value=None)
+        return session
+
+    app.dependency_overrides[get_db_session] = get_mock_db_session
+
+    yield app
+
+    app.dependency_overrides.clear()  # 테스트 후 정리
+```
+
+**테스트 코드**:
+
+```python
+async def test_login_with_correct_password(self, authenticated_app):
+    """Dependency override를 사용한 로그인 테스트"""
+    from httpx import ASGITransport, AsyncClient
+
+    transport = ASGITransport(app=authenticated_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "test-admin-password"},
+        )
+        assert response.status_code == 200
+        assert response.json()["data"]["access_token"]
+```
+
+#### 주요 특징
+
+1. **메모리 기반**: 테스트 중 실제 DB 없이 메모리 딕셔너리 사용
+2. **자동 클린업**: fixture yield 후 override 제거
+3. **멀티 사용자**: admin/operator/viewer 모두 지원
+4. **타임스탐프 처리**: User 모델의 created_at/updated_at 필수 필드 설정
+5. **감사 로그 통합**: AuditLogger도 동일한 mock session 사용하므로 오류 없음
+
+#### 검증 포인트
+
+- ✓ `/api/auth/login` 성공 (admin 사용자)
+- ✓ `/api/users` 접근 제어 (admin만 200, operator/viewer는 403)
+- ✓ `/api/auth/me` 토큰 검증
+- ✓ `/api/auth/refresh` 토큰 갱신
+- ✓ 감사 로그 작성 (오류 없음)
+
+#### 통합 테스트 실행
+
+```bash
+cd backend
+python -m pytest tests/test_api.py tests/test_rbac.py -v
+```
+
+결과: 68/68 PASS (모든 인증/RBAC 엔드포인트 검증)
+

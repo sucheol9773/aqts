@@ -47,13 +47,11 @@ class TestRBACRoles:
 class TestRBACEndpoints:
     """RBAC 엔드포인트 접근 제어"""
 
-    async def test_users_endpoint_requires_admin(self, viewer_token, operator_token, admin_token):
+    async def test_users_endpoint_requires_admin(self, authenticated_app, viewer_token, operator_token, admin_token):
         """GET /users는 admin만 접근 가능"""
         from httpx import ASGITransport, AsyncClient
 
-        from main import app
-
-        transport = ASGITransport(app=app)
+        transport = ASGITransport(app=authenticated_app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             # Viewer: 403
             response = await client.get(
@@ -76,13 +74,11 @@ class TestRBACEndpoints:
             )
             assert response.status_code == 200
 
-    async def test_me_endpoint_requires_authentication(self):
+    async def test_me_endpoint_requires_authentication(self, authenticated_app):
         """GET /auth/me는 인증 필수 (모든 역할)"""
         from httpx import ASGITransport, AsyncClient
 
-        from main import app
-
-        transport = ASGITransport(app=app)
+        transport = ASGITransport(app=authenticated_app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             # 토큰 없음: 401
             response = await client.get("/api/auth/me")
