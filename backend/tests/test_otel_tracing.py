@@ -67,17 +67,30 @@ class TestTracingModule:
         result = setup_tracing(app=None)
         assert result is None
 
-    def test_setup_tracing_returns_none_in_testing(self):
+    def test_setup_tracing_returns_none_in_testing_1(self):
         """TESTING=1 환경에서 setup_tracing이 None 반환"""
         from core.monitoring.tracing import setup_tracing
 
-        # TESTING=1은 conftest에서 이미 설정됨
+        os.environ["TESTING"] = "1"
         os.environ["OTEL_ENABLED"] = "true"
         try:
             result = setup_tracing(app=None)
             assert result is None
         finally:
             os.environ["OTEL_ENABLED"] = "false"
+
+    def test_setup_tracing_returns_none_in_testing_true(self):
+        """TESTING=true 환경에서 setup_tracing이 None 반환 (CI 환경)"""
+        from core.monitoring.tracing import setup_tracing
+
+        os.environ["TESTING"] = "true"
+        os.environ["OTEL_ENABLED"] = "true"
+        try:
+            result = setup_tracing(app=None)
+            assert result is None
+        finally:
+            os.environ["OTEL_ENABLED"] = "false"
+            os.environ["TESTING"] = "1"
 
 
 class TestNoOpTracer:

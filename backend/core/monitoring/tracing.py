@@ -34,7 +34,7 @@ def setup_tracing(app=None) -> Optional[object]:
     Returns:
         TracerProvider 또는 None (비활성화 시)
     """
-    if os.environ.get("TESTING") == "1":
+    if os.environ.get("TESTING") in ("1", "true", "True"):
         logger.debug("OpenTelemetry disabled in test environment")
         return None
 

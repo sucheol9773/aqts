@@ -169,7 +169,7 @@
 | db_backup | DB 백업 자동화 (pg_dump + mongodump + GCS) | Tested | scripts/backup_db.sh | test_scheduler_separation.py (33) | 24시간 주기 cron 컨테이너, GCS 업로드, 로컬 보관 정리, 복원 스크립트 |
 | pitr_wal_archive | PostgreSQL PITR (WAL 아카이빙) | Tested | docker-compose.yml | test_scheduler_separation.py (33) | wal_level=replica, archive_mode=on, 5분 archive_timeout, WAL 전용 볼륨 |
 | scheduler_separation | 스케줄러 컨테이너 분리 (장애 격리) | Tested | scheduler_main.py | test_scheduler_separation.py (33) | SCHEDULER_ENABLED 환경변수, 헬스체크 external 상태, API/스케줄러 독립 장애 격리 |
-| otel_tracing | OpenTelemetry 분산 추적 | Tested | core/monitoring/tracing.py | test_otel_tracing.py (27) | FastAPI/SQLAlchemy/httpx/Redis 자동 계측, OTel Collector + Jaeger, trace_id 로그/헤더 전파, NoOp fallback |
+| otel_tracing | OpenTelemetry 분산 추적 | Tested | core/monitoring/tracing.py | test_otel_tracing.py (28) | FastAPI/SQLAlchemy/httpx/Redis 자동 계측, OTel Collector + Jaeger, trace_id 로그/헤더 전파, NoOp fallback |
 
 ---
 
