@@ -16,7 +16,8 @@ concurrency:
 env:
   PYTHON_VERSION: "3.11"
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}/backend
+  # ghcr.io/<owner>/aqts-backend (lowercase 강제)
+  IMAGE_NAME: ${{ github.repository_owner }}/aqts-backend
 
 jobs:
   # ──────────────────────────────────
@@ -42,6 +43,26 @@ jobs:
 
       - name: Black format check
         run: cd backend && black --check . --config pyproject.toml
+
+      # ── SCA: Python 의존성 취약점 스캔 (10위 supply-chain) ──
+      # pip-audit 는 OSV 데이터베이스 기반 CVE 검사. 화이트리스트는
+      # backend/.pip-audit-ignore 에 만료일 + 사유와 함께 기록.
+      - name: Install pip-audit
+        run: pip install pip-audit==2.7.3
+
+      - name: Python 의존성 CVE 스캔 (pip-audit)
+        run: |
+          cd backend
+          IGNORE_FLAGS=""
+          if [ -f .pip-audit-ignore ]; then
+            while IFS= read -r line; do
+              # 주석/공백 무시
+              [[ "$line" =~ ^#.*$ || -z "$line" ]] && continue
+              VULN_ID=$(echo "$line" | awk '{print $1}')
+              IGNORE_FLAGS="$IGNORE_FLAGS --ignore-vuln $VULN_ID"
+            done < .pip-audit-ignore
+          fi
+          pip-audit -r requirements.txt --strict --vulnerability-service osv $IGNORE_FLAGS
 
   # ──────────────────────────────────
   # Stage 2: Smoke Tests (빠른 핵심 검증)
@@ -182,14 +203,25 @@ jobs:
           python -m pytest tests/ --cov=core --cov=config --cov=db --cov=api --cov=contracts \
             --cov-report=term --cov-fail-under=80 -q --no-header 2>&1 | tail -20 || true
 
-  # ──────────────────────────────────
-  # Stage 4: Docker Build 검증
-  # ──────────────────────────────────
+  # ──────────────────────────────────────────────────────────────
+  # Stage 4: Docker Build + Push + SBOM + Sign (10위 supply-chain)
+  # ──────────────────────────────────────────────────────────────
+  # PR 에서는 push 없이 build 만 검증, main push 에서는 GHCR push +
+  # SBOM 생성 + grype CVE 스캔 + cosign keyless 서명/attestation 수행.
   docker-build:
-    name: Docker Build Verify
+    name: Docker Build & Sign
     runs-on: ubuntu-latest
     needs: test
     if: github.event_name == 'push'
+
+    permissions:
+      contents: read
+      packages: write       # GHCR push
+      id-token: write       # cosign keyless OIDC
+
+    outputs:
+      image_digest: ${{ steps.build.outputs.digest }}
+      image_ref: ${{ steps.meta.outputs.tags }}
 
     steps:
       - uses: actions/checkout@v4
@@ -197,35 +229,138 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build backend image
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,format=short,prefix=sha-
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build & push backend image
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: ./backend
-          push: false
-          tags: aqts-backend:ci-${{ github.sha }}
+          push: ${{ github.ref == 'refs/heads/main' }}
+          load: ${{ github.ref != 'refs/heads/main' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          load: true
+          provenance: true
+          sbom: true
 
-      - name: Verify image
+      # ── 빌드된 이미지 기본 검증 (non-root, healthcheck) ──
+      - name: Verify image attributes
+        if: github.ref == 'refs/heads/main'
         run: |
-          # 이미지 존재 확인
-          docker image inspect aqts-backend:ci-${{ github.sha }} > /dev/null
-          echo "✅ Image built successfully"
-
-          # non-root 사용자 확인 (보안 요건)
-          USER=$(docker inspect --format '{{.Config.User}}' aqts-backend:ci-${{ github.sha }})
-          if [ "$USER" = "appuser" ] || [ "$USER" = "1000" ]; then
-            echo "✅ Non-root user: $USER"
-          else
+          REF="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}"
+          docker pull "$REF"
+          USER=$(docker inspect --format '{{.Config.User}}' "$REF")
+          if [ "$USER" != "appuser" ] && [ "$USER" != "1000" ]; then
             echo "::error::Container runs as root (user=$USER)"
             exit 1
           fi
-
-          # 헬스체크 설정 확인
-          HC=$(docker inspect --format '{{.Config.Healthcheck.Test}}' aqts-backend:ci-${{ github.sha }})
-          echo "✅ Healthcheck configured: $HC"
-
-          # 이미지 크기 출력
-          SIZE=$(docker image inspect aqts-backend:ci-${{ github.sha }} --format '{{.Size}}' | numfmt --to=iec 2>/dev/null || echo "unknown")
+          echo "✅ Non-root user: $USER"
+          HC=$(docker inspect --format '{{.Config.Healthcheck.Test}}' "$REF")
+          echo "✅ Healthcheck: $HC"
+          SIZE=$(docker image inspect "$REF" --format '{{.Size}}' | numfmt --to=iec 2>/dev/null || echo "unknown")
           echo "📦 Image size: $SIZE"
+
+      # ── PR 에서는 load 한 로컬 이미지로만 검증 ──
+      - name: Verify image attributes (PR)
+        if: github.ref != 'refs/heads/main'
+        run: |
+          TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -1)
+          USER=$(docker inspect --format '{{.Config.User}}' "$TAG")
+          if [ "$USER" != "appuser" ] && [ "$USER" != "1000" ]; then
+            echo "::error::Container runs as root (user=$USER)"
+            exit 1
+          fi
+          echo "✅ Non-root user: $USER"
+
+      # ── SBOM 생성 (CycloneDX JSON) — main 에서만 ──
+      - name: Generate SBOM (syft)
+        if: github.ref == 'refs/heads/main'
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          format: cyclonedx-json
+          output-file: sbom.cdx.json
+          upload-artifact: true
+          upload-artifact-retention: 90
+
+      # ── 컨테이너 이미지 CVE 스캔 (grype) ──
+      - name: Scan image for vulnerabilities (grype)
+        if: github.ref == 'refs/heads/main'
+        uses: anchore/scan-action@v3
+        id: grype
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          fail-build: true
+          severity-cutoff: high
+          only-fixed: false
+
+      - name: Upload grype SARIF to GitHub Security
+        if: github.ref == 'refs/heads/main' && always() && steps.grype.outputs.sarif != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ steps.grype.outputs.sarif }}
+
+      # ── cosign keyless 서명 (Sigstore Fulcio + Rekor) ──
+      - name: Install cosign
+        if: github.ref == 'refs/heads/main'
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: v2.4.0
+
+      - name: Sign image with cosign (keyless)
+        if: github.ref == 'refs/heads/main'
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: |
+          cosign sign --yes \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}"
+
+      - name: Attach SBOM as cosign attestation
+        if: github.ref == 'refs/heads/main'
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: |
+          cosign attest --yes \
+            --predicate sbom.cdx.json \
+            --type cyclonedx \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}"
+
+      - name: Verify signature (sanity check)
+        if: github.ref == 'refs/heads/main'
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: |
+          cosign verify \
+            --certificate-identity-regexp "^https://github.com/${{ github.repository }}/" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}"
+
+      - name: Print image reference for downstream CD
+        if: github.ref == 'refs/heads/main'
+        run: |
+          echo "## 🐳 Built & Signed Image" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Repository: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Digest: \`${{ steps.build.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Tags:" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
