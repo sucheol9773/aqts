@@ -156,30 +156,37 @@ jobs:
         env:
           SERVER_IP: ${{ secrets.GCP_SERVER_IP }}
           SERVER_USER: ${{ secrets.GCP_SERVER_USER }}
+          IMAGE_NAMESPACE: ${{ env.IMAGE_NAMESPACE }}
+          IMAGE_TAG: sha-${{ steps.snapshot.outputs.short_sha || github.sha }}
         run: |
-          ssh -T -i ~/.ssh/gcp_key ${SERVER_USER}@${SERVER_IP} bash -s << 'VERIFY_SCRIPT'
+          # heredoc 을 unquoted (VERIFY_SCRIPT) 로 두어 GA 컨텍스트 변수가 inline 치환되도록 한다.
+          # docker-compose.yml 이 IMAGE_NAMESPACE 를 required 변수로 요구하므로
+          # 원격 셸에서 export 된 상태여야 `docker compose ps` 가 동작한다.
+          ssh -T -i ~/.ssh/gcp_key ${SERVER_USER}@${SERVER_IP} bash -s <<VERIFY_SCRIPT
             set -e
             cd ~/aqts
+            export IMAGE_NAMESPACE="${IMAGE_NAMESPACE}"
+            export IMAGE_TAG="${IMAGE_TAG}"
 
             echo "═══ Health Check ═══"
-            HEALTH=$(curl -sf http://localhost:8000/api/system/health)
-            echo "Health: $HEALTH"
+            HEALTH=\$(curl -sf http://localhost:8000/api/system/health)
+            echo "Health: \$HEALTH"
 
             echo "═══ Container Status ═══"
-            TOTAL=$(docker compose ps --format '{{.Name}}' | wc -l)
-            RUNNING=$(docker compose ps --format '{{.Name}} {{.Status}}' | grep -c "Up" || true)
-            echo "Running containers: $RUNNING/$TOTAL"
+            TOTAL=\$(docker compose ps --format '{{.Name}}' | wc -l)
+            RUNNING=\$(docker compose ps --format '{{.Name}} {{.Status}}' | grep -c "running" || true)
+            echo "Running containers: \$RUNNING/\$TOTAL"
 
             # 핵심 서비스 최소 4개 (postgres, mongodb, redis, backend)
-            if [ "$RUNNING" -lt 4 ]; then
+            if [ "\$RUNNING" -lt 4 ]; then
               echo "❌ Core containers not running (minimum 4 required)"
               docker compose ps
               exit 1
             fi
 
             echo "═══ Version Check ═══"
-            DEPLOYED_SHA=$(git rev-parse --short HEAD)
-            echo "Deployed commit: $DEPLOYED_SHA"
+            DEPLOYED_SHA=\$(git rev-parse --short HEAD)
+            echo "Deployed commit: \$DEPLOYED_SHA"
 
             echo "✅ All verification checks passed"
           VERIFY_SCRIPT
@@ -213,6 +220,14 @@ jobs:
             git reset --hard ${PREV_SHA}
 
             echo "═══ Verify previous image signature ═══"
+            # 10위(SBOM/cosign) 도입 이전 SHA 는 GHCR 에 이미지/서명이 모두 없을 수 있다.
+            # 이 경우 manifest_unknown 을 graceful 처리하고 rollback 을 중단한다 —
+            # 이는 의도적 한계이며, 10위 머지 이후 두 번째 배포부터는 정상 작동한다.
+            if ! docker manifest inspect "${IMAGE_REF}" > /dev/null 2>&1; then
+              echo "⚠️  Previous image ${IMAGE_REF} not found in GHCR (pre-10위 commit)."
+              echo "⚠️  Skipping rollback — manual intervention required."
+              exit 0
+            fi
             cosign verify \
               --certificate-identity-regexp "^https://github.com/${REPO_FULL}/" \
               --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
