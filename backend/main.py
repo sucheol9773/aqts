@@ -8,6 +8,7 @@ Lifecycle:
 """
 
 import asyncio
+import os
 import signal
 from contextlib import asynccontextmanager
 
@@ -38,6 +39,13 @@ from api.routes import (
 from config.logging import logger, setup_logging
 from config.settings import get_settings
 from core.data_collector.kis_client import KISClient
+from core.data_collector.kis_recovery import (
+    DEFAULT_COOLDOWN_SECONDS as KIS_RECOVERY_DEFAULT_COOLDOWN,
+)
+from core.data_collector.kis_recovery import (
+    KISRecoveryState,
+    try_recover_kis,
+)
 from core.graceful_shutdown import GracefulShutdownManager
 from core.monitoring.metrics import COMPONENT_HEALTH, SYSTEM_STATUS, setup_prometheus
 from core.monitoring.tracing import setup_tracing
@@ -53,6 +61,7 @@ shutdown_event = asyncio.Event()
 # 스케줄러 & KIS 클라이언트 (startup에서 초기화)
 trading_scheduler: TradingScheduler | None = None
 kis_client: KISClient | None = None
+kis_recovery_state: KISRecoveryState | None = None
 
 
 def _signal_handler(sig, frame):
@@ -111,7 +120,18 @@ async def lifespan(app: FastAPI):
             logger.info("TradingScheduler disabled (SCHEDULER_ENABLED=false, 별도 컨테이너 실행)")
 
         # ── KIS API 토큰 초기화 ──
-        global kis_client
+        # 실패해도 lifespan 은 계속 진행하고 health 엔드포인트에서 자동 복원을 시도한다.
+        # 쿨다운(KIS_RECOVERY_COOLDOWN_SECONDS, 기본 75s)은 EGW00133(1분 1회 제한) 회피용.
+        global kis_client, kis_recovery_state
+        try:
+            cooldown = int(os.environ.get("KIS_RECOVERY_COOLDOWN_SECONDS", str(KIS_RECOVERY_DEFAULT_COOLDOWN)))
+        except ValueError:
+            logger.warning(
+                "KIS_RECOVERY_COOLDOWN_SECONDS 파싱 실패 — 기본값 사용 " f"({KIS_RECOVERY_DEFAULT_COOLDOWN}s)"
+            )
+            cooldown = KIS_RECOVERY_DEFAULT_COOLDOWN
+        kis_recovery_state = KISRecoveryState(cooldown_seconds=cooldown)
+        app.state.kis_recovery_state = kis_recovery_state
         try:
             kis_client = KISClient()
             if not settings.kis.is_backtest:
@@ -120,9 +140,10 @@ async def lifespan(app: FastAPI):
             else:
                 logger.info("KIS BACKTEST 모드 — 토큰 발급 건너뜀")
         except Exception as e:
-            logger.warning(f"KIS 토큰 초기화 실패 (degraded): {e}")
+            logger.warning(f"KIS 토큰 초기화 실패 (degraded, 자동 복원 대기): {e}")
             kis_client = None
             app.state.kis_degraded = True
+            kis_recovery_state.mark_degraded(str(e))
 
         logger.info("AQTS startup complete. System ready.")
 
@@ -251,7 +272,23 @@ async def health_check():
     else:
         health["components"]["scheduler"] = "stopped"
 
-    # KIS API 상태 (degraded 허용)
+    # KIS API 상태 (degraded → 자동 복원 시도)
+    # 쿨다운이 만료되지 않았거나 backtest 모드면 try_recover_kis 가 즉시 None 을 반환.
+    settings_local = get_settings()
+    state_obj: KISRecoveryState | None = getattr(app.state, "kis_recovery_state", None)
+    if getattr(app.state, "kis_degraded", False) and state_obj is not None and not settings_local.kis.is_backtest:
+
+        async def _kis_client_factory() -> KISClient:
+            client = KISClient()
+            await client._token_manager.get_access_token()
+            return client
+
+        recovered = await try_recover_kis(state_obj, _kis_client_factory)
+        if recovered is not None:
+            global kis_client
+            kis_client = recovered
+            app.state.kis_degraded = False
+
     if getattr(app.state, "kis_degraded", False):
         health["components"]["kis_api"] = "degraded"
         health["status"] = "degraded"
