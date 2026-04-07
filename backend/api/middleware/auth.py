@@ -144,7 +144,8 @@ class AuthService:
         """
         try:
             totp = pyotp.TOTP(secret)
-            return totp.verify(code)
+            # valid_window=1: ±30s 클럭 스큐 허용 (RFC 6238 §5.2 권장)
+            return totp.verify(code, valid_window=1)
         except Exception:
             return False
 
