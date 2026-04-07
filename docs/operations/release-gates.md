@@ -115,6 +115,7 @@ Gate E: PASS (ASC 운영책임자 서명 완료, 2026-04-05)
 **결론: Gate A~E 전 게이트 PASS. 배포 승인 완료.**
 
 ### 변경 이력
+- v1.27 (2026-04-07): 환경변수 bool 표기 표준화 — `core.utils.env.env_bool()` 단일 진입점, 표준 'true'/'false' 강제, 하위호환(1/0/yes/no/on/off) 경고 1회 + Prometheus counter `aqts_env_bool_nonstandard_total`, `AQTS_STRICT_BOOL` Phase 2 승격 스위치, 정적 검사 `scripts/check_bool_literals.py` (Doc Sync 워크플로 통합), `tracing.py`/`rate_limiter.py`/`main.py` ad-hoc 파싱 제거, conftest TESTING='true' 통일, 34 tests 추가, 테스트 3,200건
 - v1.26 (2026-04-07): 관측성 고도화 — OpenTelemetry 분산 추적 (FastAPI/SQLAlchemy/httpx/Redis 자동 계측), OTel Collector + Jaeger docker-compose 서비스, trace_id 로그/응답 헤더 전파, NoOp fallback (graceful degradation), 28 tests 추가, 테스트 3,166건
 - v1.25 (2026-04-07): 신뢰성/가용성 보강 + 아키텍처 분리 — DB 백업 자동화 (pg_dump/mongodump cron 컨테이너 + GCS 업로드 + 복원 스크립트), PostgreSQL PITR (WAL 아카이빙, wal_level=replica), 스케줄러 컨테이너 분리 (장애 격리, SCHEDULER_ENABLED 환경변수), 33 tests 추가, 테스트 3,138건
 - v1.24 (2026-04-07): 보안 강화 — JWT key rotation (kid 헤더 + previous_secret_key), token revocation (jti + 인메모리 블랙리스트), 로그아웃 엔드포인트, bcrypt 전용 인증 (평문 fallback 제거), CD SSH 하드닝 (known_hosts 검증), 17 tests 추가, 테스트 3,105건

@@ -92,9 +92,9 @@ async def lifespan(app: FastAPI):
         # ── 스케줄러 시작 ──
         # SCHEDULER_ENABLED=false 설정 시 API 서버에서 스케줄러를 시작하지 않음
         # (별도 scheduler 컨테이너에서 실행하는 경우)
-        import os
+        from core.utils.env import env_bool
 
-        scheduler_enabled = os.environ.get("SCHEDULER_ENABLED", "true").lower() != "false"
+        scheduler_enabled = env_bool("SCHEDULER_ENABLED", default=True)
         global trading_scheduler
         if scheduler_enabled:
             try:
@@ -237,9 +237,9 @@ async def health_check():
         health["status"] = "degraded"
 
     # 스케줄러 상태 (degraded 허용)
-    import os
+    from core.utils.env import env_bool
 
-    scheduler_enabled = os.environ.get("SCHEDULER_ENABLED", "true").lower() != "false"
+    scheduler_enabled = env_bool("SCHEDULER_ENABLED", default=True)
     if not scheduler_enabled:
         health["components"]["scheduler"] = "external"  # 별도 컨테이너에서 실행
     elif getattr(app.state, "scheduler_degraded", False):

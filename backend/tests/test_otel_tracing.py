@@ -90,7 +90,7 @@ class TestTracingModule:
             assert result is None
         finally:
             os.environ["OTEL_ENABLED"] = "false"
-            os.environ["TESTING"] = "1"
+            os.environ["TESTING"] = "true"
 
 
 class TestNoOpTracer:

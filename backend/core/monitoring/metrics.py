@@ -47,6 +47,13 @@ HTTP_REQUESTS_IN_PROGRESS = Gauge(
     labelnames=["method"],
 )
 
+# 환경변수 비표준 bool 표기 사용 추적 (Phase 1 → Phase 2 strict 전환 판단용)
+ENV_BOOL_NONSTANDARD_TOTAL = Counter(
+    "aqts_env_bool_nonstandard_total",
+    "Number of times env_bool() encountered a non-standard literal " "(anything other than 'true'/'false')",
+    labelnames=["key", "value"],
+)
+
 # ══════════════════════════════════════
 # 2. 시스템 컴포넌트 상태
 # ══════════════════════════════════════

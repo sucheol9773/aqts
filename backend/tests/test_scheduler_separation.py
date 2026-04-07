@@ -41,24 +41,26 @@ class TestSchedulerSeparation:
 
     def test_scheduler_enabled_env_true(self):
         """SCHEDULER_ENABLED=true일 때 스케줄러 활성화 확인"""
+        from core.utils.env import env_bool
+
         os.environ["SCHEDULER_ENABLED"] = "true"
-        enabled = os.environ.get("SCHEDULER_ENABLED", "true").lower() != "false"
-        assert enabled is True
+        assert env_bool("SCHEDULER_ENABLED", default=True) is True
 
     def test_scheduler_enabled_env_false(self):
         """SCHEDULER_ENABLED=false일 때 스케줄러 비활성화 확인"""
+        from core.utils.env import env_bool
+
         os.environ["SCHEDULER_ENABLED"] = "false"
-        enabled = os.environ.get("SCHEDULER_ENABLED", "true").lower() != "false"
-        assert enabled is False
-        # 원복
+        assert env_bool("SCHEDULER_ENABLED", default=True) is False
         os.environ["SCHEDULER_ENABLED"] = "true"
 
     def test_scheduler_enabled_env_default(self):
         """SCHEDULER_ENABLED 미설정 시 기본값 true 확인"""
+        from core.utils.env import env_bool
+
         original = os.environ.pop("SCHEDULER_ENABLED", None)
         try:
-            enabled = os.environ.get("SCHEDULER_ENABLED", "true").lower() != "false"
-            assert enabled is True
+            assert env_bool("SCHEDULER_ENABLED", default=True) is True
         finally:
             if original is not None:
                 os.environ["SCHEDULER_ENABLED"] = original

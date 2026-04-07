@@ -170,6 +170,7 @@
 | pitr_wal_archive | PostgreSQL PITR (WAL 아카이빙) | Tested | docker-compose.yml | test_scheduler_separation.py (33) | wal_level=replica, archive_mode=on, 5분 archive_timeout, WAL 전용 볼륨 |
 | scheduler_separation | 스케줄러 컨테이너 분리 (장애 격리) | Tested | scheduler_main.py | test_scheduler_separation.py (33) | SCHEDULER_ENABLED 환경변수, 헬스체크 external 상태, API/스케줄러 독립 장애 격리 |
 | otel_tracing | OpenTelemetry 분산 추적 | Tested | core/monitoring/tracing.py | test_otel_tracing.py (28) | FastAPI/SQLAlchemy/httpx/Redis 자동 계측, OTel Collector + Jaeger, trace_id 로그/헤더 전파, NoOp fallback |
+| env_bool_standardization | 환경변수 bool 표기 표준화 (env_bool 단일 진입점) | Tested | core/utils/env.py | test_env_bool.py (20) | 표준 'true'/'false' 강제, 하위호환 1/yes/on 경고 1회 + Prometheus counter, AQTS_STRICT_BOOL Phase 2 승격, 정적 검사 scripts/check_bool_literals.py |
 
 ---
 

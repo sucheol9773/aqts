@@ -16,8 +16,6 @@ slowapi 기반 요청 제한을 제공합니다.
     app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 """
 
-import os
-
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -29,8 +27,10 @@ from config.logging import logger
 # ══════════════════════════════════════
 # Rate Limiter 인스턴스
 # ══════════════════════════════════════
-# 테스트 환경에서는 Rate Limiting 비활성화 (TESTING=1 환경변수)
-_is_testing = os.environ.get("TESTING", "").lower() in ("1", "true", "yes")
+# 테스트 환경에서는 Rate Limiting 비활성화 (TESTING=true 환경변수)
+from core.utils.env import env_bool
+
+_is_testing = env_bool("TESTING", default=False)
 
 limiter = Limiter(
     key_func=get_remote_address,

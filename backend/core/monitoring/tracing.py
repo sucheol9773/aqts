@@ -16,10 +16,12 @@ from typing import Optional
 
 from loguru import logger
 
+from core.utils.env import env_bool
+
 
 def _is_otel_enabled() -> bool:
     """OpenTelemetry 활성화 여부 확인"""
-    return os.environ.get("OTEL_ENABLED", "false").lower() == "true"
+    return env_bool("OTEL_ENABLED", default=False)
 
 
 def setup_tracing(app=None) -> Optional[object]:
@@ -34,7 +36,7 @@ def setup_tracing(app=None) -> Optional[object]:
     Returns:
         TracerProvider 또는 None (비활성화 시)
     """
-    if os.environ.get("TESTING") in ("1", "true", "True"):
+    if env_bool("TESTING", default=False):
         logger.debug("OpenTelemetry disabled in test environment")
         return None
 

@@ -16,8 +16,8 @@ import os
 def pytest_configure(config):
     """테스트 환경에 필요한 환경변수를 설정합니다."""
     test_env_vars = {
-        # 테스트 모드 (Rate Limiting 비활성화 등)
-        "TESTING": "1",
+        # 테스트 모드 (Rate Limiting 비활성화 등) — 표준 표기 'true'
+        "TESTING": "true",
         # KIS
         "KIS_APP_KEY_LIVE": "test_key",
         "KIS_APP_SECRET_LIVE": "test_secret",

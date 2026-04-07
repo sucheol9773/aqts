@@ -32,3 +32,6 @@ jobs:
 
       - name: Run document sync check
         run: python scripts/check_doc_sync.py --verbose
+
+      - name: Run bool literal check
+        run: python scripts/check_bool_literals.py
