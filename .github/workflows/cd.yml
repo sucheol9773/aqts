@@ -173,8 +173,8 @@ jobs:
             echo "Health: \$HEALTH"
 
             echo "═══ Container Status ═══"
-            TOTAL=\$(docker compose ps --format '{{.Name}}' | wc -l)
-            RUNNING=\$(docker compose ps --format '{{.Name}} {{.Status}}' | grep -c "running" || true)
+            TOTAL=\$(docker compose ps -a --format '{{.Name}}' | wc -l)
+            RUNNING=\$(docker compose ps --status running --format '{{.Name}}' | wc -l)
             echo "Running containers: \$RUNNING/\$TOTAL"
 
             # 핵심 서비스 최소 4개 (postgres, mongodb, redis, backend)
