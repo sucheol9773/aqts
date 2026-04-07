@@ -7,5 +7,18 @@
 #   2. 만료일 이후에는 자동으로 무효화되어 CI 가 다시 차단한다 (수동 갱신 필요)
 #   3. 사유는 "운영상 영향 없음" 같은 추상적 표현 금지 — 구체적 코드 경로 명시
 #   4. 새 항목 추가 시 PR 설명에 반드시 근거 + 후속 조치 일정 기재
-#
-# 현재 화이트리스트: (없음)
+
+# protobuf 4.25.9 — opentelemetry-exporter-otlp-proto-grpc==1.25.0 가 protobuf<5 핀.
+# 영향 코드 경로: backend/core/observability/tracing.py 의 OTLP gRPC export 경로만 사용.
+# 후속 조치: OpenTelemetry 스택 1.27+ 업그레이드 (별도 PR). 업그레이드 시 protobuf>=5.29.6 동시 적용.
+GHSA-7gcm-g887-7qv7  # 2026-06-06 OTel 1.27+ 업그레이드 PR 필요
+
+# pyasn1 0.4.8 — python-jose==3.4.0 의 transitive dep. python-jose 가 pyasn1==0.4.8 핀.
+# 영향 코드 경로: backend/api/middleware/auth.py JWT verify (현재 HS256 only). DER 파싱 우회 경로.
+# 후속 조치: python-jose → PyJWT 마이그레이션 (별도 PR). python-jose 는 사실상 unmaintained.
+GHSA-jr27-m4p2-rc6r  # 2026-06-06 python-jose → PyJWT 마이그레이션 PR 필요
+
+# ecdsa 0.19.2 — python-jose==3.4.0 transitive dep. Minerva 사이드채널 타이밍 공격 (upstream won't-fix).
+# 영향: HS256 only (auth.py:205,237,301 algorithm="HS256") — ECDSA 서명/검증 경로 자체 미사용.
+# 후속 조치: python-jose 제거와 동일 PR 에서 함께 제거 (GHSA-jr27-m4p2-rc6r 후속과 동일).
+GHSA-wj6h-64fc-37mp  # 2026-06-06 python-jose 제거와 함께 해소
