@@ -4,7 +4,7 @@
 로그인, 토큰 갱신, MFA 관리, 인증 상태 확인 엔드포인트를 제공합니다.
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
@@ -19,7 +19,9 @@ from api.schemas.auth import (
     TokenResponse,
 )
 from api.schemas.common import APIResponse
+from config.logging import logger
 from config.settings import get_settings
+from core.monitoring.metrics import TOKEN_REFRESH_FROM_ACCESS_TOTAL
 from db.database import get_db_session
 from db.models.user import User
 from db.repositories.audit_log import AuditLogger
@@ -80,8 +82,29 @@ async def refresh_token(request: RefreshTokenRequest):
 
     유효한 Refresh Token으로 새 Access Token을 발급합니다.
     역할은 기존 토큰의 role 클레임을 유지합니다.
+
+    P0-1 (security-integrity-roadmap §3): payload["type"] 가 "refresh" 가 아니면
+    즉시 401 로 거부한다. access token 으로 refresh 가 발급되는 경로를 차단해
+    탈취된 access token 의 세션 장기화를 방지한다. 위반 시 Prometheus counter
+    `aqts_token_refresh_from_access_total` 가 증가하며 alert 임계는 0 이다.
     """
     payload = AuthService.verify_token(request.refresh_token)
+
+    token_type = payload.get("type")
+    if token_type != "refresh":
+        # access token / 누락 / 변조 모두 단일 401 로 처리한다.
+        # reason 라벨은 운영 알람 분류용이며 토큰 자체는 절대 로그에 남기지 않는다.
+        reason = "missing_type" if token_type is None else f"non_refresh:{token_type}"
+        TOKEN_REFRESH_FROM_ACCESS_TOTAL.labels(reason=reason).inc()
+        logger.warning(
+            "Refresh endpoint called with non-refresh token " f"(type={token_type!r}, jti={payload.get('jti')!r})"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token type for refresh endpoint",
+            headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
+        )
+
     settings = get_settings()
 
     new_access = AuthService.create_access_token(

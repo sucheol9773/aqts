@@ -94,6 +94,15 @@ KIS_DEGRADED = Gauge(
     "Current KIS API degraded flag (1=degraded, 0=healthy)",
 )
 
+# ── 인증/세션 보안 ──
+# P0-1 (security-integrity-roadmap §3): refresh 엔드포인트는 type=refresh 토큰만
+# 받아야 한다. access token 으로 refresh 시도가 감지되면 즉시 alert (임계 0).
+TOKEN_REFRESH_FROM_ACCESS_TOTAL = Counter(
+    "aqts_token_refresh_from_access_total",
+    "Refresh endpoint called with non-refresh token (access/missing type) — must remain 0",
+    labelnames=["reason"],
+)
+
 # ══════════════════════════════════════
 # 3. 비즈니스 메트릭
 # ══════════════════════════════════════
