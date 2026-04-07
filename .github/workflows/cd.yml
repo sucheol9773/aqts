@@ -18,6 +18,11 @@ on:
 env:
   DEPLOY_TIMEOUT: 120
   HEALTH_ENDPOINT: "http://localhost:8000/api/system/health"
+  # 10위 supply-chain: GHCR 에서 서명된 이미지 pull (CI 가 push 한 것)
+  REGISTRY: ghcr.io
+  IMAGE_NAMESPACE: ${{ github.repository_owner }}
+  IMAGE_NAME: aqts-backend
+  COSIGN_VERSION: v2.4.0
 
 jobs:
   # ──────────────────────────────────
@@ -71,26 +76,67 @@ jobs:
           echo "previous_sha=${PREV_SHA}" >> $GITHUB_OUTPUT
           echo "📸 Pre-deploy snapshot: commit=${PREV_SHA}"
 
-      # ── Step 2: 배포 실행 ──
+      # ── Step 2: 배포 실행 (cosign verify + GHCR pull + up) ──
+      # 주: docker compose build 는 더 이상 사용하지 않는다. CI 가 GHCR 에
+      # push + cosign keyless 서명한 이미지를 서버가 검증 후 pull 한다.
       - name: Deploy to server
         id: deploy
         env:
           SERVER_IP: ${{ secrets.GCP_SERVER_IP }}
           SERVER_USER: ${{ secrets.GCP_SERVER_USER }}
+          IMAGE_NAMESPACE: ${{ env.IMAGE_NAMESPACE }}
+          IMAGE_TAG: sha-${{ github.event.workflow_run.head_sha }}
+          REPO_FULL: ${{ github.repository }}
+          COSIGN_VERSION: ${{ env.COSIGN_VERSION }}
         run: |
-          ssh -T -i ~/.ssh/gcp_key ${SERVER_USER}@${SERVER_IP} bash -s << 'DEPLOY_SCRIPT'
+          # 7자리 short sha 로 정규화 (CI metadata-action 의 type=sha 와 동일)
+          SHORT_SHA=$(echo "${{ github.event.workflow_run.head_sha }}" | cut -c1-7)
+          IMAGE_TAG="sha-${SHORT_SHA}"
+          IMAGE_REF="ghcr.io/${IMAGE_NAMESPACE}/aqts-backend:${IMAGE_TAG}"
+          echo "Deploy target: ${IMAGE_REF}"
+          echo "image_ref=${IMAGE_REF}" >> $GITHUB_OUTPUT
+          echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+
+          ssh -T -i ~/.ssh/gcp_key ${SERVER_USER}@${SERVER_IP} \
+            IMAGE_NAMESPACE="${IMAGE_NAMESPACE}" \
+            IMAGE_TAG="${IMAGE_TAG}" \
+            IMAGE_REF="${IMAGE_REF}" \
+            REPO_FULL="${REPO_FULL}" \
+            COSIGN_VERSION="${COSIGN_VERSION}" \
+            bash -s << 'DEPLOY_SCRIPT'
             set -e
             cd ~/aqts
 
-            echo "═══ Step 1: Pull latest code ═══"
+            echo "═══ Step 1: Pull latest compose/config ═══"
             git checkout main
             git pull origin main
 
-            echo "═══ Step 2: Build & restart services ═══"
-            docker compose -f docker-compose.yml build backend
+            echo "═══ Step 2: Ensure cosign installed ═══"
+            if ! command -v cosign >/dev/null 2>&1; then
+              echo "cosign 미설치 → 설치 진행 (${COSIGN_VERSION})"
+              curl -sSLo /tmp/cosign \
+                "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign-linux-amd64"
+              sudo install -m 0755 /tmp/cosign /usr/local/bin/cosign
+              rm -f /tmp/cosign
+            fi
+            cosign version
+
+            echo "═══ Step 3: Verify image signature (cosign keyless) ═══"
+            # CI 가 GitHub Actions OIDC 신원으로 keyless 서명한 이미지만 통과
+            cosign verify \
+              --certificate-identity-regexp "^https://github.com/${REPO_FULL}/" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              "${IMAGE_REF}" > /tmp/cosign-verify.json
+            echo "✅ Signature verified for ${IMAGE_REF}"
+
+            echo "═══ Step 4: Pull verified image from GHCR ═══"
+            docker pull "${IMAGE_REF}"
+
+            echo "═══ Step 5: Restart services with new image ═══"
+            export IMAGE_NAMESPACE IMAGE_TAG
             docker compose -f docker-compose.yml up -d
 
-            echo "═══ Step 3: Wait for health check (max 120s) ═══"
+            echo "═══ Step 6: Wait for health check (max 120s) ═══"
             for i in $(seq 1 60); do
               if curl -sf http://localhost:8000/api/system/health > /dev/null 2>&1; then
                 echo "✅ Backend healthy after $((i*2))s"
@@ -139,36 +185,56 @@ jobs:
           VERIFY_SCRIPT
 
       # ── Step 4: 실패 시 자동 롤백 ──
+      # 이전 SHA 의 이미지를 GHCR 에서 verify + pull (서명 검증 동일 강제)
       - name: Rollback on failure
         if: failure() && steps.snapshot.outputs.previous_sha != 'none'
         env:
           SERVER_IP: ${{ secrets.GCP_SERVER_IP }}
           SERVER_USER: ${{ secrets.GCP_SERVER_USER }}
           PREV_SHA: ${{ steps.snapshot.outputs.previous_sha }}
+          IMAGE_NAMESPACE: ${{ env.IMAGE_NAMESPACE }}
+          REPO_FULL: ${{ github.repository }}
         run: |
           echo "🔄 Rolling back to ${PREV_SHA}..."
-          ssh -T -i ~/.ssh/gcp_key ${SERVER_USER}@${SERVER_IP} bash -s << ROLLBACK_SCRIPT
+          ssh -T -i ~/.ssh/gcp_key ${SERVER_USER}@${SERVER_IP} \
+            IMAGE_NAMESPACE="${IMAGE_NAMESPACE}" \
+            PREV_SHA="${PREV_SHA}" \
+            REPO_FULL="${REPO_FULL}" \
+            bash -s << 'ROLLBACK_SCRIPT'
             set -e
             cd ~/aqts
 
-            echo "═══ Rollback: reverting to ${PREV_SHA} ═══"
+            # PREV_SHA 는 short sha 로 가정 (snapshot 단계에서 git rev-parse --short)
+            IMAGE_TAG="sha-${PREV_SHA}"
+            IMAGE_REF="ghcr.io/${IMAGE_NAMESPACE}/aqts-backend:${IMAGE_TAG}"
+
+            echo "═══ Rollback: reverting compose/config to ${PREV_SHA} ═══"
+            git fetch origin main
             git reset --hard ${PREV_SHA}
 
-            echo "═══ Rebuild & restart ═══"
-            docker compose -f docker-compose.yml build backend
+            echo "═══ Verify previous image signature ═══"
+            cosign verify \
+              --certificate-identity-regexp "^https://github.com/${REPO_FULL}/" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              "${IMAGE_REF}" > /tmp/cosign-rollback.json
+            echo "✅ Rollback image signature verified"
+
+            echo "═══ Pull previous image + restart ═══"
+            docker pull "${IMAGE_REF}"
+            export IMAGE_NAMESPACE IMAGE_TAG
             docker compose -f docker-compose.yml up -d
 
             echo "═══ Wait for health check (max 120s) ═══"
-            for i in \$(seq 1 60); do
+            for i in $(seq 1 60); do
               if curl -sf http://localhost:8000/api/system/health > /dev/null 2>&1; then
-                echo "✅ Rollback healthy after \$((i*2))s"
+                echo "✅ Rollback healthy after $((i*2))s"
                 break
               fi
               sleep 2
             done
 
-            RUNNING=\$(docker compose ps --format '{{.Name}} {{.Status}}' | grep -c "Up" || true)
-            echo "Running containers after rollback: \$RUNNING/4"
+            RUNNING=$(docker compose ps --format '{{.Name}} {{.Status}}' | grep -c "Up" || true)
+            echo "Running containers after rollback: $RUNNING/4"
             echo "═══ Rollback complete ═══"
           ROLLBACK_SCRIPT
 

@@ -81,9 +81,9 @@ services:
   # Backend (FastAPI)
   # ══════════════════════════════════════
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    # 운영: GHCR 에서 서명된 이미지 pull (cosign verify 후 사용)
+    # 개발: docker-compose.override.yml 이 build 블록을 추가
+    image: ghcr.io/${IMAGE_NAMESPACE:?IMAGE_NAMESPACE is required}/aqts-backend:${IMAGE_TAG:-latest}
     container_name: aqts-backend
     restart: unless-stopped
     env_file:
@@ -109,9 +109,8 @@ services:
   # Scheduler (트레이딩 스케줄러 — 별도 프로세스)
   # ══════════════════════════════════════
   scheduler:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    # backend 와 동일한 이미지 사용 (multi-process 분리만 다름)
+    image: ghcr.io/${IMAGE_NAMESPACE:?IMAGE_NAMESPACE is required}/aqts-backend:${IMAGE_TAG:-latest}
     container_name: aqts-scheduler
     restart: unless-stopped
     env_file:
