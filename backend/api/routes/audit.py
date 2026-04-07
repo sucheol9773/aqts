@@ -9,7 +9,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query
 
-from api.middleware.auth import get_current_user
+from api.middleware.rbac import require_operator, require_viewer
 from api.schemas.common import APIResponse
 from config.logging import logger
 from core.audit import DecisionRecord, get_decision_store
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/api/audit", tags=["audit"])
 @router.post("/decisions/{decision_id}", response_model=APIResponse[DecisionRecord])
 async def create_decision(
     decision_id: Optional[str] = None,
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_operator),
 ):
     """Create a new decision record.
 
@@ -43,7 +43,7 @@ async def create_decision(
 @router.get("/decisions/{decision_id}", response_model=APIResponse[DecisionRecord])
 async def get_decision(
     decision_id: str,
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_viewer),
 ):
     """Get a full 7-step decision chain + GateResults by decision_id.
 
@@ -72,7 +72,7 @@ async def list_decisions(
     start_date: Optional[str] = Query(None, description="Start date (ISO format)"),
     end_date: Optional[str] = Query(None, description="End date (ISO format)"),
     limit: int = Query(100, ge=1, le=1000, description="Max results"),
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_viewer),
 ):
     """List recent decision records with optional date range filtering.
 
@@ -116,7 +116,7 @@ async def update_decision_step(
     decision_id: str,
     step_name: str,
     step_data: dict,
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_operator),
 ):
     """Update a specific step in a decision record.
 

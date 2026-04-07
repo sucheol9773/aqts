@@ -11,7 +11,7 @@ KIS WebSocket으로 수신 중인 실시간 시세를 조회합니다.
 
 from fastapi import APIRouter, Depends
 
-from api.middleware.auth import get_current_user
+from api.middleware.rbac import require_viewer
 from api.schemas.common import APIResponse
 from config.logging import logger
 
@@ -19,7 +19,7 @@ router = APIRouter()
 
 
 @router.get("/quotes", response_model=APIResponse[dict])
-async def get_all_quotes(current_user: str = Depends(get_current_user)):
+async def get_all_quotes(current_user=Depends(require_viewer)):
     """전 종목 실시간 시세 조회"""
     try:
         from core.scheduler_handlers import get_realtime_manager
@@ -49,7 +49,7 @@ async def get_all_quotes(current_user: str = Depends(get_current_user)):
 @router.get("/quotes/{ticker}", response_model=APIResponse[dict])
 async def get_ticker_quote(
     ticker: str,
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_viewer),
 ):
     """단일 종목 실시간 시세 조회"""
     try:
@@ -76,7 +76,7 @@ async def get_ticker_quote(
 
 
 @router.get("/status", response_model=APIResponse[dict])
-async def get_realtime_status(current_user: str = Depends(get_current_user)):
+async def get_realtime_status(current_user=Depends(require_viewer)):
     """실시간 수신 상태 조회"""
     try:
         from core.scheduler_handlers import get_realtime_manager

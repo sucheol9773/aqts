@@ -11,8 +11,9 @@ from datetime import datetime
 
 import numpy as np
 import pandas as pd
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from api.middleware.rbac import require_operator, require_viewer
 from config.logging import logger
 from core.param_sensitivity import (
     ParamSensitivityEngine,
@@ -28,7 +29,10 @@ _latest_run: SensitivityRun | None = None
 
 
 @router.post("/run")
-async def run_sensitivity(request: SensitivityRunRequest):
+async def run_sensitivity(
+    request: SensitivityRunRequest,
+    current_user=Depends(require_operator),
+):
     """민감도 분석 실행"""
     global _latest_run
 
@@ -63,7 +67,7 @@ async def run_sensitivity(request: SensitivityRunRequest):
 
 
 @router.get("/latest")
-async def get_latest():
+async def get_latest(current_user=Depends(require_viewer)):
     """최근 분석 결과 조회"""
     if _latest_run is None:
         raise HTTPException(status_code=404, detail="분석 결과가 없습니다")
@@ -75,7 +79,10 @@ async def get_latest():
 
 
 @router.get("/tornado")
-async def get_tornado(metric: str = "sharpe"):
+async def get_tornado(
+    metric: str = "sharpe",
+    current_user=Depends(require_viewer),
+):
     """토네이도 차트 데이터"""
     if _latest_run is None:
         raise HTTPException(status_code=404, detail="분석 결과가 없습니다")

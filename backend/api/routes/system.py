@@ -14,8 +14,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
-from api.middleware.auth import get_current_user
 from api.middleware.rate_limiter import RATE_PIPELINE, limiter
+from api.middleware.rbac import require_admin, require_operator, require_viewer
 from api.schemas.common import APIResponse
 from config.logging import logger
 from config.settings import get_settings
@@ -29,7 +29,7 @@ router = APIRouter()
 
 
 @router.get("/settings", response_model=APIResponse[dict])
-async def get_system_settings(current_user: str = Depends(get_current_user)):
+async def get_system_settings(current_user=Depends(require_admin)):
     """
     시스템 설정 조회
 
@@ -70,7 +70,7 @@ async def run_backtest(
     start_date: str = Query(..., description="시작일 (YYYY-MM-DD)"),
     end_date: str = Query(..., description="종료일 (YYYY-MM-DD)"),
     strategy: Optional[str] = Query(default=None, description="전략 유형"),
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_operator),
     db: AsyncSession = Depends(get_db_session),
 ):
     """
@@ -160,7 +160,7 @@ async def run_backtest(
 @router.post("/rebalancing", response_model=APIResponse[dict])
 async def trigger_rebalancing(
     rebalancing_type: str = Query(default="MANUAL", description="리밸런싱 유형 (SCHEDULED/EMERGENCY/MANUAL)"),
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_operator),
     db: AsyncSession = Depends(get_db_session),
 ):
     """
@@ -213,7 +213,7 @@ async def run_analysis_pipeline(
     request: Request,
     tickers: str = Query(..., description="종목코드 (콤마 구분)"),
     force_refresh: bool = Query(default=False, description="캐시 무시"),
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_operator),
     db: AsyncSession = Depends(get_db_session),
 ):
     """
@@ -299,7 +299,7 @@ async def run_analysis_pipeline(
 async def get_audit_logs(
     limit: int = Query(default=50, ge=1, le=200),
     module: Optional[str] = Query(default=None, description="모듈 필터"),
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_admin),
     db: AsyncSession = Depends(get_db_session),
 ):
     """
@@ -356,7 +356,7 @@ async def get_audit_logs(
 
 @router.get("/circuit-breakers", response_model=APIResponse[dict])
 async def get_circuit_breaker_status(
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_viewer),
 ):
     """
     Circuit Breaker 상태 조회

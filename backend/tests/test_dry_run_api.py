@@ -30,9 +30,13 @@ def dry_run_engine():
 
 @pytest.fixture
 def auth_override():
-    """인증 미들웨어 우회"""
-    with patch("api.routes.dry_run.get_current_user", return_value="test_user"):
-        yield
+    """RBAC 가드 우회 (핸들러 직접 호출 테스트용)
+
+    라우터 핸들러를 직접 호출하므로 require_operator/require_viewer 가드는
+    실제로 실행되지 않는다. 본 fixture 는 과거 get_current_user 패치 호환을
+    위한 no-op placeholder 다.
+    """
+    yield
 
 
 class TestStartDryRun:

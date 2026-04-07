@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.middleware.auth import get_current_user
+from api.middleware.rbac import require_viewer
 from api.schemas.common import APIResponse
 from api.schemas.portfolio import (
     PerformanceResponse,
@@ -26,7 +26,7 @@ router = APIRouter()
 
 @router.get("/summary", response_model=APIResponse[PortfolioSummaryResponse])
 async def get_portfolio_summary(
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_viewer),
     db: AsyncSession = Depends(get_db_session),
 ):
     """
@@ -110,7 +110,7 @@ async def get_portfolio_summary(
 
 @router.get("/positions", response_model=APIResponse[list[PositionResponse]])
 async def get_positions(
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_viewer),
     db: AsyncSession = Depends(get_db_session),
 ):
     """
@@ -169,7 +169,7 @@ async def get_positions(
 @router.get("/performance", response_model=APIResponse[PerformanceResponse])
 async def get_performance(
     period: str = Query(default="1M", description="성과 기간 (1D/1W/1M/3M/6M/1Y/ALL)"),
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_viewer),
     db: AsyncSession = Depends(get_db_session),
 ):
     """
@@ -236,7 +236,7 @@ async def get_performance(
 @router.get("/value-history", response_model=APIResponse[list[dict]])
 async def get_value_history(
     period: str = Query(default="1M", description="조회 기간"),
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_viewer),
     db: AsyncSession = Depends(get_db_session),
 ):
     """

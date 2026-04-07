@@ -12,8 +12,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
-from api.middleware.auth import get_current_user
 from api.middleware.rate_limiter import RATE_ORDER, limiter
+from api.middleware.rbac import require_operator, require_viewer
 from api.schemas.common import APIResponse
 from api.schemas.orders import (
     BatchOrderRequest,
@@ -55,7 +55,7 @@ def _order_result_to_response(
 async def create_order(
     request: Request,
     order_body: OrderCreateRequest,
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_operator),
     db: AsyncSession = Depends(get_db_session),
 ):
     """
@@ -111,7 +111,7 @@ async def create_order(
 async def create_batch_orders(
     request: Request,
     batch_body: BatchOrderRequest,
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_operator),
     db: AsyncSession = Depends(get_db_session),
 ):
     """
@@ -189,7 +189,7 @@ async def create_batch_orders(
 async def get_orders(
     status: Optional[str] = Query(default=None, description="주문 상태 필터"),
     limit: int = Query(default=50, ge=1, le=200),
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_viewer),
     db: AsyncSession = Depends(get_db_session),
 ):
     """
@@ -254,7 +254,7 @@ async def get_orders(
 @router.get("/{order_id}", response_model=APIResponse[OrderResponse])
 async def get_order(
     order_id: str,
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_viewer),
     db: AsyncSession = Depends(get_db_session),
 ):
     """
@@ -298,7 +298,7 @@ async def get_order(
 @router.delete("/{order_id}", response_model=APIResponse[dict])
 async def cancel_order(
     order_id: str,
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_operator),
     db: AsyncSession = Depends(get_db_session),
 ):
     """

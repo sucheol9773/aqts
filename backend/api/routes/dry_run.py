@@ -14,7 +14,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from api.middleware.auth import get_current_user
+from api.middleware.rbac import require_operator, require_viewer
 from api.schemas.common import APIResponse
 from config.logging import logger
 from core.dry_run.engine import get_dry_run_engine
@@ -23,7 +23,7 @@ router = APIRouter()
 
 
 @router.post("/start", response_model=APIResponse[dict])
-async def start_dry_run(current_user: str = Depends(get_current_user)):
+async def start_dry_run(current_user=Depends(require_operator)):
     """
     드라이런 세션 시작
 
@@ -54,7 +54,7 @@ async def start_dry_run(current_user: str = Depends(get_current_user)):
 
 
 @router.post("/stop", response_model=APIResponse[dict])
-async def stop_dry_run(current_user: str = Depends(get_current_user)):
+async def stop_dry_run(current_user=Depends(require_operator)):
     """
     현재 드라이런 세션 종료
 
@@ -79,7 +79,7 @@ async def stop_dry_run(current_user: str = Depends(get_current_user)):
 
 
 @router.get("/status", response_model=APIResponse[dict])
-async def get_dry_run_status(current_user: str = Depends(get_current_user)):
+async def get_dry_run_status(current_user=Depends(require_viewer)):
     """
     현재 드라이런 상태 조회
 
@@ -117,7 +117,7 @@ async def get_dry_run_status(current_user: str = Depends(get_current_user)):
 
 
 @router.get("/report", response_model=APIResponse[dict])
-async def get_dry_run_report(current_user: str = Depends(get_current_user)):
+async def get_dry_run_report(current_user=Depends(require_viewer)):
     """
     전체 드라이런 리포트 조회
 
@@ -135,7 +135,7 @@ async def get_dry_run_report(current_user: str = Depends(get_current_user)):
 @router.get("/sessions/{session_id}", response_model=APIResponse[dict])
 async def get_dry_run_session(
     session_id: str,
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_viewer),
 ):
     """
     드라이런 세션 상세 조회
@@ -159,7 +159,7 @@ async def get_dry_run_session(
 
 
 @router.delete("/sessions", response_model=APIResponse[dict])
-async def clear_dry_run_sessions(current_user: str = Depends(get_current_user)):
+async def clear_dry_run_sessions(current_user=Depends(require_operator)):
     """
     전체 드라이런 세션 초기화
 

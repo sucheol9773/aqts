@@ -16,7 +16,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.middleware.auth import get_current_user
+from api.middleware.rbac import require_operator, require_viewer
 from api.schemas.common import APIResponse
 from api.schemas.ensemble import (
     EnsembleBatchResponse,
@@ -39,7 +39,7 @@ router = APIRouter()
 
 @router.get("/cached", response_model=APIResponse[EnsembleCacheSummary])
 async def get_cached_summary(
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_viewer),
 ):
     """
     캐시된 앙상블 결과 요약 조회
@@ -79,7 +79,7 @@ async def get_cached_summary(
 @router.get("/cached/{ticker}", response_model=APIResponse[EnsembleCachedResponse])
 async def get_cached_ticker(
     ticker: str,
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_viewer),
 ):
     """
     특정 종목의 캐시된 앙상블 결과 조회
@@ -139,7 +139,7 @@ async def run_single_ensemble(
     ticker: str = Query(..., description="종목코드 (예: 005930, AAPL)"),
     country: str = Query(default="KR", description="국가 코드 (KR/US)"),
     lookback_days: int = Query(default=300, ge=200, le=500, description="OHLCV 조회 일수"),
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_operator),
     db: AsyncSession = Depends(get_db_session),
 ):
     """
@@ -189,7 +189,7 @@ async def run_batch_ensemble(
     ),
     lookback_days: int = Query(default=300, ge=200, le=500, description="OHLCV 조회 일수"),
     cache_results: bool = Query(default=True, description="결과를 Redis에 캐시할지 여부"),
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_operator),
     db: AsyncSession = Depends(get_db_session),
 ):
     """

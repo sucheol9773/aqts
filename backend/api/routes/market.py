@@ -9,7 +9,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 
-from api.middleware.auth import get_current_user
+from api.middleware.rbac import require_viewer
 from api.schemas.common import APIResponse
 from config.logging import logger
 from core.data_collector.economic_collector import EconomicCollectorService
@@ -21,7 +21,7 @@ router = APIRouter()
 
 
 @router.get("/exchange-rate", response_model=APIResponse[dict])
-async def get_exchange_rate(current_user: str = Depends(get_current_user)):
+async def get_exchange_rate(current_user=Depends(require_viewer)):
     """
     현재 환율 조회 (USD/KRW)
 
@@ -46,7 +46,7 @@ async def get_exchange_rate(current_user: str = Depends(get_current_user)):
 
 
 @router.get("/indices", response_model=APIResponse[list[dict]])
-async def get_market_indices(current_user: str = Depends(get_current_user)):
+async def get_market_indices(current_user=Depends(require_viewer)):
     """
     주요 시장 지수 조회
 
@@ -122,7 +122,7 @@ async def get_market_indices(current_user: str = Depends(get_current_user)):
 @router.get("/economic-indicators", response_model=APIResponse[list[dict]])
 async def get_economic_indicators(
     source: Optional[str] = Query(default=None, description="데이터 소스 (FRED / ECOS)"),
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_viewer),
 ):
     """
     경제지표 조회
@@ -173,7 +173,7 @@ async def get_economic_indicators(
 
 
 @router.get("/universe", response_model=APIResponse[list[dict]])
-async def get_universe(current_user: str = Depends(get_current_user)):
+async def get_universe(current_user=Depends(require_viewer)):
     """
     투자 유니버스 조회
 

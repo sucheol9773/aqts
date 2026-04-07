@@ -8,7 +8,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 
-from api.middleware.auth import get_current_user
+from api.middleware.rbac import require_operator, require_viewer
 from api.schemas.alerts import AlertListResponse, AlertResponse, AlertStatsResponse
 from api.schemas.common import APIResponse
 from config.constants import AlertType
@@ -32,7 +32,7 @@ async def get_alerts(
     offset: int = Query(default=0, ge=0),
     alert_type: Optional[str] = Query(default=None, description="알림 유형 필터"),
     level: Optional[str] = Query(default=None, description="심각도 필터"),
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_viewer),
     manager: AlertManager = Depends(get_alert_manager),
 ):
     """
@@ -64,7 +64,7 @@ async def get_alerts(
 
 @router.get("/stats", response_model=APIResponse[AlertStatsResponse])
 async def get_alert_stats(
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_viewer),
     manager: AlertManager = Depends(get_alert_manager),
 ):
     """
@@ -84,7 +84,7 @@ async def get_alert_stats(
 @router.put("/{alert_id}/read", response_model=APIResponse[dict])
 async def mark_alert_read(
     alert_id: str,
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_operator),
     manager: AlertManager = Depends(get_alert_manager),
 ):
     """
@@ -102,7 +102,7 @@ async def mark_alert_read(
 
 @router.put("/read-all", response_model=APIResponse[dict])
 async def mark_all_alerts_read(
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_operator),
     manager: AlertManager = Depends(get_alert_manager),
 ):
     """

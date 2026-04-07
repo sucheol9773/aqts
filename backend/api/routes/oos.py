@@ -18,7 +18,7 @@ import pandas as pd
 from fastapi import APIRouter, Body, Depends
 from starlette.requests import Request
 
-from api.middleware.auth import get_current_user
+from api.middleware.rbac import require_operator, require_viewer
 from api.schemas.common import APIResponse
 from config.logging import logger
 from core.oos.job_manager import OOSJobManager
@@ -68,7 +68,7 @@ def _generate_sample_data(
 async def create_oos_run(
     request: Request,
     run_request: OOSRunRequest = Body(...),
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_operator),
 ):
     """
     OOS 검증 실행 요청
@@ -140,7 +140,7 @@ async def create_oos_run(
 
 @router.get("/latest", response_model=APIResponse[dict])
 async def get_latest_oos_run(
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_viewer),
 ):
     """
     최근 OOS 실행 결과 조회
@@ -164,7 +164,7 @@ async def get_latest_oos_run(
 
 @router.get("/gate-status", response_model=APIResponse[dict])
 async def get_oos_gate_status(
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_viewer),
 ):
     """
     OOS 게이트 상태 요약
@@ -181,7 +181,7 @@ async def get_oos_gate_status(
 @router.get("/{run_id}", response_model=APIResponse[dict])
 async def get_oos_run(
     run_id: str,
-    current_user: str = Depends(get_current_user),
+    current_user=Depends(require_viewer),
 ):
     """
     특정 OOS 실행 결과 조회
