@@ -38,3 +38,6 @@ jobs:
 
       - name: Run status SSOT check
         run: python scripts/gen_status.py
+
+      - name: Run RBAC coverage check
+        run: python scripts/check_rbac_coverage.py
