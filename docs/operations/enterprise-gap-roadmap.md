@@ -128,8 +128,8 @@
 | 순위 | 항목 | 근거 (3장 절) | 예상 산출물 |
 | --- | --- | --- | --- |
 | **8** ✅ | 문서 SSOT 자동화 — `scripts/gen_status.py` (FEATURE_STATUS/README/release-gates 테스트 수치 AST 기반 자동 갱신, --check/--update, changelog 보존, Doc Sync CI 통합) | 3.12 | v1.28 |
-| **9** | RBAC + 사용자 계정 모델 — 단일 비밀번호 종료, 역할(operator/viewer/admin) 분리, 감사 로그 연동 | 3.4 | `users`/`roles` 테이블 + Alembic, 미들웨어, 테스트 |
-| **10** | SBOM + 이미지 서명 + SCA — `syft`/`cosign`/`pip-audit` CI 게이트, 취약점 임계값 차단 | 3.9 | `.github/workflows/security.yml`, SBOM artifact, cosign 키 |
+| **9** ✅ | RBAC + 사용자 계정 모델 — `users`/`roles` 모델 + Alembic, viewer/operator/admin 분리, TOTP MFA, `require_*` 의존성 가드, 정적 검사 + 통합 테스트 wiring 검증 | 3.4 | v1.29 |
+| **10** ✅ | SBOM + 이미지 서명 + SCA — `pip-audit`(OSV), `grype`(컨테이너 CVE), `syft`(CycloneDX SBOM), `cosign` keyless OIDC 서명/attestation, GHCR 전환, CD `cosign verify` 강제 게이트 | 3.9 | v1.30 |
 | **11** | 4-eyes 주문 승인 + 불변 감사 저장소 — 임계 금액 이상 주문/전략 변경에 이중결재, append-only 로그 | 3.7, 3.11 | `OrderApproval` 모델, WORM 어댑터(GCS object versioning), 테스트 |
 | **12** | IaC(Terraform) + 환경 분리 — dev/stg/prod 분리, secrets/config as code, 아티팩트 프로모션 | 3.10 | `infra/terraform/`, GitHub Actions OIDC, 환경별 변수 |
 
@@ -163,3 +163,5 @@ P0~P1(1~7위)이 모두 완료되어 사고 예방·운영 안정화 1차 라운
 | v1.26 | OpenTelemetry 분산 추적 | P1 #7 |
 | v1.27 | 환경변수 bool 표기 표준화 | P1 #7-α (보너스) |
 | v1.28 | 문서 SSOT 자동화 (gen_status.py) | P2 #8 |
+| v1.29 | RBAC + 사용자 계정 + TOTP MFA + 라우트 가드 wiring 검증 | P2 #9 |
+| v1.30 | 공급망 보안 — SBOM/cosign keyless 서명/grype/pip-audit + GHCR `cosign verify` 배포 게이트 | P2 #10 |

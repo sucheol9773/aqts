@@ -309,6 +309,8 @@ python scripts/check_doc_sync.py --verbose
 | OPS-006 | [고객 공지](docs/operations/customer-notice.md) | 투자 위험 고지, SLA |
 | OPS-007 | [Docker 환경 세팅](docs/operations/docker-setup-guide.md) | 개발/프로덕션 환경 구성 |
 | OPS-008 | [배포 검증 로드맵](docs/operations/deployment-roadmap.md) | Phase 0~4 단계별 절차 |
+| SEC-001 | [RBAC 정책](docs/security/rbac-policy.md) | 라우트별 권한 매트릭스, wiring 강제 검사 |
+| SEC-002 | [공급망 보안 정책](docs/security/supply-chain-policy.md) | SBOM/cosign keyless/grype/pip-audit, CD `cosign verify` 가드, 수동 검증 절차 |
 
 ## 라이선스
 
