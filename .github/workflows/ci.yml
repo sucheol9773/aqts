@@ -303,8 +303,21 @@ jobs:
           upload-artifact-retention: 90
 
       # ── 컨테이너 이미지 CVE 스캔 (grype) ──
-      # anchore/scan-action@v6 는 최신 grype 를 사용하고 DB 자동 갱신을 수행한다
-      # (v3 는 벤더링된 grype v0.74.4 + 4주 이상 묵은 DB 로 max-age 5d 정책에 차단됨).
+      # 1) 사람이 읽을 수 있는 표 출력 (실패해도 다음 단계 진행 — 로그 가시성 목적)
+      # 2) SARIF 출력 + fail-on high (실제 게이트)
+      # anchore/scan-action@v6 는 최신 grype + 자동 DB 갱신 사용
+      # (v3 는 벤더링된 grype v0.74.4 + 묵은 DB 로 max-age 5d 정책에 차단됨).
+      - name: List CVEs (grype table, debug)
+        if: github.ref == 'refs/heads/main'
+        continue-on-error: true
+        uses: anchore/scan-action@v6
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          fail-build: false
+          severity-cutoff: high
+          only-fixed: false
+          output-format: table
+
       - name: Scan image for vulnerabilities (grype)
         if: github.ref == 'refs/heads/main'
         uses: anchore/scan-action@v6
