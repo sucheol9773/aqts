@@ -103,6 +103,14 @@ TOKEN_REFRESH_FROM_ACCESS_TOTAL = Counter(
     labelnames=["reason"],
 )
 
+# P0-2a (security-integrity-roadmap §3.2, §3.6): TokenRevocationStore Redis 백엔드
+# 실패 시 fail-closed 로 503 을 반환하면서 카운터 증가. 운영 알람 임계 0.
+REVOCATION_BACKEND_FAILURE_TOTAL = Counter(
+    "aqts_revocation_backend_failure_total",
+    "TokenRevocationStore backend failure (fail-closed) — must remain 0",
+    labelnames=["op"],
+)
+
 # ══════════════════════════════════════
 # 3. 비즈니스 메트릭
 # ══════════════════════════════════════

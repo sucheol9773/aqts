@@ -372,6 +372,7 @@ P0 5개 머지 후, 본 로드맵을 갱신하여 새 P0 5개를 선정한다.
 각 P0 항목 완료 시 아래에 추가한다. 형식: `[YYYY-MM-DD] P0-N: <한 줄 요약> (<commit>)`.
 
 - [2026-04-08] P0-1: refresh 엔드포인트 토큰 type 강제 검증 — `payload["type"] != "refresh"` 인 경우 401 + `WWW-Authenticate: Bearer error="invalid_token"` 반환, `aqts_token_refresh_from_access_total{reason}` Counter 증가 (reason: `missing_type` | `non_refresh:<type>`). access token 으로 refresh 발급 경로 차단. 통합 테스트 5건 추가 (`tests/test_refresh_token_type.py`).
+- [2026-04-08] P0-2a: TokenRevocationStore Redis 백엔드 + fail-closed — `api/middleware/token_revocation.py` 신설. `InMemoryTokenRevocationStore` (테스트/개발) / `RedisTokenRevocationStore` (운영, sync `redis.Redis` 클라이언트, TTL = 토큰 잔여 수명) 분리, `AQTS_REVOCATION_BACKEND=redis|memory` 환경변수로 선택. Redis 장애 시 `RevocationBackendUnavailable` 전파 → `verify_token` 이 401 대신 503 반환 (fail-closed), `aqts_revocation_backend_failure_total{op}` Counter 증가. 단위/통합 테스트 14건 추가 (`tests/test_token_revocation_store.py`). P0-2 의 rate limiter Redis 마이그레이션은 별도 커밋 (P0-2b) 으로 분리.
 
 ## 10. 부록 — 직접 관찰 결과 요약
 

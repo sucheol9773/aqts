@@ -14,7 +14,7 @@ JWT 인증 미들웨어 (강화 버전)
 import hashlib
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import NamedTuple, Optional, Set, Tuple
+from typing import NamedTuple, Optional, Tuple
 
 import pyotp
 from fastapi import Depends, HTTPException, status
@@ -23,7 +23,18 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.middleware.token_revocation import (
+    InMemoryTokenRevocationStore,
+    RevocationBackendUnavailable,
+)
+from api.middleware.token_revocation import (
+    get_revocation_store as _factory_get_revocation_store,
+)
 from config.settings import get_settings
+
+# 하위호환 별칭: 기존 코드/테스트는 `from api.middleware.auth import
+# TokenRevocationStore` 로 인메모리 구현을 직접 인스턴스화한다.
+TokenRevocationStore = InMemoryTokenRevocationStore
 
 # Password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -55,40 +66,16 @@ class AuthenticatedUser(NamedTuple):
 
 
 # ══════════════════════════════════════
-# Token Revocation (인메모리 + Redis 전환 가능)
+# Token Revocation (별도 모듈로 위임)
 # ══════════════════════════════════════
-class TokenRevocationStore:
-    """토큰 무효화 저장소
-
-    jti(토큰 고유 ID)를 블랙리스트에 등록하여 로그아웃/강제 만료를 구현한다.
-    현재는 인메모리 구현이며, Redis 연동 시 _blacklist를 Redis SET으로 교체한다.
-    """
-
-    def __init__(self) -> None:
-        self._blacklist: Set[str] = set()
-
-    def revoke(self, jti: str) -> None:
-        """토큰을 무효화한다."""
-        self._blacklist.add(jti)
-
-    def is_revoked(self, jti: str) -> bool:
-        """토큰이 무효화되었는지 확인한다."""
-        return jti in self._blacklist
-
-    def clear_expired(self) -> None:
-        """만료된 토큰 정리 (주기적 호출 권장)"""
-        # 인메모리 구현에서는 수동 정리 필요
-        # Redis 구현에서는 TTL로 자동 만료
-        pass
-
-
-# 싱글톤 인스턴스
-_revocation_store = TokenRevocationStore()
+# P0-2a: TokenRevocationStore 의 구현은 `api.middleware.token_revocation` 으로
+# 이전됨. 운영은 RedisTokenRevocationStore (fail-closed), 테스트/개발은
+# InMemoryTokenRevocationStore. 환경변수 `AQTS_REVOCATION_BACKEND` 로 선택.
 
 
 def get_revocation_store() -> TokenRevocationStore:
-    """TokenRevocationStore 인스턴스 반환"""
-    return _revocation_store
+    """싱글톤 TokenRevocationStore 반환 (factory 위임)."""
+    return _factory_get_revocation_store()
 
 
 # ══════════════════════════════════════
@@ -307,37 +294,53 @@ class AuthService:
                 headers={"WWW-Authenticate": "Bearer"},
             ) from e
 
-        # jti revocation 확인
+        # jti revocation 확인 (P0-2a: fail-closed)
         jti = payload.get("jti")
-        if jti and _revocation_store.is_revoked(jti):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token has been revoked",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+        if jti:
+            try:
+                revoked = get_revocation_store().is_revoked(jti)
+            except RevocationBackendUnavailable as e:
+                # 백엔드 장애 시 토큰 통과를 금지한다 (fail-closed → 503)
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Session store unavailable",
+                ) from e
+            if revoked:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token has been revoked",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
 
         return payload
 
     @staticmethod
     def revoke_token(token: str) -> Optional[str]:
-        """토큰을 무효화 (로그아웃)
+        """토큰을 무효화 (로그아웃).
 
-        Args:
-            token: 무효화할 JWT 토큰
-
-        Returns:
-            무효화된 jti, 또는 jti가 없으면 None
+        P0-2a: TTL 은 토큰의 잔여 수명으로 설정되어 만료 후 자동 정리된다.
+        백엔드 장애 시 `RevocationBackendUnavailable` 가 호출부로 전파되어
+        503 응답을 강제한다 (fail-closed).
         """
         try:
             # 서명 검증 없이 페이로드만 추출 (이미 만료된 토큰도 revoke 가능)
             payload = jwt.get_unverified_claims(token)
-            jti = payload.get("jti")
-            if jti:
-                _revocation_store.revoke(jti)
-                return jti
         except JWTError:
-            pass
-        return None
+            return None
+
+        jti = payload.get("jti")
+        if not jti:
+            return None
+
+        exp = payload.get("exp")
+        now_ts = int(datetime.now(timezone.utc).timestamp())
+        if isinstance(exp, (int, float)):
+            ttl_seconds = max(int(exp) - now_ts + 60, 60)
+        else:
+            # exp 누락 시 안전한 상한값 (refresh 만료일)
+            ttl_seconds = get_settings().dashboard.refresh_token_expire_days * 86400
+        get_revocation_store().revoke(jti, ttl_seconds)
+        return jti
 
     @staticmethod
     async def authenticate(
