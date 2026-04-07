@@ -124,6 +124,89 @@ CIA(기밀성·무결성·가용성) 를 넘어 **Correctness + Determinism + Au
   그러나 `executor.py` 에서 `TradingGuard|trading_guard` grep 결과 0건
 - 9위 RBAC 회고와 동일한 "정의 ≠ 적용" 패턴의 재발
 
+## 3.6 P0 공통 장애 정책 (Failure Mode Policy)
+
+P0 항목들이 의존하는 외부 저장소(Redis, 감사 DB) 장애 시의 동작은 사전에
+정책으로 고정한다. "그때 가서 결정" 은 금융 시스템에서 가장 위험한 안티패턴이다.
+
+### 3.6.1 핵심 원칙
+
+- **주문 경로(write 계열)**: 보수적 fail-closed. 의심스러우면 차단한다.
+  잘못된 차단(false positive)은 운영 사고로 끝나지만, 잘못된 통과(false
+  negative)는 자금 손실로 끝난다.
+- **읽기 전용 경로(read 계열)**: degraded mode 허용. 단, degraded 상태는
+  반드시 Prometheus gauge 로 가시화하고 alert 한다.
+- **모든 fail-closed 차단은 감사 로그에 기록**한다. "왜 차단되었는가" 를
+  사후 재구성 가능해야 한다.
+
+### 3.6.2 P0-2 장애 정책 (Token Revocation + Rate Limiter)
+
+**Redis 장애 시:**
+
+| 컴포넌트 | 정책 | 응답 | 근거 |
+| --- | --- | --- | --- |
+| Token revocation 조회 | **fail-closed** | 401 Unauthorized + `WWW-Authenticate: Bearer error="server_error"` | 차단된 토큰을 통과시키면 탈취 토큰 재활용. 절대 허용 불가 |
+| Rate limiter 조회 | **fail-closed (보수적)** | 429 Too Many Requests + `Retry-After: 5` | brute-force 방어선이 무너지는 것보다 일시적 차단이 안전 |
+| 메트릭 | `aqts_redis_dependency_failure_total{component="revocation\|ratelimit"}` | — | 즉시 alert 임계 0 |
+
+**예외**: `/health`, `/api/health/liveness`, `/metrics` 등 인증 불필요 엔드포인트는
+fail-closed 대상에서 제외한다 (모니터링 자체가 막히면 안 됨).
+
+### 3.6.3 P0-3 장애 정책 (Order Idempotency Store)
+
+**Redis 장애 시:**
+
+| 단계 | 정책 | 응답 |
+| --- | --- | --- |
+| 키 등록 시도 | **fail-closed** | 503 Service Unavailable + `Retry-After: 10` |
+| DB 유니크 제약 | 이중 방어선으로 항상 동작 | 동일 키 재시도 시 409 Conflict |
+| 메트릭 | `aqts_order_idempotency_store_failure_total` | 즉시 alert |
+
+**근거**: 주문은 자금 이동이 따르는 행위이므로, idempotency 보장이 깨진 상태에서
+주문을 받아주는 것은 중복 체결 위험을 그대로 떠안는 행위다. Redis 장애 시
+**모든 신규 주문을 503 으로 일시 차단**하고 운영자가 복구 후 재개한다.
+
+**DB 유니크 제약은 fallback 방어선**: Redis 가 살아 있어도 DB 유니크가
+이중으로 검증한다. 둘 중 하나라도 실패하면 즉시 차단.
+
+### 3.6.4 P0-4 장애 정책 (Audit Log Fail-Closed)
+
+**감사 DB 장애 시:**
+
+| 항목 | 정책 |
+| --- | --- |
+| HTTP 응답 코드 | **503 Service Unavailable** (500 아님) |
+| 응답 본문 | `{"success": false, "error_code": "AUDIT_UNAVAILABLE", "message": "감사 시스템 일시 장애로 주문이 차단되었습니다", "retry_after_seconds": 30}` |
+| `Retry-After` 헤더 | `30` (운영자 개입 시간 확보) |
+| 트랜잭션 | rollback (주문 미체결) |
+| 메트릭 | `aqts_audit_write_failures_total` (즉시 alert, 임계 0) |
+
+**500 이 아닌 503 인 이유**: 500 은 "서버 코드 버그" 를 의미하므로 클라이언트가
+재시도하면 안 되는 신호로 해석된다. 503 은 "일시적 장애" 를 명확히 하므로
+재시도가 가능하면서도 backoff 를 강제한다.
+
+**클라이언트 재시도 정책 (권장)**:
+- 최대 재시도: 3회
+- Backoff: exponential with jitter (5s, 15s, 45s)
+- `Retry-After` 헤더가 있으면 그 값을 우선
+- 3회 실패 시 운영자 알림 + 사용자에게 명시적 실패 표시
+- 동일 idempotency key 사용 (P0-3 와 결합)
+
+**SLO**: 감사 DB 가용성 99.95% 이상. 그 미만이면 감사 DB 자체를 HA 로 재설계해야 함.
+
+### 3.6.5 P0-5 장애 정책 (TradingGuard)
+
+**TradingGuard 내부 상태(in-memory) 손상 또는 의존 데이터 조회 실패 시:**
+
+| 상황 | 정책 |
+| --- | --- |
+| Guard 상태 로드 실패 | **fail-closed**: 모든 신규 주문 차단, 503 응답 |
+| Kill switch 상태 불명 | **fail-closed**: kill switch on 으로 간주 |
+| 일일 손실 데이터 조회 실패 | **fail-closed**: 한도 초과로 간주 |
+
+**근거**: Guard 가 "판단할 수 없는 상태" 에서 주문을 통과시키면 가드의 존재
+이유가 사라진다.
+
 ## 4. 실행 절차 (P0 각 항목 공통)
 
 각 P0 항목은 다음 사이클로 닫는다. 한 사이클이 완료되어 CI/CD 녹색이 확인된
@@ -140,6 +223,72 @@ CIA(기밀성·무결성·가용성) 를 넘어 **Correctness + Determinism + Au
    `python scripts/gen_status.py --update`.
 6. **커밋**: HEREDOC commit message + Co-Authored-By.
 7. **CI/CD 녹색 확인**: 다음 P0 착수.
+
+## 4.1 롤백 리허설 (Rollback Rehearsal)
+
+각 P0 항목은 **배포 전에 롤백 절차를 미리 리허설** 한다. CLAUDE.md "오류 수정
+시 관찰 우선" 원칙의 배포 버전이다. 사고가 났을 때 처음으로 롤백 명령을
+실행하면 늦다.
+
+### 4.1.1 리허설 항목 (P0 공통)
+
+각 P0 항목 PR 의 description 에 다음 4가지를 반드시 포함한다.
+
+1. **적용 전 검증 (pre-deploy verification)**
+   - 운영 트래픽 영향 없는 경로에서 dry-run 또는 canary
+   - 영향 받는 메트릭의 baseline 값 (적용 후 비교용)
+   - 데이터 마이그레이션이 있다면 reversibility 확인
+
+2. **적용 후 검증 (post-deploy verification)**
+   - smoke test 명령 (직접 curl 또는 통합 테스트)
+   - 핵심 메트릭이 baseline 대비 정상 범위인지
+   - 새로 추가된 카운터/gauge 가 실제로 발사되는지 (`curl /metrics | grep ...`)
+   - 5분간 에러율 baseline 유지 확인
+
+3. **장애 시 롤백 커맨드 (rollback runbook)**
+   - 코드 롤백: 정확한 git 커맨드 (`git revert <hash>` 또는 이전 image tag)
+   - 환경변수 롤백: 변경된 키와 이전 값
+   - DB 롤백: 마이그레이션이 있다면 `alembic downgrade <revision>` 의 revision
+   - Redis 키 정리: 새로 추가된 키 패턴과 `SCAN + DEL` 명령
+   - 예상 소요 시간 (목표: 5분 이내)
+
+4. **롤백 후 데이터 정합성 체크**
+   - 주문 / 잔고 / 감사 로그가 정상 상태인지 확인하는 SQL 또는 API 호출
+   - 롤백 전후로 누락·중복·순서역전이 없는지
+   - reconciliation 한 번 강제 실행 (P1 reconciliation wiring 후에는 자동)
+
+### 4.1.2 P0 항목별 롤백 시나리오 (요약)
+
+**P0-1 (Refresh type 검증)**
+- 롤백: `git revert <hash>` 만으로 충분 (코드 변경만)
+- 정합성 체크: 기존 발급된 토큰의 정상 동작, refresh 카운터
+
+**P0-2 (Revocation/RateLimit Redis)**
+- 롤백: 코드 revert + 환경변수 `AQTS_REVOCATION_BACKEND=memory` 임시 fallback (제공 시)
+- Redis 키 정리: `SCAN MATCH "aqts:revocation:*" + DEL`, `aqts:ratelimit:*`
+- 정합성 체크: 토큰 무효화 동작, rate limit 차단 카운터
+
+**P0-3 (주문 idempotency)**
+- 롤백: 코드 revert + alembic downgrade (DB 유니크 제약 제거)
+- Redis 키 정리: `SCAN MATCH "aqts:order:idem:*" + DEL`
+- 정합성 체크: 주문 수와 fill 수 일치, 중복 주문 0건 SQL 검증
+
+**P0-4 (감사 fail-closed)**
+- 롤백: 코드 revert (트랜잭션 경계만 되돌림)
+- 정합성 체크: 감사 로그 누락 구간 SQL 조회 (롤백 전후 timestamp range)
+- **주의**: 롤백 시 fail-open 으로 돌아가므로 즉시 후속 fix 필요
+
+**P0-5 (TradingGuard wiring)**
+- 롤백: 코드 revert (executor 진입부 가드 호출 제거)
+- 환경변수: `AQTS_TRADING_GUARD_ENABLED=false` 로 즉시 비활성화 가능하게 환경변수 게이트 추가 권장
+- 정합성 체크: 롤백 후 차단된 주문 목록 (재실행 필요 여부 판단), `aqts_trading_guard_reject_total`
+
+### 4.1.3 리허설 책임
+
+- **PR 작성자**는 위 4가지를 PR description 에 작성한다.
+- **머지 전**: 운영자가 롤백 커맨드를 staging 환경에서 한 번 실제로 실행해본다.
+- **머지 후**: 본 문서 §9 진행 기록에 "rollback rehearsal: passed/failed" 를 기록한다.
+- **실패 시**: 롤백 절차를 수정하고 다시 리허설. 통과 전까지 prod 배포 금지.
 
 ## 5. 평가 지표
 
