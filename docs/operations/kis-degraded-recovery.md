@@ -342,6 +342,48 @@ from core.notification.alert_manager import AlertLevel
 실제 import 경로를 끝까지 실행해야만 잡히는 종류의 회귀이며, CLAUDE.md 의
 "헬퍼 정의 ≠ 적용", "Wiring Rule" 원칙을 정확히 검증한 사례다.
 
+### 8.10 /api/alerts 종단 통합 검증
+
+영속화 경로(`create_and_persist_alert` → MongoDB `insert_one`)가 반대편의 조회
+경로(`/api/alerts` → `get_alerts`)와 맞물려 끝에서 끝까지 동작하는지는 그동안
+한 번도 직접 검증된 적이 없었다. 단위 테스트는 `AlertManager` 와 라우트 핸들러를
+독립적으로만 검증했고, in-memory 폴백/MongoDB 양쪽 경로가 라우트 응답 스키마
+(`AlertResponse`, `unread_count`, `by_level` 분포)에 실제로 매핑되는지는
+확인되지 않은 상태였다.
+
+`backend/tests/test_alerts_route_e2e.py` 가 이 종단 wiring 을 검증한다.
+
+- `_AsyncCursorStub`: `AsyncIOMotorCursor` 의 `find().sort().skip().limit()` 체이닝과
+  `__aiter__` 를 흉내내는 최소 stub. 실제 motor 가 없는 환경에서도 라우트의
+  cursor 소비 경로를 그대로 통과시킨다.
+- `_FakeMongoCollection`: `insert_one` 호출 횟수를 캡처하고, `find` 시 동일 문서를
+  cursor 로 돌려주며, `count_documents` 의 `$ne`/`level` 필터까지 최소 구현한다.
+- `app.dependency_overrides` 로 `require_viewer`/`require_operator` 를 우회하고
+  `get_alert_manager` 에 테스트 매니저를 주입한다 (auth 경로는 `test_rbac_routes`
+  에서 별도 검증).
+
+검증 항목 (6개 테스트, 전부 PASS):
+
+1. `test_in_memory_persist_then_list_returns_alert` — 컬렉션 미주입 상태에서
+   `create_and_persist_alert` 로 저장한 알림이 `GET /api/alerts/` 응답에
+   `status == PENDING` 으로 그대로 매핑되는지.
+2. `test_in_memory_filter_by_alert_type_and_level` — `alert_type`/`level` 쿼리
+   파라미터가 in-memory 경로에서 정확히 동작하는지.
+3. `test_in_memory_stats_endpoint_by_level_distribution` — `/api/alerts/stats` 가
+   `by_level` 분포(ERROR/INFO 등)를 올바르게 계산하는지.
+4. `test_mongodb_persist_then_list_returns_same_alert` — `set_collection` 으로
+   주입된 fake 컬렉션에 `insert_one` 이 1회 호출되고, 같은 문서가 cursor 경로로
+   소비되어 라우트 응답에 그대로 노출되는지.
+5. `test_mongodb_stats_uses_count_documents` — MongoDB 경로에서 stats 가
+   `count_documents` 를 통해 unread/by_level 을 계산하는지.
+6. `test_mark_alert_read_via_route` — `PUT /api/alerts/{id}/read` 호출 시 in-memory
+   매니저의 알림 상태가 `AlertStatus.READ` 로 실제로 전이되는지.
+
+이 테스트는 §8.5 (콜백 wiring 통합 검증) 와 짝을 이룬다. 8.5 가 "발생 → 영속화"
+방향을 검증한다면, 8.10 은 "영속화 → 조회/통계/읽음 처리" 방향을 검증한다. 양쪽
+방향이 모두 끝에서 끝까지 동작해야만 운영자가 실제로 알림을 인지하고 처리하는
+사이클이 완성된다.
+
 ## 9. 변경 파일
 
 - 신규: `backend/core/data_collector/kis_recovery.py`
