@@ -73,6 +73,27 @@ APP_INFO = Info(
     "AQTS application metadata",
 )
 
+# ── KIS API degraded → healthy 자동 복원 추적 ──
+# core/data_collector/kis_recovery.py 의 try_recover_kis() 가 호출될 때마다 갱신.
+# - attempts_total: 실제 토큰 재발급을 시도한 횟수 (쿨다운으로 스킵된 경우 제외)
+# - success_total: 그중 성공한 횟수
+# - degraded: 현재 KIS 가 degraded(1) 인지 healthy(0) 인지의 즉시값
+# 알림 룰 / 대시보드의 데이터 소스. 시크릿 라벨은 절대 두지 않는다.
+KIS_RECOVERY_ATTEMPTS_TOTAL = Counter(
+    "aqts_kis_recovery_attempts_total",
+    "Total KIS token re-issue attempts after entering degraded state",
+)
+
+KIS_RECOVERY_SUCCESS_TOTAL = Counter(
+    "aqts_kis_recovery_success_total",
+    "Total successful KIS token recoveries from degraded state",
+)
+
+KIS_DEGRADED = Gauge(
+    "aqts_kis_degraded",
+    "Current KIS API degraded flag (1=degraded, 0=healthy)",
+)
+
 # ══════════════════════════════════════
 # 3. 비즈니스 메트릭
 # ══════════════════════════════════════

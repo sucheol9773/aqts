@@ -32,6 +32,35 @@ from core.data_collector.kis_client import KISAPIError, KISClient
 DEFAULT_COOLDOWN_SECONDS = 75
 
 
+def _record_attempt() -> None:
+    """Prometheus 카운터 inc — 메트릭 모듈은 lazy import 로 순환 의존성 회피."""
+    try:
+        from core.monitoring.metrics import KIS_RECOVERY_ATTEMPTS_TOTAL
+
+        KIS_RECOVERY_ATTEMPTS_TOTAL.inc()
+    except Exception:  # pragma: no cover - 메트릭 누락은 회복 경로를 막지 않는다
+        pass
+
+
+def _record_success() -> None:
+    try:
+        from core.monitoring.metrics import KIS_DEGRADED, KIS_RECOVERY_SUCCESS_TOTAL
+
+        KIS_RECOVERY_SUCCESS_TOTAL.inc()
+        KIS_DEGRADED.set(0)
+    except Exception:  # pragma: no cover
+        pass
+
+
+def _record_degraded() -> None:
+    try:
+        from core.monitoring.metrics import KIS_DEGRADED
+
+        KIS_DEGRADED.set(1)
+    except Exception:  # pragma: no cover
+        pass
+
+
 @dataclass
 class KISRecoveryState:
     """KIS degraded 상태 + 회복 시도 메타데이터.
@@ -59,6 +88,7 @@ class KISRecoveryState:
         self.degraded = True
         self.last_error = error
         self.next_attempt_at = (now or datetime.now()) + timedelta(seconds=self.cooldown_seconds)
+        _record_degraded()
 
     def mark_recovered(self) -> None:
         """회복 성공 — degraded 해제 + 카운터 증가."""
@@ -66,6 +96,7 @@ class KISRecoveryState:
         self.last_error = None
         self.next_attempt_at = None
         self.recovery_count += 1
+        _record_success()
 
 
 async def try_recover_kis(
@@ -102,6 +133,7 @@ async def try_recover_kis(
             return None
 
         state.attempt_count += 1
+        _record_attempt()
         logger.info(f"KIS recovery 시도 #{state.attempt_count} (cooldown={state.cooldown_seconds}s)")
         try:
             new_client = await client_factory()

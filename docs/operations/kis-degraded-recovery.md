@@ -119,19 +119,37 @@ python ../scripts/gen_status.py --update                # doc-sync 갱신
    에 사유 누적. 회복 후 `recovery_count` 증가. (Prometheus 메트릭 노출은 후속 PR.)
 3. **backtest 모드**: KIS 토큰 자체가 필요 없는 모드. 복원 경로는 비활성.
 
-## 6. 비범위 (별도 PR 로 분리)
+## 6. Prometheus 메트릭
 
-본 PR 은 **자동 복원 경로** 까지만 책임진다. 아래는 별도 후속 작업.
+`core/monitoring/metrics.py` 에 다음 3개를 노출 (`/metrics` 엔드포인트로 자동 수집).
 
-- `aqts_kis_recovery_attempts_total`, `aqts_kis_recovery_success_total` Prometheus
-  메트릭 노출.
+| 이름 | 타입 | 의미 |
+|------|------|------|
+| `aqts_kis_recovery_attempts_total` | Counter | 쿨다운 만료 후 실제 토큰 재발급을 시도한 횟수. 쿨다운으로 스킵된 호출은 제외. |
+| `aqts_kis_recovery_success_total` | Counter | 그중 성공한 횟수. `mark_recovered()` 시점에 +1. |
+| `aqts_kis_degraded` | Gauge | 현재 KIS 가 degraded(1) / healthy(0). `mark_degraded()` 시 1, `mark_recovered()` 시 0. |
+
+연결 방식은 `core/data_collector/kis_recovery.py` 안에 lazy import 된 `_record_*`
+헬퍼로 격리되어 있어, 메트릭 모듈 import 실패 시에도 회복 경로는 그대로 동작한다
+(예외는 silently swallow). 시크릿/키 라벨은 절대 두지 않는다.
+
+대시보드/알림 룰 예시:
+- "지난 1시간 동안 회복 성공 횟수": `increase(aqts_kis_recovery_success_total[1h])`
+- "현재 KIS degraded?": `aqts_kis_degraded == 1`
+- "1시간 동안 회복 실패율":
+  `1 - rate(aqts_kis_recovery_success_total[1h]) / rate(aqts_kis_recovery_attempts_total[1h])`
+
+## 7. 비범위 (별도 PR 로 분리)
+
+본 PR 은 **자동 복원 경로 + Prometheus 메트릭** 까지만 책임진다. 아래는 별도 후속.
+
 - 회복이 N 회 연속 실패 시 알림(웹훅/슬랙) 트리거.
 - lifespan startup 의 jittered backoff (배포 직후 EGW00133 1차 충돌 자체를 더 줄임).
 
 CLAUDE.md 의 **"bug fix 커밋에 무관한 변경 끼워넣기 금지"** 원칙에 따라 책임 범위
 를 분리한다.
 
-## 7. 변경 파일
+## 8. 변경 파일
 
 - 신규: `backend/core/data_collector/kis_recovery.py`
 - 신규: `backend/tests/test_kis_recovery.py`

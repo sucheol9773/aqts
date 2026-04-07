@@ -210,3 +210,75 @@ class TestTryRecoverKIS:
         assert state.degraded is False
         assert state.attempt_count == 2
         assert state.recovery_count == 1
+
+
+class TestKISRecoveryMetrics:
+    """Prometheus 메트릭 갱신 검증.
+
+    Counter/Gauge 의 _value._value 직접 접근은 prometheus_client 의 내부 API 이지만
+    공식 문서에서도 단위 테스트 용도로 허용된 패턴이다 (get_sample_value 우회).
+    """
+
+    def _read_counter(self, counter):
+        from prometheus_client import REGISTRY
+
+        return REGISTRY.get_sample_value(counter._name + "_total") or 0.0
+
+    def _read_gauge(self, gauge):
+        from prometheus_client import REGISTRY
+
+        return REGISTRY.get_sample_value(gauge._name) or 0.0
+
+    def test_mark_degraded_sets_kis_degraded_gauge_to_1(self):
+        from core.monitoring.metrics import KIS_DEGRADED
+
+        KIS_DEGRADED.set(0)
+        state = KISRecoveryState(cooldown_seconds=60)
+        state.mark_degraded("err", now=datetime(2026, 4, 7, 12, 0, 0))
+
+        assert self._read_gauge(KIS_DEGRADED) == 1.0
+
+    def test_mark_recovered_sets_kis_degraded_gauge_to_0_and_increments_success(self):
+        from core.monitoring.metrics import KIS_DEGRADED, KIS_RECOVERY_SUCCESS_TOTAL
+
+        before = self._read_counter(KIS_RECOVERY_SUCCESS_TOTAL)
+        KIS_DEGRADED.set(1)
+        state = KISRecoveryState()
+        state.mark_degraded("err", now=datetime(2026, 4, 7, 12, 0, 0))
+        state.mark_recovered()
+
+        assert self._read_gauge(KIS_DEGRADED) == 0.0
+        assert self._read_counter(KIS_RECOVERY_SUCCESS_TOTAL) == before + 1.0
+
+    @pytest.mark.asyncio
+    async def test_try_recover_increments_attempts_counter_on_real_attempt(self):
+        from core.monitoring.metrics import KIS_RECOVERY_ATTEMPTS_TOTAL
+
+        before = self._read_counter(KIS_RECOVERY_ATTEMPTS_TOTAL)
+
+        now = datetime(2026, 4, 7, 12, 0, 0)
+        state = KISRecoveryState(cooldown_seconds=60)
+        state.mark_degraded("err", now=now)
+
+        new_client = AsyncMock(spec=KISClient)
+        factory = AsyncMock(return_value=new_client)
+
+        await try_recover_kis(state, factory, now=now + timedelta(seconds=61))
+
+        assert self._read_counter(KIS_RECOVERY_ATTEMPTS_TOTAL) == before + 1.0
+
+    @pytest.mark.asyncio
+    async def test_try_recover_does_not_increment_when_in_cooldown(self):
+        from core.monitoring.metrics import KIS_RECOVERY_ATTEMPTS_TOTAL
+
+        now = datetime(2026, 4, 7, 12, 0, 0)
+        state = KISRecoveryState(cooldown_seconds=60)
+        state.mark_degraded("err", now=now)
+
+        before = self._read_counter(KIS_RECOVERY_ATTEMPTS_TOTAL)
+        factory = AsyncMock()
+        await try_recover_kis(state, factory, now=now + timedelta(seconds=10))
+
+        # 쿨다운 미만이면 메트릭 카운터도 증가하지 않아야 한다.
+        assert self._read_counter(KIS_RECOVERY_ATTEMPTS_TOTAL) == before
+        factory.assert_not_called()
