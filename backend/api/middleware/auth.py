@@ -371,8 +371,11 @@ class AuthService:
         user = None
         try:
             from sqlalchemy import select
+            from sqlalchemy.orm import selectinload
 
-            result = await db_session.execute(select(User).where(User.username == username))
+            result = await db_session.execute(
+                select(User).options(selectinload(User.role)).where(User.username == username)
+            )
             user = result.scalars().first()
         except Exception as e:
             raise HTTPException(
