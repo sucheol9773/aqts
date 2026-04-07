@@ -337,29 +337,43 @@ async def handle_market_close() -> dict:
         result["trade_stats_error"] = str(e)
 
     # ── 3. 포트폴리오 스냅샷 Redis 저장 ──
-    try:
-        redis = RedisManager.get_client()
-        today_key = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-        snapshot = {
-            "date": today_key,
-            "portfolio_value": portfolio_value_end,
-            "cash_balance": cash_balance,
-            "positions_count": len(positions_data),
-            "positions": positions_data,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-
-        await redis.set(
-            f"portfolio:snapshot:{today_key}",
-            json.dumps(snapshot),
-            ex=86400 * 30,  # 30일 보관
+    # KIS 호출 실패 / 빈 응답 가드: portfolio_value_end == 0 이고 positions 가
+    # 비었고 cash_balance 도 0 이면 KIS 잔고 응답이 사실상 없는 것이다.
+    # 이 상태로 snapshot 을 덮어쓰면 직전 거래일의 정상 데이터가 0 으로 오염되어
+    # post_market 단계에서 -100% / 0원 텔레그램 리포트가 발사되는 회귀가 발생한다.
+    # 이 경우 snapshot 저장을 명시적으로 skip 하고 result 에 사유를 기록한다.
+    snapshot_is_empty = portfolio_value_end == 0 and cash_balance == 0 and not positions_data
+    if result.get("kis_error") or snapshot_is_empty:
+        logger.warning(
+            "[MarketClose] KIS 응답 비정상 — snapshot 저장 skip "
+            f"(kis_error={result.get('kis_error')}, empty={snapshot_is_empty})"
         )
-        result["snapshot_saved"] = True
+        result["snapshot_saved"] = False
+        result["snapshot_skip_reason"] = "kis_error" if result.get("kis_error") else "empty_response"
+    else:
+        try:
+            redis = RedisManager.get_client()
+            today_key = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    except Exception as e:
-        logger.warning(f"[MarketClose] 스냅샷 저장 실패: {e}")
-        result["snapshot_error"] = str(e)
+            snapshot = {
+                "date": today_key,
+                "portfolio_value": portfolio_value_end,
+                "cash_balance": cash_balance,
+                "positions_count": len(positions_data),
+                "positions": positions_data,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
+            await redis.set(
+                f"portfolio:snapshot:{today_key}",
+                json.dumps(snapshot),
+                ex=86400 * 30,  # 30일 보관
+            )
+            result["snapshot_saved"] = True
+
+        except Exception as e:
+            logger.warning(f"[MarketClose] 스냅샷 저장 실패: {e}")
+            result["snapshot_error"] = str(e)
 
     # ── 4. 감사 로그 기록 ──
     try:
@@ -444,6 +458,19 @@ async def handle_post_market() -> dict:
     except Exception as e:
         logger.warning(f"[PostMarket] 스냅샷 조회 실패: {e}")
         result["snapshot_error"] = str(e)
+
+    # ── 1.5. 안전망: snapshot 부재 또는 전부 0 이면 리포트/텔레그램 발송 skip ──
+    # market_close 가 KIS 실패로 snapshot 을 저장하지 않은 경우, 또는 snapshot 자체가
+    # 모두 0 인 경우, 0원/-100% 리포트가 텔레그램으로 발사되는 것을 차단한다.
+    snapshot_missing_or_empty = portfolio_value_end == 0 and cash_balance == 0 and not positions_data
+    if snapshot_missing_or_empty:
+        logger.warning(
+            "[PostMarket] snapshot 부재 또는 전부 0 — 일일 리포트 발송 skip "
+            "(KIS 실패 후 이전 스냅샷이 보존되지 않은 상태로 추정)"
+        )
+        result["report_skipped"] = True
+        result["skip_reason"] = "snapshot_missing_or_empty"
+        return result
 
     # ── 2. 금일 체결 내역 조회 ──
     trades = []

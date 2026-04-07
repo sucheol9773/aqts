@@ -527,8 +527,38 @@ class TestHandlePostMarket:
     @pytest.mark.asyncio
     async def test_telegram_sent(self):
         """Telegram 발송 성공 확인"""
+        # 안전망(post_market 의 zero-snapshot skip) 을 우회하기 위해 실제와 유사한
+        # snapshot 을 제공한다. 이 fixture 는 텔레그램/리포트 저장 경로를 검증하는
+        # 것이 목적이며, snapshot 부재 시나리오는 별도 테스트에서 검증한다.
+        _today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        _snapshot_json = json.dumps(
+            {
+                "date": _today,
+                "portfolio_value": 50_000_000.0,
+                "cash_balance": 10_000_000.0,
+                "positions_count": 1,
+                "positions": [
+                    {
+                        "ticker": "005930",
+                        "name": "삼성전자",
+                        "quantity": 100,
+                        "avg_price": 65000,
+                        "current_price": 68000,
+                        "eval_amount": 6800000,
+                        "pnl_amount": 300000,
+                        "pnl_percent": 4.62,
+                    }
+                ],
+            }
+        )
+
+        async def _redis_get(key):
+            if "snapshot" in key and _today in key:
+                return _snapshot_json
+            return None
+
         mock_redis = MagicMock()
-        mock_redis.get = AsyncMock(return_value=None)
+        mock_redis.get = AsyncMock(side_effect=_redis_get)
         mock_redis.set = AsyncMock()
 
         mock_session = AsyncMock()
@@ -566,8 +596,38 @@ class TestHandlePostMarket:
     @pytest.mark.asyncio
     async def test_report_saved_to_redis(self):
         """리포트가 Redis에 저장되는지"""
+        # 안전망(post_market 의 zero-snapshot skip) 을 우회하기 위해 실제와 유사한
+        # snapshot 을 제공한다. 이 fixture 는 텔레그램/리포트 저장 경로를 검증하는
+        # 것이 목적이며, snapshot 부재 시나리오는 별도 테스트에서 검증한다.
+        _today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        _snapshot_json = json.dumps(
+            {
+                "date": _today,
+                "portfolio_value": 50_000_000.0,
+                "cash_balance": 10_000_000.0,
+                "positions_count": 1,
+                "positions": [
+                    {
+                        "ticker": "005930",
+                        "name": "삼성전자",
+                        "quantity": 100,
+                        "avg_price": 65000,
+                        "current_price": 68000,
+                        "eval_amount": 6800000,
+                        "pnl_amount": 300000,
+                        "pnl_percent": 4.62,
+                    }
+                ],
+            }
+        )
+
+        async def _redis_get(key):
+            if "snapshot" in key and _today in key:
+                return _snapshot_json
+            return None
+
         mock_redis = MagicMock()
-        mock_redis.get = AsyncMock(return_value=None)
+        mock_redis.get = AsyncMock(side_effect=_redis_get)
         mock_redis.set = AsyncMock()
 
         mock_session = AsyncMock()
@@ -609,8 +669,38 @@ class TestHandlePostMarket:
     @pytest.mark.asyncio
     async def test_telegram_failure_graceful(self):
         """Telegram 발송 실패 시에도 정상 반환"""
+        # 안전망(post_market 의 zero-snapshot skip) 을 우회하기 위해 실제와 유사한
+        # snapshot 을 제공한다. 이 fixture 는 텔레그램/리포트 저장 경로를 검증하는
+        # 것이 목적이며, snapshot 부재 시나리오는 별도 테스트에서 검증한다.
+        _today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        _snapshot_json = json.dumps(
+            {
+                "date": _today,
+                "portfolio_value": 50_000_000.0,
+                "cash_balance": 10_000_000.0,
+                "positions_count": 1,
+                "positions": [
+                    {
+                        "ticker": "005930",
+                        "name": "삼성전자",
+                        "quantity": 100,
+                        "avg_price": 65000,
+                        "current_price": 68000,
+                        "eval_amount": 6800000,
+                        "pnl_amount": 300000,
+                        "pnl_percent": 4.62,
+                    }
+                ],
+            }
+        )
+
+        async def _redis_get(key):
+            if "snapshot" in key and _today in key:
+                return _snapshot_json
+            return None
+
         mock_redis = MagicMock()
-        mock_redis.get = AsyncMock(return_value=None)
+        mock_redis.get = AsyncMock(side_effect=_redis_get)
         mock_redis.set = AsyncMock()
 
         mock_session = AsyncMock()
@@ -647,8 +737,38 @@ class TestHandlePostMarket:
     @pytest.mark.asyncio
     async def test_uses_initial_capital_when_no_prev_snapshot(self):
         """전일 스냅샷 없으면 초기 자본 사용"""
+        # 안전망(post_market 의 zero-snapshot skip) 을 우회하기 위해 실제와 유사한
+        # snapshot 을 제공한다. 이 fixture 는 텔레그램/리포트 저장 경로를 검증하는
+        # 것이 목적이며, snapshot 부재 시나리오는 별도 테스트에서 검증한다.
+        _today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        _snapshot_json = json.dumps(
+            {
+                "date": _today,
+                "portfolio_value": 50_000_000.0,
+                "cash_balance": 10_000_000.0,
+                "positions_count": 1,
+                "positions": [
+                    {
+                        "ticker": "005930",
+                        "name": "삼성전자",
+                        "quantity": 100,
+                        "avg_price": 65000,
+                        "current_price": 68000,
+                        "eval_amount": 6800000,
+                        "pnl_amount": 300000,
+                        "pnl_percent": 4.62,
+                    }
+                ],
+            }
+        )
+
+        async def _redis_get(key):
+            if "snapshot" in key and _today in key:
+                return _snapshot_json
+            return None
+
         mock_redis = MagicMock()
-        mock_redis.get = AsyncMock(return_value=None)
+        mock_redis.get = AsyncMock(side_effect=_redis_get)
         mock_redis.set = AsyncMock()
 
         mock_session = AsyncMock()
@@ -687,8 +807,38 @@ class TestHandlePostMarket:
     @pytest.mark.asyncio
     async def test_trades_passed_to_reporter(self):
         """금일 체결 내역이 리포터에 전달되는지"""
+        # 안전망(post_market 의 zero-snapshot skip) 을 우회하기 위해 실제와 유사한
+        # snapshot 을 제공한다. 이 fixture 는 텔레그램/리포트 저장 경로를 검증하는
+        # 것이 목적이며, snapshot 부재 시나리오는 별도 테스트에서 검증한다.
+        _today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        _snapshot_json = json.dumps(
+            {
+                "date": _today,
+                "portfolio_value": 50_000_000.0,
+                "cash_balance": 10_000_000.0,
+                "positions_count": 1,
+                "positions": [
+                    {
+                        "ticker": "005930",
+                        "name": "삼성전자",
+                        "quantity": 100,
+                        "avg_price": 65000,
+                        "current_price": 68000,
+                        "eval_amount": 6800000,
+                        "pnl_amount": 300000,
+                        "pnl_percent": 4.62,
+                    }
+                ],
+            }
+        )
+
+        async def _redis_get(key):
+            if "snapshot" in key and _today in key:
+                return _snapshot_json
+            return None
+
         mock_redis = MagicMock()
-        mock_redis.get = AsyncMock(return_value=None)
+        mock_redis.get = AsyncMock(side_effect=_redis_get)
         mock_redis.set = AsyncMock()
 
         mock_session = AsyncMock()

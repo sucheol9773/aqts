@@ -268,6 +268,23 @@ class TradingScheduler:
         logger.info(f"시작 시간: {self._state.started_at}")
         logger.info("━" * 50)
 
+        # 재시작 시 Redis 에 기록된 오늘의 실행 이력을 복원하여
+        # 같은 거래일에 동일 이벤트가 두 번 실행되는 것을 방지한다.
+        try:
+            from core.scheduler_idempotency import load_executed_for_date
+
+            today = self._state.started_at.date()
+            executed_types = await load_executed_for_date(today)
+            if executed_types:
+                self._state.current_date = today
+                self._state.events_executed_today = [{"event_type": et, "restored": True} for et in executed_types]
+                logger.info(
+                    f"[Scheduler] 멱등성 복원: {today} 에 이미 실행된 이벤트 "
+                    f"{len(executed_types)}건 — {sorted(executed_types)}"
+                )
+        except Exception as exc:
+            logger.warning(f"[Scheduler] 멱등성 복원 실패 (인메모리만 사용): {exc}")
+
         self._task = asyncio.create_task(self._scheduler_loop())
 
     async def stop(self) -> None:
@@ -389,7 +406,14 @@ class TradingScheduler:
                 await asyncio.sleep(60)  # 오류 후 1분 대기
 
     def _find_next_event(self, now: datetime) -> Optional[ScheduleEvent]:
-        """현재 시간 이후 실행할 다음 이벤트 반환"""
+        """현재 시간 이후 실행할 다음 이벤트 반환.
+
+        events_executed_today (인메모리) + Redis idempotency (영속) 를
+        모두 확인하여 같은 거래일에 동일 이벤트가 두 번 트리거되는 것을
+        방지한다. Redis 조회는 동기 함수에서 불가능하므로 인메모리에는
+        부팅 시 load_executed_for_date 로 복원된 값이 들어있고,
+        실행 직전 _execute_event 에서 한 번 더 await 으로 확인한다.
+        """
         current_time = now.time()
         executed_types = {e["event_type"] for e in self._state.events_executed_today}
 
@@ -405,7 +429,11 @@ class TradingScheduler:
         return None
 
     async def _execute_event(self, event: ScheduleEvent) -> dict:
-        """이벤트 실행"""
+        """이벤트 실행.
+
+        실행 직전에 Redis 멱등성 키를 await 으로 한 번 더 확인하여,
+        부팅 시 load 와 _find_next_event 사이의 race condition 도 방어한다.
+        """
         start_time = now_kst()
         logger.info(f"▶ [{event.event_type.value}] {event.description}")
 
@@ -415,6 +443,25 @@ class TradingScheduler:
             "success": False,
             "details": {},
         }
+
+        # 실행 전 Redis 멱등성 final-check
+        try:
+            from core.scheduler_idempotency import is_executed
+
+            if await is_executed(event.event_type.value, start_time.date()):
+                logger.info(
+                    f"⚠ [{event.event_type.value}] 멱등성 키 존재 — 같은 거래일 "
+                    f"({start_time.date()}) 에 이미 실행됨. 스킵."
+                )
+                result["success"] = True
+                result["skipped"] = True
+                result["skip_reason"] = "idempotency_key_exists"
+                # 인메모리에도 반영하여 같은 부팅 세션 내에서 또 잡지 않게 한다
+                if event.event_type.value not in {e["event_type"] for e in self._state.events_executed_today}:
+                    self._state.events_executed_today.append(result)
+                return result
+        except Exception as exc:
+            logger.warning(f"[Scheduler] 멱등성 final-check 실패 (인메모리만 사용): {exc}")
 
         try:
             # 등록된 핸들러 호출
@@ -443,6 +490,15 @@ class TradingScheduler:
             self._state.last_event = event.event_type
             self._state.last_event_at = now_kst()
             self._state.events_executed_today.append(result)
+
+            # Redis 에 멱등성 키 기록 — 컨테이너 재시작 후에도 같은 거래일에
+            # 동일 이벤트가 다시 실행되지 않도록 한다.
+            try:
+                from core.scheduler_idempotency import mark_executed
+
+                await mark_executed(event.event_type.value, start_time.date())
+            except Exception as exc:
+                logger.warning(f"[Scheduler] 멱등성 키 기록 실패 (인메모리만 보존): {exc}")
 
             logger.info(f"✓ [{event.event_type.value}] 완료 ({elapsed:.1f}초)")
 
