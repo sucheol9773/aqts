@@ -225,6 +225,44 @@ recovered = await try_recover_kis(state_obj, _kis_client_factory,
 | `test_alert_callback_exception_does_not_break_recovery_path` | callback 예외가 try_recover_kis 흐름을 막지 않음 + dispatched 미마킹 |
 | `test_no_callback_provided_does_not_raise` | callback 미주입 시 안전하게 동작 |
 
+### 8.5 Wiring 통합 테스트
+
+`backend/tests/test_kis_recovery_integration.py::TestKISRecoveryWiring` — 단위 테스트
+는 엔진을 독립적으로 호출하므로 main.py 의 wiring 을 보장하지 못한다 (CLAUDE.md
+Wiring Rule). 통합 테스트는 실제 `/api/system/health` 라우트를 거쳐 다음 경로를
+검증한다:
+
+```
+GET /api/system/health
+  → main.health_check
+  → try_recover_kis(state, factory, alert_callback)
+  → _kis_alert_callback (lazy import)
+  → api.routes.alerts._alert_manager.create_alert(SYSTEM_ERROR/ERROR)
+```
+
+| 케이스 | 검증 |
+|--------|------|
+| `test_alert_callback_dispatched_through_health_check_route` | 임계값 도달 시 `_alert_manager.create_alert` 가 정확히 1회 호출 + metadata(consecutive_failures/last_error/alert_threshold) 검증 + 추가 호출 시 중복 발송 없음 |
+| `test_recovery_success_resets_alert_state_through_health_check` | 알림 발송 후 회복 성공 시 `consecutive_failures=0`, `alert_dispatched=False` 로 리셋되고 추가 알림 없음 |
+
+### 8.6 회고: 통합 테스트가 잡아낸 wiring 버그
+
+본 통합 테스트를 추가하면서 `main.py` 의 lazy import 가 잘못된 모듈을 참조하던
+버그를 발견했다:
+
+```python
+# Before (buggy)
+from config.constants import AlertLevel, AlertType  # AlertLevel 은 이 모듈에 없음
+# After
+from config.constants import AlertType
+from core.notification.alert_manager import AlertLevel
+```
+
+단위 테스트(test_kis_recovery.py)는 `try_recover_kis` 를 직접 호출하므로 main.py
+의 lazy import 를 절대 통과하지 않는다. 통합 테스트가 health_check → callback →
+실제 import 경로를 끝까지 실행해야만 잡히는 종류의 회귀이며, CLAUDE.md 의
+"헬퍼 정의 ≠ 적용", "Wiring Rule" 원칙을 정확히 검증한 사례다.
+
 ## 9. 변경 파일
 
 - 신규: `backend/core/data_collector/kis_recovery.py`

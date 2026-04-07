@@ -325,7 +325,8 @@ async def health_check():
             AlertManager 는 lazy import 로 가져와 순환 의존성을 회피한다.
             """
             from api.routes.alerts import _alert_manager
-            from config.constants import AlertLevel, AlertType
+            from config.constants import AlertType
+            from core.notification.alert_manager import AlertLevel
 
             _alert_manager.create_alert(
                 alert_type=AlertType.SYSTEM_ERROR,

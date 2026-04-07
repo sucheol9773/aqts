@@ -241,7 +241,7 @@ aqts/
 │   │   ├── models/                  # SQLAlchemy 모델
 │   │   └── repositories/
 │   │       └── audit_log.py         # 감사 로그 (AuditLogger)
-│   └── tests/                       # 3,278 tests (전체 통과)
+│   └── tests/                       # 3,280 tests (전체 통과)
 │       ├── conftest.py              # 공통 Fixture + 환경변수 설정
 │       └── test_*.py                # 75+ 테스트 파일
 ├── frontend/
@@ -281,7 +281,7 @@ aqts/
 ```bash
 cd backend
 
-# 전체 테스트 (3,278 tests)
+# 전체 테스트 (3,280 tests)
 python -m pytest
 
 # 스모크 테스트 (413 tests, < 13초)
