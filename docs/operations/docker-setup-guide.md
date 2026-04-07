@@ -142,10 +142,12 @@ TELEGRAM_CHAT_ID=<채팅_ID>
 TELEGRAM_ALERT_LEVEL=IMPORTANT   # ALL | IMPORTANT | ERROR
 
 # ══════════════════════════════════════
-# 대시보드 인증
+# 대시보드 인증 (초기 admin 사용자의 비밀번호 (Alembic 마이그레이션 시 시드용, 첫 로그인 후 변경 권장))
 # ══════════════════════════════════════
 DASHBOARD_SECRET_KEY=<JWT_시크릿>
-DASHBOARD_PASSWORD=<대시보드_비밀번호>
+ADMIN_BOOTSTRAP_USERNAME=admin
+ADMIN_BOOTSTRAP_PASSWORD=<강한_초기_비밀번호>
+
 
 # ══════════════════════════════════════
 # 외부 데이터 API (선택)
