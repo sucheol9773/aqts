@@ -257,3 +257,202 @@ groups:
           summary: "KIS 복원 정체: 15분간 시도 {{ $value }}+ 회, 성공 0"
           description: "최근 15분 동안 5회 이상 복원을 시도했지만 단 1건도 성공하지 못함. KIS 서비스 자체 장애 또는 appkey/appsecret 문제 가능성. 수동 개입 필요."
           runbook: "docs/operations/kis-degraded-recovery.md"
+
+  # ═══════════════════════════════════════════════════════════════
+  # P1-알람 규칙: 보안/정합성 계층 (security-integrity-roadmap §9)
+  # P0-1/2a/2b/3a/3b/4/5 + P1-정합성/보안 에서 instrument 된
+  # 모든 fail-closed 카운터/게이지에 대해 1:1 알람을 정의한다.
+  # 알람 없는 metric 은 형식적 통제에 불과하다는 원칙의 적용.
+  # ═══════════════════════════════════════════════════════════════
+  - name: aqts_security_integrity
+    interval: 30s
+    rules:
+      # ─────────────────────────────────────────────────
+      # P0-5: TradingGuard → OrderExecutor wiring
+      # ─────────────────────────────────────────────────
+      - alert: TradingGuardKillSwitchActive
+        expr: aqts_trading_guard_kill_switch_active == 1
+        for: 0m
+        labels:
+          severity: critical
+          domain: integrity
+        annotations:
+          summary: "TradingGuard kill switch 활성화 — 모든 주문 차단 중"
+          description: "프로세스 전역 TradingGuard kill switch 가 활성 상태. OrderExecutor.execute_order 가 TradingGuardBlocked 를 발생시키며 모든 신규 주문을 즉시 거부한다. 원인 (일일 손실 / MDD / 연속 손실 / 수동 kill) 을 확인하고 해제는 수동으로만 수행한다."
+          runbook: "docs/security/security-integrity-roadmap.md#p0-5"
+
+      - alert: TradingGuardBlocksSpike
+        expr: |
+          sum by (reason_code) (
+            increase(aqts_trading_guard_blocks_total[5m])
+          ) > 5
+        for: 2m
+        labels:
+          severity: warning
+          domain: integrity
+        annotations:
+          summary: "TradingGuard 차단 {{ $labels.reason_code }} 급증 ({{ $value }}건/5분)"
+          description: "최근 5분 동안 reason_code={{ $labels.reason_code }} 로 5건 이상 차단. 정상 운영 중이면 주문 로직이 guard 조건을 반복 건드리는 상황으로 의심되므로 상위 전략 점검 필요."
+
+      # ─────────────────────────────────────────────────
+      # P0-4: 감사 로그 fail-closed
+      # ─────────────────────────────────────────────────
+      - alert: AuditWriteFailureStrict
+        expr: |
+          increase(aqts_audit_write_failures_total{mode="strict"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          domain: security
+        annotations:
+          summary: "감사 로그 strict 쓰기 실패 발생 — 주문 경로 503 중"
+          description: "금전 쓰기 경로(log_strict)에서 감사 DB 쓰기가 실패했다. 핵심 불변식 '감사 레코드 없는 브로커 실행 불가'를 지키기 위해 주문 API 가 503 AUDIT_UNAVAILABLE 를 반환하고 있을 가능성이 높다. 알람 임계는 0 — 단 1건도 허용하지 않는다."
+          runbook: "docs/security/security-integrity-roadmap.md#p0-4"
+
+      - alert: AuditWriteFailureSoftSpike
+        expr: |
+          sum(increase(aqts_audit_write_failures_total{mode="soft"}[15m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+          domain: security
+        annotations:
+          summary: "감사 로그 soft 쓰기 실패 급증 ({{ $value }}건/15분)"
+          description: "읽기/통계 경로의 log() 에서 감사 쓰기가 반복 실패. 직접 주문 실행을 막지는 않지만, audit DB 의 부하/디스크/복제 지연을 확인해야 한다."
+
+      # ─────────────────────────────────────────────────
+      # P0-3a/3b: 주문 idempotency
+      # ─────────────────────────────────────────────────
+      - alert: OrderIdempotencyStoreUnavailable
+        expr: |
+          sum by (op) (
+            increase(aqts_order_idempotency_store_failure_total[5m])
+          ) > 0
+        for: 1m
+        labels:
+          severity: critical
+          domain: integrity
+        annotations:
+          summary: "주문 idempotency store 장애 ({{ $labels.op }})"
+          description: "주문 경로 idempotency store 가 {{ $labels.op }} 단계에서 실패 중. fail-closed 정책에 따라 주문 API 는 503 IDEMPOTENCY_STORE_UNAVAILABLE 를 반환한다. Redis / Postgres order_idempotency_keys 상태를 확인하라."
+          runbook: "docs/security/security-integrity-roadmap.md#p0-3"
+
+      # ─────────────────────────────────────────────────
+      # P0-1: refresh 토큰 type 강제 검증
+      # ─────────────────────────────────────────────────
+      - alert: AccessTokenReusedForRefresh
+        expr: |
+          sum by (reason) (
+            increase(aqts_token_refresh_from_access_total[10m])
+          ) > 0
+        for: 0m
+        labels:
+          severity: warning
+          domain: security
+        annotations:
+          summary: "refresh 엔드포인트에 비정상 토큰 전달 ({{ $labels.reason }})"
+          description: "최근 10분 내 refresh 엔드포인트가 access / 타입 누락 토큰으로 호출되었다. 정상 클라이언트는 발생 불가 — 공격 시도 또는 클라이언트 버그일 수 있다."
+
+      # ─────────────────────────────────────────────────
+      # P0-2a: Token revocation store
+      # ─────────────────────────────────────────────────
+      - alert: RevocationBackendUnavailable
+        expr: |
+          sum by (op) (
+            increase(aqts_revocation_backend_failure_total[5m])
+          ) > 0
+        for: 1m
+        labels:
+          severity: critical
+          domain: security
+        annotations:
+          summary: "Token revocation backend 장애 ({{ $labels.op }})"
+          description: "TokenRevocationStore 가 실패 중. fail-closed 에 의해 인증 요청이 503 으로 차단된다. Redis revocation 백엔드 상태를 즉시 확인하라."
+          runbook: "docs/security/security-integrity-roadmap.md#p0-2"
+
+      # ─────────────────────────────────────────────────
+      # P0-2b: Rate limiter
+      # ─────────────────────────────────────────────────
+      - alert: RateLimitStorageUnavailable
+        expr: increase(aqts_rate_limit_storage_failure_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          domain: security
+        annotations:
+          summary: "Rate limiter storage 장애 — 요청 503 차단 중"
+          description: "slowapi storage (Redis) 가 실패하고 있다. fail-closed 정책에 따라 보호 대상 라우트가 503 RATE_LIMIT_STORE_UNAVAILABLE 를 반환한다."
+
+      - alert: RateLimitExceededSpike
+        expr: |
+          sum by (route) (
+            increase(aqts_rate_limit_exceeded_total[5m])
+          ) > 50
+        for: 2m
+        labels:
+          severity: warning
+          domain: security
+        annotations:
+          summary: "rate limit 초과 급증 (route={{ $labels.route }}, {{ $value }}건/5분)"
+          description: "특정 라우트에서 5분 내 50건 이상 429 를 반환했다. 공격 / 잘못 구성된 클라이언트 가능성을 조사하라."
+
+      # ─────────────────────────────────────────────────
+      # P1-정합성: ReconciliationRunner
+      # ─────────────────────────────────────────────────
+      - alert: ReconciliationLedgerDiffNonZero
+        expr: aqts_reconciliation_ledger_diff_abs > 0
+        for: 0m
+        labels:
+          severity: critical
+          domain: integrity
+        annotations:
+          summary: "포지션 원장 불일치: |diff|={{ $value }}"
+          description: "브로커 보고 포지션과 내부 ledger 의 총합이 일치하지 않는다. ReconciliationRunner 가 임계 초과를 감지하면 TradingGuard kill switch 를 활성화한다. 알람 임계는 0 — 단 1주라도 허용하지 않는다."
+          runbook: "docs/security/security-integrity-roadmap.md#p1-정합성"
+
+      - alert: ReconciliationMismatchDetected
+        expr: increase(aqts_reconciliation_mismatches_total[15m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          domain: integrity
+        annotations:
+          summary: "포지션 mismatch 발생 ({{ $value }}건/15분)"
+          description: "ReconciliationRunner 가 최근 15분 내 mismatch 를 기록. ledger 원본과 브로커 보고 사이 개별 종목 불일치를 확인해야 한다."
+
+      - alert: ReconciliationRunnerErrors
+        expr: |
+          sum(increase(aqts_reconciliation_runs_total{result="error"}[30m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+          domain: integrity
+        annotations:
+          summary: "Reconciliation provider 실패 ({{ $value }}건/30분)"
+          description: "PositionProvider 호출이 예외로 실패. reconcile 이 수행되지 못하는 상태 — 원장 정합성 감시 공백이 발생 중."
+
+      - alert: ReconciliationRunnerMissing
+        expr: |
+          absent(aqts_reconciliation_runs_total) == 1
+          or
+          sum(increase(aqts_reconciliation_runs_total[24h])) == 0
+        for: 6h
+        labels:
+          severity: warning
+          domain: integrity
+        annotations:
+          summary: "스케줄러는 작동하지만 reconcile 이 24h 동안 한 번도 실행되지 않음"
+          description: "TradingScheduler midday_check/post_market 핸들러는 돌지만 ReconciliationRunner 가 register 되지 않은 것으로 의심된다 (Wiring Rule 회귀). register_reconciliation_runner() 호출 경로를 점검하라."
+
+      # ─────────────────────────────────────────────────
+      # 환경변수 bool 비표준 표기 (Phase 2 준비)
+      # ─────────────────────────────────────────────────
+      - alert: EnvBoolNonStandardUsage
+        expr: increase(aqts_env_bool_nonstandard_total[1h]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          domain: config
+        annotations:
+          summary: "비표준 bool 환경변수 표기 감지"
+          description: "env_bool() 이 1/0/yes/no/on/off 같은 비표준 표기를 받아들였다. Phase 2 전환(strict=true 승격) 이전에 0 으로 만들어야 한다. docs/conventions/boolean-config.md 참조."
