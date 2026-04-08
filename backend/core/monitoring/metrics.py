@@ -150,6 +150,15 @@ ORDER_IDEMPOTENCY_STORE_FAILURE_TOTAL = Counter(
     labelnames=["op"],
 )
 
+# P0-4 (security-integrity-roadmap §3.4, §3.6.4): 감사 로그 쓰기 실패.
+# mode=strict 는 금전적 쓰기 경로(log_strict) → 503 응답과 연결됨. 알람 임계 0.
+# mode=soft  는 읽기/통계 경로(log) fail-open → 추세 관찰용.
+AUDIT_WRITE_FAILURES_TOTAL = Counter(
+    "aqts_audit_write_failures_total",
+    "Audit log write failure (strict=fail-closed blocking, soft=fail-open degraded)",
+    labelnames=["action_type", "mode"],
+)
+
 # ══════════════════════════════════════
 # 3. 비즈니스 메트릭
 # ══════════════════════════════════════

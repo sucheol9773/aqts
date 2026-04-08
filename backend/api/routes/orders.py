@@ -33,7 +33,7 @@ from core.idempotency import (
 from core.idempotency.order_idempotency import record_hit
 from core.order_executor.executor import OrderExecutor, OrderRequest, OrderResult
 from db.database import get_db_session
-from db.repositories.audit_log import AuditLogger
+from db.repositories.audit_log import AuditLogger, AuditWriteFailure
 
 router = APIRouter()
 
@@ -64,6 +64,20 @@ def _validate_idempotency_key(value: Optional[str]) -> str:
     return key
 
 
+def _raise_audit_unavailable() -> None:
+    """P0-4: 감사 DB 장애 → 503 AUDIT_UNAVAILABLE + Retry-After."""
+    raise HTTPException(
+        status_code=503,
+        headers={"Retry-After": "30"},
+        detail={
+            "success": False,
+            "error_code": "AUDIT_UNAVAILABLE",
+            "message": "감사 시스템 일시 장애로 주문이 차단되었습니다",
+            "retry_after_seconds": 30,
+        },
+    )
+
+
 def _raise_idempotency_http(exc: Exception) -> None:
     """idempotency 예외 → HTTPException 매핑 (fail-closed)."""
     if isinstance(exc, IdempotencyConflict):
@@ -85,6 +99,7 @@ def _raise_idempotency_http(exc: Exception) -> None:
     if isinstance(exc, IdempotencyStoreUnavailable):
         raise HTTPException(
             status_code=503,
+            headers={"Retry-After": "30"},
             detail={
                 "error_code": "IDEMPOTENCY_STORE_UNAVAILABLE",
                 "message": "주문 멱등성 저장소가 일시적으로 사용 불가합니다.",
@@ -154,7 +169,32 @@ async def create_order(
     except (IdempotencyConflict, IdempotencyInProgress, IdempotencyStoreUnavailable) as e:
         _raise_idempotency_http(e)
 
-    # 3) 실행
+    # 3) P0-4 pre-flight audit: 감사 DB 가 살아있음을 주문 체결 전에 증명.
+    #    여기서 실패하면 executor 는 아예 호출되지 않아 "주문 미체결 + 503".
+    audit = AuditLogger(db)
+    try:
+        await audit.log_strict(
+            action_type="ORDER_REQUESTED",
+            module="order_executor",
+            description=(
+                f"Order REQUESTED: {order_body.side} {order_body.ticker} "
+                f"x{order_body.quantity} ({order_body.order_type}) idem={key}"
+            ),
+            metadata={
+                "idempotency_key": key,
+                "route": route,
+                "user_id": user_id,
+                "request": payload,
+            },
+        )
+    except AuditWriteFailure:
+        try:
+            store.release_claim(user_id, route, key)
+        except IdempotencyStoreUnavailable:
+            pass
+        _raise_audit_unavailable()
+
+    # 4) 실행
     try:
         logger.info(
             f"Order created: {order_body.side} {order_body.ticker} "
@@ -174,8 +214,10 @@ async def create_order(
         executor = OrderExecutor()
         result = await executor.execute_order(order_req)
 
-        audit = AuditLogger(db)
-        await audit.log(
+        # 5) P0-4 post-audit: 실행 결과를 strict 로 기록.
+        #    여기서 실패하면 주문은 이미 브로커에 나갔으므로 수동 reconcile
+        #    필요 — logger.critical + 503 + release_claim.
+        await audit.log_strict(
             action_type="ORDER_CREATED",
             module="order_executor",
             description=(
@@ -191,6 +233,17 @@ async def create_order(
             reason=order_body.reason or "",
         )
         api_body = APIResponse(success=True, data=response, message="주문이 실행되었습니다.")
+    except AuditWriteFailure:
+        logger.critical(
+            "Post-exec audit write failed — order may be executed without audit trail. "
+            "Manual reconciliation required. idem=%s",
+            key,
+        )
+        try:
+            store.release_claim(user_id, route, key)
+        except IdempotencyStoreUnavailable:
+            pass
+        _raise_audit_unavailable()
     except Exception as e:
         # 실패 시 claim 해제 → 클라이언트가 동일 키로 재시도 가능.
         try:
@@ -256,6 +309,27 @@ async def create_batch_orders(
     except (IdempotencyConflict, IdempotencyInProgress, IdempotencyStoreUnavailable) as e:
         _raise_idempotency_http(e)
 
+    # P0-4 pre-flight audit — 배치 실행 전 감사 DB 헬스 증명.
+    audit = AuditLogger(db)
+    try:
+        await audit.log_strict(
+            action_type="BATCH_ORDER_REQUESTED",
+            module="order_executor",
+            description=(f"Batch order REQUESTED: {len(batch_body.orders)}건 idem={key}"),
+            metadata={
+                "idempotency_key": key,
+                "route": route,
+                "user_id": user_id,
+                "request": payload,
+            },
+        )
+    except AuditWriteFailure:
+        try:
+            store.release_claim(user_id, route, key)
+        except IdempotencyStoreUnavailable:
+            pass
+        _raise_audit_unavailable()
+
     try:
         # API 스키마 → OrderRequest 리스트 변환
         order_requests = [
@@ -293,9 +367,8 @@ async def create_batch_orders(
             elif result.status == OrderStatus.FAILED:
                 fail_count += 1
 
-        # 감사 로그
-        audit = AuditLogger(db)
-        await audit.log(
+        # P0-4 post-audit (strict). 실패 시 브로커 이미 실행됨 → critical+503.
+        await audit.log_strict(
             action_type="BATCH_ORDER_CREATED",
             module="order_executor",
             description=(f"Batch order: {len(results)}건 " f"(성공: {success_count}, 실패: {fail_count})"),
@@ -303,6 +376,7 @@ async def create_batch_orders(
                 "total": len(results),
                 "success_count": success_count,
                 "fail_count": fail_count,
+                "idempotency_key": key,
             },
         )
 
@@ -317,6 +391,17 @@ async def create_batch_orders(
             data=batch_response,
             message=f"{len(results)}건 배치 주문이 실행되었습니다.",
         )
+    except AuditWriteFailure:
+        logger.critical(
+            "Post-exec batch audit write failed — orders may be executed without audit trail. "
+            "Manual reconciliation required. idem=%s",
+            key,
+        )
+        try:
+            store.release_claim(user_id, route, key)
+        except IdempotencyStoreUnavailable:
+            pass
+        _raise_audit_unavailable()
     except Exception as e:
         try:
             store.release_claim(user_id, route, key)
@@ -491,14 +576,17 @@ async def cancel_order(
         await db.execute(update_query, {"order_id": order_id})
         await db.commit()
 
-        # 감사 로그
+        # P0-4: 취소도 금전적 쓰기 경로이므로 strict.
         audit = AuditLogger(db)
-        await audit.log(
-            action_type="ORDER_CANCELLED",
-            module="order_executor",
-            description=f"Order {order_id} cancelled by user {current_user}",
-            metadata={"order_id": order_id, "previous_status": current_status},
-        )
+        try:
+            await audit.log_strict(
+                action_type="ORDER_CANCELLED",
+                module="order_executor",
+                description=f"Order {order_id} cancelled by user {current_user}",
+                metadata={"order_id": order_id, "previous_status": current_status},
+            )
+        except AuditWriteFailure:
+            _raise_audit_unavailable()
 
         logger.info(f"Order cancelled: {order_id}")
         return APIResponse(
