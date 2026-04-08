@@ -227,6 +227,25 @@ QUOTE_FETCH_FAILURES_TOTAL = Counter(
     "QuoteProvider fetch failures in the order path (fail-closed)",
     labelnames=["market", "reason"],
 )
+# P1-정합성 §7.3 (Quote provider 운영 instrument): KISQuoteProvider 의
+# TTL 캐시 효율과 KIS 시세 호출 latency. 캐시 히트율이 급락하면 KIS API
+# rate limit 노출이 증가하므로 spike 감시 대상.
+QUOTE_CACHE_HITS_TOTAL = Counter(
+    "aqts_quote_cache_hits_total",
+    "QuoteProvider in-memory cache hits served without an upstream call",
+    labelnames=["market"],
+)
+QUOTE_CACHE_MISSES_TOTAL = Counter(
+    "aqts_quote_cache_misses_total",
+    "QuoteProvider cache misses that resulted in an upstream fetch",
+    labelnames=["market"],
+)
+QUOTE_FETCH_LATENCY_SECONDS = Histogram(
+    "aqts_quote_fetch_latency_seconds",
+    "Latency of upstream KIS quote fetches (cache miss path only)",
+    labelnames=["market"],
+    buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0),
+)
 
 # ══════════════════════════════════════
 # 3. 비즈니스 메트릭

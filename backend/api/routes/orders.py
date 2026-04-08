@@ -38,6 +38,7 @@ from core.order_executor.order_state_machine import (
     assert_can_cancel,
     parse_order_status,
 )
+from core.order_executor.quote_provider_kis import get_kis_quote_provider
 from db.database import get_db_session
 from db.repositories.audit_log import AuditLogger, AuditWriteFailure
 
@@ -217,7 +218,9 @@ async def create_order(
             reason=order_body.reason or "",
         )
 
-        executor = OrderExecutor()
+        # P1-정합성 §7.3: live 경로는 quote_provider 가 반드시 주입되어야
+        # OrderExecutor 가 시세 가드를 활성화한다 (fail-closed).
+        executor = OrderExecutor(quote_provider=get_kis_quote_provider())
         result = await executor.execute_order(order_req)
 
         # 5) P0-4 post-audit: 실행 결과를 strict 로 기록.
@@ -352,7 +355,9 @@ async def create_batch_orders(
         ]
 
         # OrderExecutor 배치 실행
-        executor = OrderExecutor()
+        # P1-정합성 §7.3: live 경로는 quote_provider 가 반드시 주입되어야
+        # OrderExecutor 가 시세 가드를 활성화한다 (fail-closed).
+        executor = OrderExecutor(quote_provider=get_kis_quote_provider())
         results = await executor.execute_batch_orders(order_requests)
 
         # 결과를 OrderResponse로 변환
