@@ -15,10 +15,13 @@ Phase 6: 실투자 전환을 위한 다층 안전 메커니즘
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from threading import RLock
+from typing import Optional
 
 from config.constants import PORTFOLIO_CONSTRAINTS, OrderSide
 from config.logging import logger
 from config.settings import get_settings
+from core.monitoring.metrics import TRADING_GUARD_KILL_SWITCH_ACTIVE
 
 
 @dataclass
@@ -311,17 +314,67 @@ class TradingGuard:
         """긴급 정지 활성화"""
         self._state.kill_switch_on = True
         self._state.kill_switch_reason = reason
+        TRADING_GUARD_KILL_SWITCH_ACTIVE.set(1)
         logger.critical(f"KILL SWITCH ACTIVATED: {reason}")
 
     def deactivate_kill_switch(self) -> None:
         """긴급 정지 해제 (관리자 수동 조작)"""
         self._state.kill_switch_on = False
         self._state.kill_switch_reason = ""
+        TRADING_GUARD_KILL_SWITCH_ACTIVE.set(0)
         logger.warning("Kill switch deactivated manually")
 
     def activate_kill_switch(self, reason: str) -> None:
         """외부에서 긴급 정지 활성화"""
         self._activate_kill_switch(reason)
+
+    # ══════════════════════════════════════
+    # P0-5: OrderExecutor 진입점 — 단일 주문에 대한 종합 pre-check.
+    # 인자를 scalar 로 받아서 OrderRequest 와의 순환 import 를 피한다.
+    # ══════════════════════════════════════
+    def check_pre_order(
+        self,
+        ticker: str,
+        side: OrderSide,
+        quantity: int,
+        limit_price: Optional[float] = None,
+    ) -> PreOrderCheckResult:
+        """
+        OrderExecutor 가 실제 주문 전에 호출하는 단일 진입점.
+
+        검증 순서:
+          1. kill switch (다른 경로에서 활성화됐을 수 있음)
+          2. `run_all_checks()` — 환경/일일손실/MDD/연속손실
+          3. BUY + 가격 알려진 경우 주문 금액 한도
+
+        Returns:
+            PreOrderCheckResult — 실패 사유는 `reason_code` 대신 한국어
+            `reason` 에 담기며, 차단 카운터는 executor 가 증가시킨다.
+        """
+        # 1) Kill switch — pre_order_check 와 달리 run_all_checks 이전에 명시적 확인.
+        if self._state.kill_switch_on:
+            return PreOrderCheckResult(
+                allowed=False,
+                reason=f"Kill Switch 활성화됨: {self._state.kill_switch_reason}",
+            )
+
+        # 2) 환경/손실/MDD/연속손실
+        base = self.run_all_checks()
+        if not base.allowed:
+            return base
+
+        # 3) BUY 주문 금액 한도 (limit_price 미지정 MARKET 은 사후 체결가로 검증 불가)
+        if side == OrderSide.BUY and limit_price is not None and limit_price > 0:
+            order_amount = limit_price * quantity
+            if order_amount > self._risk.max_order_amount_krw:
+                return PreOrderCheckResult(
+                    allowed=False,
+                    reason=(
+                        f"주문 금액 초과: {order_amount:,.0f}원 > " f"한도 {self._risk.max_order_amount_krw:,.0f}원"
+                    ),
+                )
+
+        return PreOrderCheckResult(allowed=True, warnings=base.warnings)
 
     # ══════════════════════════════════════
     # 종합 검증 (All-in-one)
@@ -343,3 +396,39 @@ class TradingGuard:
             all_warnings.extend(result.warnings)
 
         return PreOrderCheckResult(allowed=True, warnings=all_warnings)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# P0-5: 프로세스 전역 싱글톤
+# ══════════════════════════════════════════════════════════════════════════════
+# 관리자 API 에서 kill switch 를 활성화했을 때 OrderExecutor 가 즉시 인지해야
+# 하므로 한 프로세스 내에서 상태를 공유한다. 여러 OrderExecutor 인스턴스가
+# 같은 guard 를 바라보지 않으면 kill switch 가 형식적 통제에 그친다.
+_guard_instance: Optional[TradingGuard] = None
+_guard_lock = RLock()
+
+
+def get_trading_guard() -> TradingGuard:
+    """프로세스 전역 TradingGuard 싱글톤."""
+    global _guard_instance
+    with _guard_lock:
+        if _guard_instance is None:
+            _guard_instance = TradingGuard()
+        return _guard_instance
+
+
+def reset_trading_guard() -> None:
+    """테스트 전용: 싱글톤을 재초기화한다. 운영 경로에서는 호출하지 않는다."""
+    global _guard_instance
+    with _guard_lock:
+        _guard_instance = None
+        TRADING_GUARD_KILL_SWITCH_ACTIVE.set(0)
+
+
+class TradingGuardBlocked(Exception):
+    """TradingGuard 가 주문 실행을 차단했을 때 executor 가 전파하는 예외."""
+
+    def __init__(self, reason: str, reason_code: str = "unknown") -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.reason_code = reason_code

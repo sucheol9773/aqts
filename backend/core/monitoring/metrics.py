@@ -159,6 +159,21 @@ AUDIT_WRITE_FAILURES_TOTAL = Counter(
     labelnames=["action_type", "mode"],
 )
 
+# P0-5 (security-integrity-roadmap §3.5): TradingGuard 가 OrderExecutor 단계에서
+# 주문을 차단한 횟수. reason_code 는 차단 사유(kill_switch, daily_loss,
+# max_drawdown, consecutive_losses, order_amount, environment, capital).
+# kill_switch 활성화는 Gauge 로 별도 관측.
+TRADING_GUARD_BLOCKS_TOTAL = Counter(
+    "aqts_trading_guard_blocks_total",
+    "Orders blocked by TradingGuard pre-execution check",
+    labelnames=["reason_code"],
+)
+
+TRADING_GUARD_KILL_SWITCH_ACTIVE = Gauge(
+    "aqts_trading_guard_kill_switch_active",
+    "1 if global TradingGuard kill switch is active, else 0",
+)
+
 # ══════════════════════════════════════
 # 3. 비즈니스 메트릭
 # ══════════════════════════════════════

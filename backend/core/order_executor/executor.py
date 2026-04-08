@@ -30,6 +30,8 @@ from config.settings import get_settings
 from contracts.converters import order_request_to_contract
 from core.data_collector.kis_client import KISClient
 from core.dry_run.engine import get_dry_run_engine
+from core.monitoring.metrics import TRADING_GUARD_BLOCKS_TOTAL
+from core.trading_guard import TradingGuard, TradingGuardBlocked, get_trading_guard
 from db.database import async_session_factory
 from db.repositories.audit_log import AuditLogger
 
@@ -155,7 +157,11 @@ class OrderExecutor:
     - 재시도 로직 (지수 백오프)
     """
 
-    def __init__(self, dry_run: bool = False):
+    def __init__(
+        self,
+        dry_run: bool = False,
+        trading_guard: Optional[TradingGuard] = None,
+    ):
         """
         주문 실행 엔진 초기화
 
@@ -163,10 +169,15 @@ class OrderExecutor:
 
         Args:
             dry_run: True이면 실제 주문 실행 없이 가상 주문만 기록
+            trading_guard: 주문 사전 검증용 TradingGuard.
+                지정하지 않으면 프로세스 전역 싱글톤 `get_trading_guard()` 를
+                사용하여 관리자 API 의 kill switch 조작이 즉시 전파되도록 한다.
         """
         self._settings = get_settings()
         self._kis_client = KISClient()
         self._dry_run = dry_run
+        # P0-5: 프로세스 전역 싱글톤 기본값으로 kill switch 공유.
+        self._trading_guard = trading_guard if trading_guard is not None else get_trading_guard()
         if dry_run:
             logger.info("OrderExecutor 초기화 완료 [DRY_RUN 모드]")
         else:
@@ -205,6 +216,26 @@ class OrderExecutor:
             except Exception as e:
                 logger.error(f"[Contract] OrderIntent 계약 위반: {request.ticker} — {e}")
                 raise ValueError(f"주문 계약 위반: {e}") from e
+
+            # P0-5: TradingGuard 사전 검증 (kill switch / 일일손실 / MDD /
+            # 연속손실 / BUY 주문 금액 한도). 차단 시 KIS 호출 없이 즉시 실패.
+            guard_result = self._trading_guard.check_pre_order(
+                ticker=request.ticker,
+                side=request.side,
+                quantity=request.quantity,
+                limit_price=request.limit_price,
+            )
+            if not guard_result.allowed:
+                reason_code = self._map_guard_reason_code(guard_result.reason)
+                TRADING_GUARD_BLOCKS_TOTAL.labels(reason_code=reason_code).inc()
+                logger.critical(
+                    "TradingGuard 주문 차단: ticker=%s side=%s reason_code=%s reason=%s",
+                    request.ticker,
+                    request.side.value,
+                    reason_code,
+                    guard_result.reason,
+                )
+                raise TradingGuardBlocked(guard_result.reason, reason_code=reason_code)
 
             # 주문 검증
             self._validate_order(request)
@@ -761,6 +792,26 @@ class OrderExecutor:
         except Exception as e:
             logger.error(f"VWAP 주문 실패: {e}")
             raise
+
+    @staticmethod
+    def _map_guard_reason_code(reason: str) -> str:
+        """TradingGuard reason 문자열 → Prometheus 라벨 코드."""
+        # reason 은 한국어라 label 로 부적합. 접두 키워드로 분류.
+        if "Kill Switch" in reason:
+            return "kill_switch"
+        if "일일 손실" in reason:
+            return "daily_loss"
+        if "MDD" in reason or "낙폭" in reason:
+            return "max_drawdown"
+        if "연속 손실" in reason:
+            return "consecutive_losses"
+        if "주문 금액" in reason:
+            return "order_amount"
+        if "LIVE 모드" in reason or "production" in reason:
+            return "environment"
+        if "잔고" in reason:
+            return "capital"
+        return "other"
 
     def _validate_order(self, request: OrderRequest) -> None:
         """
