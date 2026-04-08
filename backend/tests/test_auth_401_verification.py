@@ -55,17 +55,20 @@ class TestAuth401Behavior:
 
             assert response.status_code == 401, f"Expected 401 for invalid token, got {response.status_code}"
 
-    async def test_valid_token_returns_200(self):
-        """Case 3: 정상 로그인 후 유효한 토큰 → 200 OK."""
+    async def test_valid_token_returns_200(self, authenticated_app):
+        """Case 3: 정상 로그인 후 유효한 토큰 → 200 OK.
+
+        P1-보안: get_current_user 가 DB 재확인을 수행하므로 실제 app 이 아닌
+        authenticated_app 픽스처(mock DB + test_user_admin 주입)를 사용한다.
+        """
         from httpx import ASGITransport, AsyncClient
 
         from api.middleware.auth import AuthService
-        from main import app
 
         # 직접 토큰 생성 (RBAC v1.29+: uid, role 포함)
         token = AuthService.create_access_token({"sub": "admin", "uid": "test-admin-uuid", "role": "admin"})
 
-        transport = ASGITransport(app=app)
+        transport = ASGITransport(app=authenticated_app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
 

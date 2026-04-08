@@ -87,10 +87,11 @@ class TestRBACEndpoints:
             # 정상 토큰: 200
             from api.middleware.auth import AuthService
 
+            # P1-보안: uid/role 은 DB 에 존재하는 사용자와 일치해야 한다
             token = AuthService.create_access_token(
                 {
-                    "sub": "testuser",
-                    "uid": "test-uuid",
+                    "sub": "viewer",
+                    "uid": "test-viewer-uuid",
                     "role": "viewer",
                 }
             )
@@ -107,25 +108,26 @@ class TestRBACEndpoints:
 class TestGetCurrentUser:
     """AuthenticatedUser 객체 생성 테스트"""
 
-    async def test_get_current_user_with_valid_token(self, admin_token):
-        """정상 토큰으로 AuthenticatedUser 객체 생성"""
+    async def test_get_current_user_with_valid_token(self, admin_token, db_session):
+        """정상 토큰으로 AuthenticatedUser 객체 생성 (DB 재확인 포함)"""
         from fastapi.security import HTTPAuthorizationCredentials
 
         from api.middleware.auth import AuthService, get_current_user
 
         # 토큰 검증
         payload = AuthService.verify_token(admin_token)
+        assert payload.get("sub") == "admin"
 
-        # AuthenticatedUser 생성
+        # AuthenticatedUser 생성 (P1-보안: db_session 필수)
         credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=admin_token)
-        user = await get_current_user(credentials)
+        user = await get_current_user(credentials, db_session=db_session)
 
         assert user.username == "admin"
         assert user.id == "test-admin-uuid"
         assert user.role == "admin"
 
-    async def test_get_current_user_with_invalid_token(self):
-        """잘못된 토큰으로 401"""
+    async def test_get_current_user_with_invalid_token(self, db_session):
+        """잘못된 토큰으로 401 (DB 조회 전에 차단)"""
         from fastapi import HTTPException
         from fastapi.security import HTTPAuthorizationCredentials
 
@@ -134,17 +136,17 @@ class TestGetCurrentUser:
         credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="invalid-token")
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_current_user(credentials)
+            await get_current_user(credentials, db_session=db_session)
 
         assert exc_info.value.status_code == 401
 
-    async def test_get_current_user_with_no_credentials(self):
-        """토큰 없으면 401"""
+    async def test_get_current_user_with_no_credentials(self, db_session):
+        """토큰 없으면 401 (DB 조회 전에 차단)"""
         from fastapi import HTTPException
 
         from api.middleware.auth import get_current_user
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_current_user(None)
+            await get_current_user(None, db_session=db_session)
 
         assert exc_info.value.status_code == 401

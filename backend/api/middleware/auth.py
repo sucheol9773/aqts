@@ -31,6 +31,7 @@ from api.middleware.token_revocation import (
     get_revocation_store as _factory_get_revocation_store,
 )
 from config.settings import get_settings
+from db.database import get_db_session
 
 # 하위호환 별칭: 기존 코드/테스트는 `from api.middleware.auth import
 # TokenRevocationStore` 로 인메모리 구현을 직접 인스턴스화한다.
@@ -453,17 +454,30 @@ class AuthService:
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
+    db_session: Optional[AsyncSession] = Depends(get_db_session),
 ) -> AuthenticatedUser:
-    """FastAPI 의존성: Authorization 헤더에서 JWT 토큰 검증
+    """FastAPI 의존성: Authorization 헤더에서 JWT 토큰 검증 + DB 재확인
+
+    P1-보안: JWT 서명/만료/revocation 통과 후에도 DB 에서 실제 사용자의
+    현재 상태(is_active / is_locked / role)를 재확인한다. 이렇게 하지 않으면
+    다음 구멍이 남는다:
+      - admin 이 사용자의 is_active 를 False 로 바꿔도 기존 토큰은 계속 유효
+      - admin 이 사용자 role 을 operator→viewer 로 강등해도 기존 토큰은
+        이전 role 로 인가됨 (정의 ≠ 적용 의 또 다른 사례)
+      - is_locked 로 전환된 계정이 재인증 없이 계속 동작
+
+    DB 가용성 실패는 fail-closed 로 503 을 반환한다 (token revocation 과
+    동일한 정책). 사용자가 없거나 inactive/locked/role 불일치 시 401.
 
     Args:
         credentials: HTTP Bearer credentials
+        db_session: AsyncSession (get_db_session 의존성으로 주입)
 
     Returns:
-        AuthenticatedUser (id, username, role)
+        AuthenticatedUser (id, username, role) — **DB 의 현재 role** 로 반환
 
     Raises:
-        HTTPException: 토큰 미제공, 무효, 만료
+        HTTPException: 토큰 미제공/무효/만료/revoke, 사용자 상태 불량, DB 장애
     """
     if credentials is None:
         raise HTTPException(
@@ -475,7 +489,7 @@ async def get_current_user(
     payload = AuthService.verify_token(token)
     username: str = payload.get("sub")
     user_id: str = payload.get("uid")
-    role: str = payload.get("role", "viewer")
+    token_role: str = payload.get("role", "viewer")
 
     if not username or not user_id:
         raise HTTPException(
@@ -484,4 +498,53 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    return AuthenticatedUser(id=user_id, username=username, role=role)
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    from db.models.user import User
+
+    try:
+        result = await db_session.execute(select(User).options(selectinload(User.role)).where(User.id == user_id))
+        user = result.scalars().first()
+    except Exception as e:
+        # DB 장애 → fail-closed 503 (token revocation 정책과 동일)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="User store unavailable",
+            headers={"Retry-After": "5"},
+        ) from e
+
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User no longer exists",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User account is inactive",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if user.is_locked:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User account is locked. Contact administrator.",
+        )
+
+    current_role = user.role.name if user.role is not None else None
+    if current_role is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User role missing",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if current_role != token_role:
+        # role 변경 → 토큰 role 클레임이 오래된 상태. 재로그인 요구.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User role has changed; please re-authenticate",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return AuthenticatedUser(id=user.id, username=user.username, role=current_role)

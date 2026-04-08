@@ -467,9 +467,22 @@ def db_session(test_user_admin, test_user_operator, test_user_viewer):
         # For "admin" or default, return test_user_admin
         # This handles both explicit "admin" queries and the test case
         if "select" in query_str and "user" in query_str.lower():
-            # Default to returning admin user for select(User) queries
-            # In real tests, the username parameter is passed separately
-            found_user = test_user_admin
+            # Try to match by user id / username (P1-보안: get_current_user 의
+            # where(User.id == user_id) 쿼리도 id 로 올바르게 매칭되어야 한다)
+            try:
+                compiled_str = str(query.compile(compile_kwargs={"literal_binds": True}))
+            except Exception:
+                compiled_str = ""
+            for u in users_db.values():
+                if u.id and u.id in compiled_str:
+                    found_user = u
+                    break
+                if u.username and f"'{u.username}'" in compiled_str:
+                    found_user = u
+                    break
+            if found_user is None:
+                # Default to admin for legacy call sites (인증 테스트 호환)
+                found_user = test_user_admin
 
         scalars_obj.first = MagicMock(return_value=found_user)
         scalars_obj.all = MagicMock(return_value=list(users_db.values()))
@@ -525,11 +538,22 @@ def authenticated_app(test_user_admin, test_user_operator, test_user_viewer):
                 if "user" in query_str:
                     # Check for where clause
                     if hasattr(query, "whereclause") and query.whereclause is not None:
-                        # This is a select(User).where(...) query
-                        # We need to return the matching user
-                        # For now, return the first (admin) user as default
-                        # This is a simplification - in real scenarios, we'd need to parse the clause
-                        found_user = next(iter(_users.values()), None)
+                        # Compile with literal binds to match by id/username
+                        try:
+                            compiled_str = str(query.compile(compile_kwargs={"literal_binds": True}))
+                        except Exception:
+                            compiled_str = ""
+                        found_user = None
+                        # Match by user id (UUID) or username
+                        for u in _users.values():
+                            if u.id and u.id in compiled_str:
+                                found_user = u
+                                break
+                            if u.username and f"'{u.username}'" in compiled_str:
+                                found_user = u
+                                break
+                        if found_user is None:
+                            found_user = next(iter(_users.values()), None)
                     else:
                         # No where clause: return all users
                         found_user = None
