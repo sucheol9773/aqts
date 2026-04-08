@@ -204,6 +204,30 @@ ORDER_STATE_TRANSITION_REJECTS_TOTAL = Counter(
     labelnames=["from_state", "to_state"],
 )
 
+# P1-정합성 (security-integrity-roadmap §7.3): 시세/가격 가드.
+# 모두 알람 임계 0 또는 spike 감시 대상. 하드코딩된 estimated_price 경로의
+# silent 체결을 방지하기 위한 관측 계층.
+STALE_QUOTE_REJECTS_TOTAL = Counter(
+    "aqts_stale_quote_rejects_total",
+    "Orders rejected because the reference quote exceeded max age (fail-closed)",
+    labelnames=["market"],
+)
+PRE_TRADE_PRICE_REJECTS_TOTAL = Counter(
+    "aqts_pre_trade_price_rejects_total",
+    "Limit orders rejected for exceeding the pre-trade price deviation band",
+    labelnames=["side", "market"],
+)
+POST_TRADE_SLIPPAGE_ALERTS_TOTAL = Counter(
+    "aqts_post_trade_slippage_alerts_total",
+    "Post-trade slippage observations exceeding the configured band (observational)",
+    labelnames=["severity", "market"],
+)
+QUOTE_FETCH_FAILURES_TOTAL = Counter(
+    "aqts_quote_fetch_failures_total",
+    "QuoteProvider fetch failures in the order path (fail-closed)",
+    labelnames=["market", "reason"],
+)
+
 # ══════════════════════════════════════
 # 3. 비즈니스 메트릭
 # ══════════════════════════════════════

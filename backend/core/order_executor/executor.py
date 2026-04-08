@@ -31,6 +31,15 @@ from contracts.converters import order_request_to_contract
 from core.data_collector.kis_client import KISClient
 from core.dry_run.engine import get_dry_run_engine
 from core.monitoring.metrics import TRADING_GUARD_BLOCKS_TOTAL
+from core.order_executor.price_guard import (
+    PriceGuardConfig,
+    Quote,
+    QuoteFetchError,
+    QuoteProvider,
+    assert_pre_trade_price,
+    check_post_trade_slippage,
+    fetch_and_validate_quote,
+)
 from core.trading_guard import TradingGuard, TradingGuardBlocked, get_trading_guard
 from db.database import async_session_factory
 from db.repositories.audit_log import AuditLogger
@@ -161,6 +170,8 @@ class OrderExecutor:
         self,
         dry_run: bool = False,
         trading_guard: Optional[TradingGuard] = None,
+        quote_provider: Optional[QuoteProvider] = None,
+        price_guard_config: Optional[PriceGuardConfig] = None,
     ):
         """
         주문 실행 엔진 초기화
@@ -172,12 +183,21 @@ class OrderExecutor:
             trading_guard: 주문 사전 검증용 TradingGuard.
                 지정하지 않으면 프로세스 전역 싱글톤 `get_trading_guard()` 를
                 사용하여 관리자 API 의 kill switch 조작이 즉시 전파되도록 한다.
+            quote_provider: P1-정합성 §7.3 시세/가격 가드용 QuoteProvider.
+                지정되지 않으면 본 가드는 비활성 상태가 되며, 이는 dry_run /
+                backtest 경로에서만 허용된다. 운영(live) 경로에서 None 이면
+                첫 주문 시도 시 fail-closed 로 거부된다.
+            price_guard_config: 시세/가격 가드 임계값. 기본값은 보수적
+                (5초 stale, ±2% pre-trade, ±1% post-trade slippage).
         """
         self._settings = get_settings()
         self._kis_client = KISClient()
         self._dry_run = dry_run
         # P0-5: 프로세스 전역 싱글톤 기본값으로 kill switch 공유.
         self._trading_guard = trading_guard if trading_guard is not None else get_trading_guard()
+        # P1-정합성 §7.3: stale quote / pre-trade / post-trade 가드 주입점.
+        self._quote_provider = quote_provider
+        self._price_guard_config = price_guard_config or PriceGuardConfig()
         if dry_run:
             logger.info("OrderExecutor 초기화 완료 [DRY_RUN 모드]")
         else:
@@ -240,6 +260,33 @@ class OrderExecutor:
             # 주문 검증
             self._validate_order(request)
 
+            # P1-정합성 §7.3: 시세/가격 가드 (pre-trade).
+            # live 경로에서만 활성화 — dry_run 과 backtest 모드는 모의
+            # 가격(100.0) 을 사용하므로 시세 가드를 우회한다. live 경로에서
+            # provider 가 주입되지 않았다면 fail-closed.
+            reference_quote: Optional[Quote] = None
+            if not self._dry_run and not self._kis_client.is_backtest:
+                if self._quote_provider is None:
+                    raise QuoteFetchError(
+                        request.ticker,
+                        "live OrderExecutor requires a quote_provider; refusing to trade blind",
+                    )
+                reference_quote = await fetch_and_validate_quote(
+                    self._quote_provider,
+                    ticker=request.ticker,
+                    market=request.market,
+                    max_age_seconds=self._price_guard_config.max_quote_age_seconds,
+                )
+                if request.order_type == OrderType.LIMIT and request.limit_price is not None:
+                    assert_pre_trade_price(
+                        ticker=request.ticker,
+                        market=request.market,
+                        side=request.side,
+                        reference_price=reference_quote.price,
+                        order_price=request.limit_price,
+                        max_deviation_pct=self._price_guard_config.max_pre_trade_deviation_pct,
+                    )
+
             # 주문 유형별 실행
             if request.order_type == OrderType.MARKET:
                 result = await self._execute_market_order(request)
@@ -251,6 +298,26 @@ class OrderExecutor:
                 result = await self._execute_vwap_order(request)
             else:
                 raise ValueError(f"지원하지 않는 주문 유형: {request.order_type}")
+
+            # P1-정합성 §7.3: post-trade slippage 관측 (롤백 불가, 경보만).
+            if reference_quote is not None and result.filled_quantity > 0 and result.avg_price > 0:
+                exceeded = check_post_trade_slippage(
+                    ticker=request.ticker,
+                    market=request.market,
+                    side=request.side,
+                    reference_price=reference_quote.price,
+                    fill_price=result.avg_price,
+                    max_slippage_pct=self._price_guard_config.max_post_trade_slippage_pct,
+                )
+                if exceeded:
+                    logger.critical(
+                        "Post-trade slippage exceeded: ticker=%s side=%s " "reference=%.4f fill=%.4f order_id=%s",
+                        request.ticker,
+                        request.side.value,
+                        reference_quote.price,
+                        result.avg_price,
+                        result.order_id,
+                    )
 
             # 결과를 데이터베이스에 저장
             await self._store_order(result)
