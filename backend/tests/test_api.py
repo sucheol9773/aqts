@@ -790,7 +790,11 @@ class TestOrderRoutes:
             token = login_response.json()["data"]["access_token"]
 
             # Create order
-            headers = {"Authorization": f"Bearer {token}"}
+            # P0-3a: Idempotency-Key 헤더는 POST /api/orders 에서 필수.
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Idempotency-Key": "test-single-order-001",
+            }
             order_data = {"ticker": "005930", "market": "KRX", "side": "BUY", "quantity": 100, "order_type": "MARKET"}
             response = await client.post("/api/orders/", json=order_data, headers=headers)
 
@@ -849,7 +853,10 @@ class TestOrderRoutes:
             token = login_response.json()["data"]["access_token"]
 
             # Create batch orders
-            headers = {"Authorization": f"Bearer {token}"}
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Idempotency-Key": "test-batch-order-001",
+            }
             batch_data = {
                 "orders": [
                     {"ticker": "005930", "market": "KRX", "side": "BUY", "quantity": 100, "order_type": "MARKET"}

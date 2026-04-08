@@ -5,9 +5,9 @@
 OrderExecutor 엔진과 직접 연동하여 실제 주문을 처리합니다.
 """
 
-from typing import Optional
+from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
@@ -23,11 +23,73 @@ from api.schemas.orders import (
 )
 from config.constants import Market, OrderSide, OrderStatus, OrderType
 from config.logging import logger
+from core.idempotency import (
+    IdempotencyConflict,
+    IdempotencyInProgress,
+    IdempotencyStoreUnavailable,
+    compute_request_fingerprint,
+    get_order_idempotency_store,
+)
+from core.idempotency.order_idempotency import record_hit
 from core.order_executor.executor import OrderExecutor, OrderRequest, OrderResult
 from db.database import get_db_session
 from db.repositories.audit_log import AuditLogger
 
 router = APIRouter()
+
+
+# ── Idempotency helpers ──────────────────────────────────────────────
+_IDEMPOTENCY_KEY_MAX_LEN = 128
+
+
+def _validate_idempotency_key(value: Optional[str]) -> str:
+    """Idempotency-Key 헤더 검증. 누락/공백/과도 길이 → 400."""
+    if not value or not value.strip():
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error_code": "IDEMPOTENCY_KEY_REQUIRED",
+                "message": "Idempotency-Key 헤더가 필요합니다.",
+            },
+        )
+    key = value.strip()
+    if len(key) > _IDEMPOTENCY_KEY_MAX_LEN:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error_code": "IDEMPOTENCY_KEY_TOO_LONG",
+                "message": f"Idempotency-Key 최대 길이 {_IDEMPOTENCY_KEY_MAX_LEN}자를 초과했습니다.",
+            },
+        )
+    return key
+
+
+def _raise_idempotency_http(exc: Exception) -> None:
+    """idempotency 예외 → HTTPException 매핑 (fail-closed)."""
+    if isinstance(exc, IdempotencyConflict):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_code": "IDEMPOTENCY_CONFLICT",
+                "message": "동일한 Idempotency-Key 로 서로 다른 요청이 감지되었습니다.",
+            },
+        )
+    if isinstance(exc, IdempotencyInProgress):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_code": "IDEMPOTENCY_IN_PROGRESS",
+                "message": "동일 Idempotency-Key 의 이전 요청이 아직 처리 중입니다.",
+            },
+        )
+    if isinstance(exc, IdempotencyStoreUnavailable):
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error_code": "IDEMPOTENCY_STORE_UNAVAILABLE",
+                "message": "주문 멱등성 저장소가 일시적으로 사용 불가합니다.",
+            },
+        )
 
 
 def _order_result_to_response(
@@ -55,20 +117,50 @@ def _order_result_to_response(
 async def create_order(
     request: Request,
     order_body: OrderCreateRequest,
+    idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     current_user=Depends(require_operator),
     db: AsyncSession = Depends(get_db_session),
 ):
     """
-    단일 주문 생성
+    단일 주문 생성 (P0-3a: Idempotency-Key 필수).
 
     시장가, 지정가, TWAP, VWAP 주문을 생성하고 OrderExecutor를 통해 실행합니다.
+    `Idempotency-Key` 헤더 미첨부 시 400, 동일 키 재시도(동일 body)는 기존
+    응답을 replay 하며, 동일 키 + 다른 body 는 422, 동시 실행 중은 409,
+    저장소 장애 시 503 을 반환합니다 (fail-closed).
     """
+    key = _validate_idempotency_key(idempotency_key)
+    route = "POST /api/orders"
+    store = get_order_idempotency_store()
+    payload: dict[str, Any] = order_body.model_dump(mode="json")
+    fingerprint = compute_request_fingerprint(payload)
+    user_id = str(current_user.id)
+
+    # 1) Replay 경로: 이미 저장된 결과가 있으면 그대로 반환.
+    try:
+        existing = store.lookup(user_id, route, key)
+    except IdempotencyStoreUnavailable as e:
+        _raise_idempotency_http(e)
+
+    if existing is not None:
+        if existing.fingerprint != fingerprint:
+            _raise_idempotency_http(IdempotencyConflict(key))
+        record_hit()
+        return APIResponse(**existing.body)
+
+    # 2) Claim: 동시 요청 직렬화.
+    try:
+        store.try_claim(user_id, route, key, fingerprint)
+    except (IdempotencyConflict, IdempotencyInProgress, IdempotencyStoreUnavailable) as e:
+        _raise_idempotency_http(e)
+
+    # 3) 실행
     try:
         logger.info(
-            f"Order created: {order_body.side} {order_body.ticker} " f"x{order_body.quantity} ({order_body.order_type})"
+            f"Order created: {order_body.side} {order_body.ticker} "
+            f"x{order_body.quantity} ({order_body.order_type}) idem={key}"
         )
 
-        # API 스키마 → OrderRequest 변환
         order_req = OrderRequest(
             ticker=order_body.ticker,
             market=Market(order_body.market),
@@ -79,11 +171,9 @@ async def create_order(
             reason=order_body.reason or "",
         )
 
-        # OrderExecutor 실행
         executor = OrderExecutor()
         result = await executor.execute_order(order_req)
 
-        # 감사 로그 기록
         audit = AuditLogger(db)
         await audit.log(
             action_type="ORDER_CREATED",
@@ -100,10 +190,32 @@ async def create_order(
             order_type=order_body.order_type,
             reason=order_body.reason or "",
         )
-        return APIResponse(success=True, data=response, message="주문이 실행되었습니다.")
+        api_body = APIResponse(success=True, data=response, message="주문이 실행되었습니다.")
     except Exception as e:
+        # 실패 시 claim 해제 → 클라이언트가 동일 키로 재시도 가능.
+        try:
+            store.release_claim(user_id, route, key)
+        except IdempotencyStoreUnavailable:
+            # release 실패는 치명적이지 않음 (claim TTL 30s 로 자동 만료).
+            pass
         logger.error(f"Order creation error: {e}")
         return APIResponse(success=False, message=f"주문 생성 실패: {str(e)}")
+
+    # 4) 결과 저장 (성공 응답만 캐시).
+    try:
+        store.store_result(
+            user_id,
+            route,
+            key,
+            fingerprint,
+            status_code=200,
+            body=api_body.model_dump(mode="json"),
+        )
+    except IdempotencyStoreUnavailable:
+        # 저장 실패해도 주문은 이미 실행됨 — 응답은 반환하되 로그로 경보.
+        logger.error("Order idempotency store_result failed (order already executed) key=%s", key)
+
+    return api_body
 
 
 @router.post("/batch", response_model=APIResponse[BatchOrderResponse])
@@ -111,14 +223,39 @@ async def create_order(
 async def create_batch_orders(
     request: Request,
     batch_body: BatchOrderRequest,
+    idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     current_user=Depends(require_operator),
     db: AsyncSession = Depends(get_db_session),
 ):
     """
-    배치 주문 실행
+    배치 주문 실행 (P0-3a: Idempotency-Key 필수).
 
     복수 주문을 동시에 생성·실행합니다. SELL 주문이 우선 처리됩니다.
+    idempotency 프로토콜은 단일 주문과 동일합니다.
     """
+    key = _validate_idempotency_key(idempotency_key)
+    route = "POST /api/orders/batch"
+    store = get_order_idempotency_store()
+    payload: dict[str, Any] = batch_body.model_dump(mode="json")
+    fingerprint = compute_request_fingerprint(payload)
+    user_id = str(current_user.id)
+
+    try:
+        existing = store.lookup(user_id, route, key)
+    except IdempotencyStoreUnavailable as e:
+        _raise_idempotency_http(e)
+
+    if existing is not None:
+        if existing.fingerprint != fingerprint:
+            _raise_idempotency_http(IdempotencyConflict(key))
+        record_hit()
+        return APIResponse(**existing.body)
+
+    try:
+        store.try_claim(user_id, route, key, fingerprint)
+    except (IdempotencyConflict, IdempotencyInProgress, IdempotencyStoreUnavailable) as e:
+        _raise_idempotency_http(e)
+
     try:
         # API 스키마 → OrderRequest 리스트 변환
         order_requests = [
@@ -175,14 +312,32 @@ async def create_batch_orders(
             success_count=success_count,
             fail_count=fail_count,
         )
-        return APIResponse(
+        api_body = APIResponse(
             success=True,
             data=batch_response,
             message=f"{len(results)}건 배치 주문이 실행되었습니다.",
         )
     except Exception as e:
+        try:
+            store.release_claim(user_id, route, key)
+        except IdempotencyStoreUnavailable:
+            pass
         logger.error(f"Batch order error: {e}")
         return APIResponse(success=False, message=f"배치 주문 실패: {str(e)}")
+
+    try:
+        store.store_result(
+            user_id,
+            route,
+            key,
+            fingerprint,
+            status_code=200,
+            body=api_body.model_dump(mode="json"),
+        )
+    except IdempotencyStoreUnavailable:
+        logger.error("Batch order idempotency store_result failed (orders executed) key=%s", key)
+
+    return api_body
 
 
 @router.get("/", response_model=APIResponse[list[OrderResponse]])

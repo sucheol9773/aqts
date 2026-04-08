@@ -14,6 +14,7 @@ Tests cover all branches in:
 """
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -429,10 +430,12 @@ class TestOrderRoutes:
         with patch("api.routes.orders.OrderExecutor", return_value=mock_executor):
             with patch("api.routes.orders.AuditLogger", mock_audit_cls):
                 with patch("api.routes.orders.limiter"):
+                    order_user = SimpleNamespace(id="user-cov-1", username="u", role="operator")
                     resp = await create_order(
                         request=mock_request,
                         order_body=body,
-                        current_user=mock_user,
+                        idempotency_key="cov-create-order-success-001",
+                        current_user=order_user,
                         db=mock_db,
                     )
         assert resp.success is True
@@ -461,10 +464,12 @@ class TestOrderRoutes:
 
         with patch("api.routes.orders.OrderExecutor", return_value=mock_executor):
             with patch("api.routes.orders.limiter"):
+                order_user = SimpleNamespace(id="user-cov-2", username="u", role="operator")
                 resp = await create_order(
                     request=mock_request,
                     order_body=body,
-                    current_user=mock_user,
+                    idempotency_key="cov-create-order-error-001",
+                    current_user=order_user,
                     db=mock_db,
                 )
         assert resp.success is False

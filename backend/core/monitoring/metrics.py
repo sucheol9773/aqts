@@ -124,6 +124,32 @@ RATE_LIMIT_STORAGE_FAILURE_TOTAL = Counter(
     "Rate limit storage backend failure (fail-closed) — must remain 0",
 )
 
+# P0-3a (security-integrity-roadmap §3.3): 주문 idempotency 관측 지표.
+# hit: 동일 키 재시도 → 저장된 응답 replay. 과도한 증가는 클라이언트 재시도 폭주 신호.
+ORDER_IDEMPOTENCY_HIT_TOTAL = Counter(
+    "aqts_order_idempotency_hit_total",
+    "Order idempotency cache hit (replayed stored response)",
+)
+
+# in-progress: 동일 키로 아직 실행 중인 요청이 있을 때 409 반환 횟수.
+ORDER_IDEMPOTENCY_IN_PROGRESS_TOTAL = Counter(
+    "aqts_order_idempotency_in_progress_total",
+    "Order idempotency concurrent in-progress rejections (HTTP 409)",
+)
+
+# conflict: 동일 키 + 다른 body fingerprint → 422. 클라이언트 버그 또는 공격 신호.
+ORDER_IDEMPOTENCY_CONFLICT_TOTAL = Counter(
+    "aqts_order_idempotency_conflict_total",
+    "Order idempotency key reused with different payload (HTTP 422)",
+)
+
+# store failure: Redis 등 백엔드 장애 → 503 (fail-closed). 알람 임계 0.
+ORDER_IDEMPOTENCY_STORE_FAILURE_TOTAL = Counter(
+    "aqts_order_idempotency_store_failure_total",
+    "Order idempotency store backend failure (fail-closed) — must remain 0",
+    labelnames=["op"],
+)
+
 # ══════════════════════════════════════
 # 3. 비즈니스 메트릭
 # ══════════════════════════════════════
