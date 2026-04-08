@@ -41,7 +41,10 @@ class TestAuth401Behavior:
             assert "www-authenticate" in response.headers, "401 응답에는 WWW-Authenticate 헤더가 포함되어야 함"
 
             body = response.json()
-            assert body.get("detail") == "Not authenticated"
+            # 표준 에러 스키마: {"success": false, "error": {"code": "UNAUTHORIZED", "message": "Not authenticated"}}
+            assert body.get("success") is False
+            assert body["error"]["code"] == "UNAUTHORIZED"
+            assert body["error"]["message"] == "Not authenticated"
 
     async def test_invalid_token_returns_401(self):
         """Case 2: 잘못된 JWT 토큰 → 401 Unauthorized."""

@@ -7,10 +7,11 @@
 from typing import List
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.errors import ErrorCode, raise_api_error
 from api.middleware.auth import AuthenticatedUser, AuthService
 from api.middleware.rbac import require_admin
 from api.schemas.common import APIResponse
@@ -60,7 +61,11 @@ async def list_users(
         return APIResponse(success=True, data=response_data, message=f"총 {len(users)}명의 사용자")
     except Exception as e:
         logger.error(f"Failed to list users: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        raise_api_error(
+            500,
+            ErrorCode.USER_STORE_UNAVAILABLE,
+            "사용자 목록 조회 중 내부 오류가 발생했습니다.",
+        )
 
 
 @router.get("/users/{user_id}", response_model=APIResponse[UserResponse], dependencies=[Depends(require_admin)])
@@ -93,7 +98,11 @@ async def get_user(
         return APIResponse(success=True, data=response_data, message="User retrieved")
     except Exception as e:
         logger.error(f"Failed to get user: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        raise_api_error(
+            500,
+            ErrorCode.USER_STORE_UNAVAILABLE,
+            "사용자 조회 중 내부 오류가 발생했습니다.",
+        )
 
 
 @router.post("/users", response_model=APIResponse[UserResponse], dependencies=[Depends(require_admin)])
@@ -153,7 +162,11 @@ async def create_user(
         return APIResponse(success=True, data=response_data, message="User created successfully")
     except Exception as e:
         logger.error(f"Failed to create user: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        raise_api_error(
+            500,
+            ErrorCode.USER_STORE_UNAVAILABLE,
+            "사용자 생성 중 내부 오류가 발생했습니다.",
+        )
 
 
 @router.patch("/users/{user_id}", response_model=APIResponse[UserResponse], dependencies=[Depends(require_admin)])
@@ -223,7 +236,11 @@ async def update_user(
         )
     except Exception as e:
         logger.error(f"Failed to update user: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        raise_api_error(
+            500,
+            ErrorCode.USER_STORE_UNAVAILABLE,
+            "사용자 업데이트 중 내부 오류가 발생했습니다.",
+        )
 
 
 @router.post("/users/{user_id}/password-reset", response_model=APIResponse[dict], dependencies=[Depends(require_admin)])
@@ -257,7 +274,11 @@ async def reset_password(
         return APIResponse(success=True, data={"password_reset": True}, message="Password reset successfully")
     except Exception as e:
         logger.error(f"Failed to reset password: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        raise_api_error(
+            500,
+            ErrorCode.USER_STORE_UNAVAILABLE,
+            "비밀번호 리셋 중 내부 오류가 발생했습니다.",
+        )
 
 
 @router.post(
@@ -299,7 +320,11 @@ async def lock_user(
         )
     except Exception as e:
         logger.error(f"Failed to lock/unlock user: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        raise_api_error(
+            500,
+            ErrorCode.USER_STORE_UNAVAILABLE,
+            "사용자 잠금/해제 중 내부 오류가 발생했습니다.",
+        )
 
 
 @router.delete("/users/{user_id}", response_model=APIResponse[dict], dependencies=[Depends(require_admin)])
@@ -336,4 +361,8 @@ async def delete_user(
         return APIResponse(success=True, data={"deleted": True}, message="User deleted (deactivated) successfully")
     except Exception as e:
         logger.error(f"Failed to delete user: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        raise_api_error(
+            500,
+            ErrorCode.USER_STORE_UNAVAILABLE,
+            "사용자 삭제 중 내부 오류가 발생했습니다.",
+        )

@@ -81,7 +81,10 @@ class TestRefreshTokenTypeEnforcement:
                 resp = client.post("/api/auth/refresh", json={"refresh_token": access})
 
             assert resp.status_code == 401, resp.text
-            assert "Invalid token type" in resp.json()["detail"]
+            body = resp.json()
+            assert body["success"] is False
+            assert body["error"]["code"] == "INVALID_TOKEN_TYPE"
+            assert "Invalid token type" in body["error"]["message"]
             assert "WWW-Authenticate" in resp.headers
             assert "invalid_token" in resp.headers["WWW-Authenticate"]
 

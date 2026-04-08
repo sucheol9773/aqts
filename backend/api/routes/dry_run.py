@@ -12,8 +12,9 @@
   DELETE /api/system/dry-run/sessions — 전체 세션 초기화
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 
+from api.errors import ErrorCode, raise_api_error
 from api.middleware.rbac import require_operator, require_viewer
 from api.schemas.common import APIResponse
 from config.logging import logger
@@ -34,9 +35,11 @@ async def start_dry_run(current_user=Depends(require_operator)):
     engine = get_dry_run_engine()
 
     if engine.current_session is not None:
-        raise HTTPException(
-            status_code=409,
-            detail=f"이미 진행 중인 세션이 있습니다: {engine.current_session.session_id}",
+        raise_api_error(
+            409,
+            ErrorCode.DRY_RUN_SESSION_CONFLICT,
+            "이미 진행 중인 드라이런 세션이 있습니다.",
+            active_session_id=engine.current_session.session_id,
         )
 
     session = engine.start_session()
@@ -63,9 +66,10 @@ async def stop_dry_run(current_user=Depends(require_operator)):
     engine = get_dry_run_engine()
 
     if engine.current_session is None:
-        raise HTTPException(
-            status_code=404,
-            detail="진행 중인 드라이런 세션이 없습니다",
+        raise_api_error(
+            404,
+            ErrorCode.DRY_RUN_SESSION_NOT_FOUND,
+            "진행 중인 드라이런 세션이 없습니다.",
         )
 
     session = engine.end_session()
@@ -147,9 +151,11 @@ async def get_dry_run_session(
     session = engine.get_session(session_id)
 
     if session is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"세션을 찾을 수 없습니다: {session_id}",
+        raise_api_error(
+            404,
+            ErrorCode.DRY_RUN_SESSION_NOT_FOUND,
+            "드라이런 세션을 찾을 수 없습니다.",
+            session_id=session_id,
         )
 
     return APIResponse(
@@ -168,9 +174,11 @@ async def clear_dry_run_sessions(current_user=Depends(require_operator)):
     engine = get_dry_run_engine()
 
     if engine.current_session is not None:
-        raise HTTPException(
-            status_code=409,
-            detail="진행 중인 세션이 있습니다. 먼저 종료해주세요.",
+        raise_api_error(
+            409,
+            ErrorCode.DRY_RUN_SESSION_CONFLICT,
+            "진행 중인 세션이 있습니다. 먼저 종료해주세요.",
+            active_session_id=engine.current_session.session_id,
         )
 
     count = engine.clear_sessions()

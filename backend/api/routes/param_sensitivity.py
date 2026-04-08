@@ -11,8 +11,9 @@ from datetime import datetime
 
 import numpy as np
 import pandas as pd
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 
+from api.errors import ErrorCode, raise_api_error
 from api.middleware.rbac import require_operator, require_viewer
 from config.logging import logger
 from core.param_sensitivity import (
@@ -70,7 +71,11 @@ async def run_sensitivity(
 async def get_latest(current_user=Depends(require_viewer)):
     """최근 분석 결과 조회"""
     if _latest_run is None:
-        raise HTTPException(status_code=404, detail="분석 결과가 없습니다")
+        raise_api_error(
+            404,
+            ErrorCode.PARAM_SENSITIVITY_NOT_FOUND,
+            "분석 결과가 없습니다.",
+        )
 
     return {
         "status": "success",
@@ -85,10 +90,19 @@ async def get_tornado(
 ):
     """토네이도 차트 데이터"""
     if _latest_run is None:
-        raise HTTPException(status_code=404, detail="분석 결과가 없습니다")
+        raise_api_error(
+            404,
+            ErrorCode.PARAM_SENSITIVITY_NOT_FOUND,
+            "분석 결과가 없습니다.",
+        )
 
     if metric not in ("sharpe", "cagr", "mdd"):
-        raise HTTPException(status_code=400, detail="metric은 sharpe, cagr, mdd 중 하나여야 합니다")
+        raise_api_error(
+            400,
+            ErrorCode.PARAM_SENSITIVITY_INVALID_METRIC,
+            "metric은 sharpe, cagr, mdd 중 하나여야 합니다.",
+            metric=metric,
+        )
 
     analyzer = SensitivityAnalyzer(
         param_ranges=_latest_run.param_ranges,

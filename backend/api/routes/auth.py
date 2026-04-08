@@ -4,10 +4,11 @@
 로그인, 토큰 갱신, MFA 관리, 인증 상태 확인 엔드포인트를 제공합니다.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
+from api.errors import ErrorCode, raise_api_error
 from api.middleware.auth import AuthenticatedUser, AuthService, get_current_user
 from api.middleware.rate_limiter import RATE_LOGIN, limiter
 from api.schemas.auth import (
@@ -99,9 +100,10 @@ async def refresh_token(request: RefreshTokenRequest):
         logger.warning(
             "Refresh endpoint called with non-refresh token " f"(type={token_type!r}, jti={payload.get('jti')!r})"
         )
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token type for refresh endpoint",
+        raise_api_error(
+            401,
+            ErrorCode.INVALID_TOKEN_TYPE,
+            "Invalid token type for refresh endpoint",
             headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
         )
 

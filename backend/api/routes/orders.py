@@ -12,6 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
+from api.errors import ErrorCode, raise_api_error
 from api.middleware.rate_limiter import RATE_ORDER, limiter
 from api.middleware.rbac import require_operator, require_viewer
 from api.schemas.common import APIResponse
@@ -513,7 +514,12 @@ async def get_order(
         row = result.fetchone()
 
         if not row:
-            raise HTTPException(status_code=404, detail=f"주문을 찾을 수 없습니다: {order_id}")
+            raise_api_error(
+                404,
+                ErrorCode.ORDER_NOT_FOUND,
+                "주문을 찾을 수 없습니다.",
+                order_id=order_id,
+            )
 
         order = OrderResponse(
             order_id=row[0],
@@ -558,7 +564,12 @@ async def cancel_order(
         row = result.fetchone()
 
         if not row:
-            raise HTTPException(status_code=404, detail=f"주문을 찾을 수 없습니다: {order_id}")
+            raise_api_error(
+                404,
+                ErrorCode.ORDER_NOT_FOUND,
+                "주문을 찾을 수 없습니다.",
+                order_id=order_id,
+            )
 
         current_status = row[0]
         if current_status not in ("PENDING", "SUBMITTED"):

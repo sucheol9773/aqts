@@ -12,11 +12,13 @@ import os
 import signal
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from limits.errors import StorageError
 from slowapi.errors import RateLimitExceeded
 
+from api.errors import normalize_error_body
 from api.middleware.rate_limiter import (
     limiter,
     rate_limit_exceeded_handler,
@@ -244,6 +246,27 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 # P0-2b: storage 장애는 fail-closed (503)
 app.add_exception_handler(StorageError, rate_limit_storage_unavailable_handler)
+
+
+# ── P1-에러 메시지 표준화: 글로벌 HTTPException → ErrorResponse ──
+async def _standard_http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    """모든 HTTPException 을 공통 ErrorResponse 본문으로 직렬화한다.
+
+    - 라우트가 `raise_api_error(...)` 또는 dict detail 을 사용한 경우
+      `error_code` / `message` / `context` 가 그대로 전달된다.
+    - 문자열 detail 은 상태 코드에 기반한 기본 `error_code` 로 보완된다.
+    - HTTPException 에 지정된 headers (예: `Retry-After`, `WWW-Authenticate`)
+      는 그대로 응답에 첨부된다.
+    """
+    body = normalize_error_body(exc.status_code, exc.detail)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=body,
+        headers=dict(exc.headers) if exc.headers else None,
+    )
+
+
+app.add_exception_handler(HTTPException, _standard_http_exception_handler)
 
 # ── 미들웨어 등록 ──
 # CORS 설정: 환경변수 CORS_ALLOWED_ORIGINS에서 허용 Origin 목록 로드
