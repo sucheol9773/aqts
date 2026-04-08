@@ -132,8 +132,18 @@ jobs:
             echo "═══ Step 4: Pull verified image from GHCR ═══"
             docker pull "${IMAGE_REF}"
 
-            echo "═══ Step 5: Restart services with new image ═══"
+            echo "═══ Step 5a: Ensure postgres is up for migrations ═══"
             export IMAGE_NAMESPACE IMAGE_TAG
+            docker compose -f docker-compose.yml up -d postgres
+
+            echo "═══ Step 5b: Run alembic migrations (upgrade head) ═══"
+            # 새 이미지 컨테이너에서 일회성 마이그레이션 실행. postgres 가
+            # service_healthy 가 될 때까지 docker compose 가 대기한다.
+            # 마이그레이션 실패 시 backend 컨테이너는 기동하지 않는다 (fail-closed).
+            docker compose -f docker-compose.yml run --rm backend \
+              alembic -c alembic.ini upgrade head
+
+            echo "═══ Step 5c: Restart services with new image ═══"
             docker compose -f docker-compose.yml up -d
 
             echo "═══ Step 6: Wait for health check (max 120s) ═══"
