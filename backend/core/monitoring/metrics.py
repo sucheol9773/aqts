@@ -174,6 +174,25 @@ TRADING_GUARD_KILL_SWITCH_ACTIVE = Gauge(
     "1 if global TradingGuard kill switch is active, else 0",
 )
 
+# P1-정합성 (security-integrity-roadmap §7.3): ReconciliationEngine wiring.
+# matched=true 면 result="matched", false 면 result="mismatch", 예외면 "error".
+RECONCILIATION_RUNS_TOTAL = Counter(
+    "aqts_reconciliation_runs_total",
+    "ReconciliationRunner execution count",
+    labelnames=["result"],
+)
+
+RECONCILIATION_MISMATCHES_TOTAL = Counter(
+    "aqts_reconciliation_mismatches_total",
+    "Cumulative count of mismatched positions detected by reconciliation",
+)
+
+# 마지막 reconcile 의 |broker_total - internal_total| 절대값. 알람 임계 0.
+RECONCILIATION_LEDGER_DIFF_ABS = Gauge(
+    "aqts_reconciliation_ledger_diff_abs",
+    "Absolute ledger difference (broker_total - internal_total) from last run",
+)
+
 # ══════════════════════════════════════
 # 3. 비즈니스 메트릭
 # ══════════════════════════════════════

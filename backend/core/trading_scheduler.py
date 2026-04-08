@@ -227,6 +227,10 @@ class TradingScheduler:
         # 핸들러 콜백 (외부 주입 가능)
         self._handlers: dict[str, Callable[..., Awaitable]] = {}
 
+        # P1-정합성: ReconciliationRunner wiring. None 이면 기본 핸들러는
+        # 종전과 같은 stub 결과만 반환한다 (마이그레이션 호환).
+        self._reconciliation_runner = None
+
     # ── 프로퍼티 ──
 
     @property
@@ -243,6 +247,15 @@ class TradingScheduler:
         """이벤트 핸들러 등록"""
         self._handlers[event_type] = handler
         logger.debug(f"핸들러 등록: {event_type}")
+
+    def register_reconciliation_runner(self, runner) -> None:
+        """
+        P1-정합성: ReconciliationRunner 를 주입한다. 등록되면 MIDDAY_CHECK
+        와 POST_MARKET 기본 핸들러가 매 사이클에 reconcile 을 호출한다.
+        runner 는 `core.reconciliation_runner.ReconciliationRunner` 인스턴스.
+        """
+        self._reconciliation_runner = runner
+        logger.info("ReconciliationRunner 등록 완료 — MIDDAY_CHECK/POST_MARKET 에 자동 wiring")
 
     # ── 스케줄러 제어 ──
 
@@ -559,9 +572,10 @@ class TradingScheduler:
         return result
 
     async def _default_handle_midday_check(self) -> dict:
-        """중간 점검 기본 핸들러"""
-        result = {"message": "중간 점검 — 포지션 모니터링"}
+        """중간 점검 기본 핸들러 — P1-정합성: reconcile 자동 실행."""
+        result: dict = {"message": "중간 점검 — 포지션 모니터링"}
         result["check_time"] = now_kst().isoformat()
+        result["reconciliation"] = await self._run_reconciliation_if_wired()
         return result
 
     async def _default_handle_market_close(self) -> dict:
@@ -571,7 +585,30 @@ class TradingScheduler:
         return result
 
     async def _default_handle_post_market(self) -> dict:
-        """장 마감 후 기본 핸들러"""
-        result = {"message": "마감 후 처리 — 일일 리포트 생성 대기"}
+        """장 마감 후 기본 핸들러 — P1-정합성: reconcile 자동 실행."""
+        result: dict = {"message": "마감 후 처리 — 일일 리포트 생성 대기"}
         result["post_market_time"] = now_kst().isoformat()
+        result["reconciliation"] = await self._run_reconciliation_if_wired()
         return result
+
+    async def _run_reconciliation_if_wired(self) -> dict:
+        """
+        ReconciliationRunner 가 주입돼 있으면 한 사이클을 실행한다.
+        provider 장애 시 핸들러 전체 실패로 전파되지 않도록 dict 로 감싸서
+        반환하되, 이미 metric 에는 result="error" 가 기록된다.
+        """
+        if self._reconciliation_runner is None:
+            return {"wired": False, "skipped": True}
+
+        try:
+            recon = await self._reconciliation_runner.run()
+            return {
+                "wired": True,
+                "matched": recon.matched,
+                "mismatch_count": len(recon.mismatches),
+                "broker_total": recon.broker_total,
+                "internal_total": recon.internal_total,
+            }
+        except Exception as exc:
+            logger.error(f"Reconciliation 실행 실패: {exc}")
+            return {"wired": True, "error": str(exc)}
