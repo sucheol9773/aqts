@@ -343,7 +343,7 @@ class RedisOrderIdempotencyStore:
 
 # ── 팩토리 ──
 _BACKEND_ENV = "AQTS_ORDER_IDEMPOTENCY_BACKEND"
-_VALID_BACKENDS = {"memory", "redis"}
+_VALID_BACKENDS = {"memory", "redis", "two_tier"}
 
 _singleton: Optional[OrderIdempotencyStore] = None
 _singleton_lock = threading.Lock()
@@ -355,7 +355,19 @@ def _build_store() -> OrderIdempotencyStore:
         raise ValueError(f"Invalid {_BACKEND_ENV}={backend!r}; must be one of {_VALID_BACKENDS}")
     if backend == "memory":
         return InMemoryOrderIdempotencyStore()
-    return RedisOrderIdempotencyStore(redis_url=get_settings().redis.url)
+    if backend == "redis":
+        return RedisOrderIdempotencyStore(redis_url=get_settings().redis.url)
+
+    # two_tier: Redis(핫) + PostgreSQL(콜드, durability) — P0-3b 기본 운영 모드.
+    from core.idempotency.db_store import (
+        PgOrderIdempotencyStore,
+        TwoTierOrderIdempotencyStore,
+    )
+
+    settings = get_settings()
+    redis_tier = RedisOrderIdempotencyStore(redis_url=settings.redis.url)
+    db_tier = PgOrderIdempotencyStore(sync_url=settings.db.sync_url)
+    return TwoTierOrderIdempotencyStore(redis_store=redis_tier, db_store=db_tier)
 
 
 def get_order_idempotency_store() -> OrderIdempotencyStore:
