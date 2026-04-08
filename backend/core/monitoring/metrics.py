@@ -111,6 +111,19 @@ REVOCATION_BACKEND_FAILURE_TOTAL = Counter(
     labelnames=["op"],
 )
 
+# P0-2b (security-integrity-roadmap §3.2): rate limiter 관측 지표.
+RATE_LIMIT_EXCEEDED_TOTAL = Counter(
+    "aqts_rate_limit_exceeded_total",
+    "Rate limit exceeded (HTTP 429) per route",
+    labelnames=["route"],
+)
+
+# P0-2b: rate limiter Redis 백엔드 장애 → 503 (fail-closed). 알람 임계 0.
+RATE_LIMIT_STORAGE_FAILURE_TOTAL = Counter(
+    "aqts_rate_limit_storage_failure_total",
+    "Rate limit storage backend failure (fail-closed) — must remain 0",
+)
+
 # ══════════════════════════════════════
 # 3. 비즈니스 메트릭
 # ══════════════════════════════════════

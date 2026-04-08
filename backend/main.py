@@ -14,9 +14,14 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from limits.errors import StorageError
 from slowapi.errors import RateLimitExceeded
 
-from api.middleware.rate_limiter import limiter, rate_limit_exceeded_handler
+from api.middleware.rate_limiter import (
+    limiter,
+    rate_limit_exceeded_handler,
+    rate_limit_storage_unavailable_handler,
+)
 from api.middleware.request_logger import RequestLoggingMiddleware
 
 # Phase 5: API 라우터 & 미들웨어
@@ -237,6 +242,8 @@ app = FastAPI(
 # ── Rate Limiting 등록 ──
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+# P0-2b: storage 장애는 fail-closed (503)
+app.add_exception_handler(StorageError, rate_limit_storage_unavailable_handler)
 
 # ── 미들웨어 등록 ──
 # CORS 설정: 환경변수 CORS_ALLOWED_ORIGINS에서 허용 Origin 목록 로드
