@@ -17,6 +17,12 @@ import signal
 from config.logging import logger, setup_logging
 from config.settings import get_settings
 from core.data_collector.kis_client import KISClient
+from core.reconciliation import ReconciliationEngine
+from core.reconciliation_providers import (
+    KISBrokerPositionProvider,
+    LedgerPositionProvider,
+)
+from core.reconciliation_runner import ReconciliationRunner
 from core.scheduler_handlers import register_pipeline_handlers
 from core.trading_scheduler import TradingScheduler
 from db.database import MongoDBManager, RedisManager, engine
@@ -71,6 +77,27 @@ async def main():
     # 스케줄러 시작
     scheduler = TradingScheduler()
     register_pipeline_handlers(scheduler)
+
+    # P1-정합성: ReconciliationRunner 를 운영 스케줄러에 실제로 주입한다.
+    # KIS 토큰 초기화에 실패한 degraded 모드(kis_client=None)에서는 reconcile
+    # 자체가 무의미하므로 등록을 건너뛰고 경고만 남긴다 — fail-closed 원칙은
+    # provider 호출 단에서 별도로 작동한다 (아래 _run_reconciliation_if_wired
+    # 가 예외를 result="error" 로 카운트하여 관측 가능).
+    if kis_client is not None and not settings.kis.is_backtest:
+        runner = ReconciliationRunner(
+            engine=ReconciliationEngine(),
+            broker_provider=KISBrokerPositionProvider(kis_client=kis_client),
+            internal_provider=LedgerPositionProvider(),
+        )
+        scheduler.register_reconciliation_runner(runner)
+        logger.info("ReconciliationRunner wired (KIS broker ↔ PortfolioLedger)")
+    else:
+        logger.warning(
+            "ReconciliationRunner 미등록 — kis_client=%s backtest=%s",
+            kis_client is not None,
+            settings.kis.is_backtest,
+        )
+
     await scheduler.start()
     logger.info("TradingScheduler started successfully")
 

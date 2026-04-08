@@ -133,6 +133,9 @@ async def lifespan(app: FastAPI):
         if scheduler_enabled:
             try:
                 trading_scheduler = TradingScheduler()
+                # P1-정합성: ReconciliationRunner 는 KIS 토큰 초기화 이후에
+                # wiring 한다 (아래 KIS 초기화 블록 직후 _wire_reconciliation
+                # 호출). 여기서는 스케줄러만 시작.
                 await trading_scheduler.start()
                 logger.info("TradingScheduler started successfully (embedded mode)")
             except Exception as e:
@@ -195,6 +198,32 @@ async def lifespan(app: FastAPI):
             kis_client = None
             app.state.kis_degraded = True
             kis_recovery_state.mark_degraded(str(e))
+
+        # P1-정합성: ReconciliationRunner 를 임베디드 스케줄러에 주입.
+        # KIS 토큰 초기화 이후에만 wiring 한다 (degraded 모드에서는 등록 생략).
+        if (
+            scheduler_enabled
+            and trading_scheduler is not None
+            and kis_client is not None
+            and not settings.kis.is_backtest
+        ):
+            try:
+                from core.reconciliation import ReconciliationEngine
+                from core.reconciliation_providers import (
+                    KISBrokerPositionProvider,
+                    LedgerPositionProvider,
+                )
+                from core.reconciliation_runner import ReconciliationRunner
+
+                runner = ReconciliationRunner(
+                    engine=ReconciliationEngine(),
+                    broker_provider=KISBrokerPositionProvider(kis_client=kis_client),
+                    internal_provider=LedgerPositionProvider(),
+                )
+                trading_scheduler.register_reconciliation_runner(runner)
+                logger.info("ReconciliationRunner wired (embedded mode)")
+            except Exception as e:
+                logger.warning(f"ReconciliationRunner wiring 실패 (degraded): {e}")
 
         logger.info("AQTS startup complete. System ready.")
 

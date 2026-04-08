@@ -319,6 +319,34 @@ class OrderExecutor:
                         result.order_id,
                     )
 
+            # P1-정합성: 체결이 확정된 경우에만 ledger 에 반영.
+            # ReconciliationRunner 가 본 ledger 와 브로커 잔고를 비교하므로,
+            # 부분 체결도 그 시점의 실제 수량(filled_quantity)만 누적한다.
+            if result.status in (OrderStatus.FILLED, OrderStatus.PARTIAL) and result.filled_quantity > 0:
+                from core.portfolio_ledger import (
+                    LedgerInvariantError,
+                    get_portfolio_ledger,
+                )
+
+                try:
+                    await get_portfolio_ledger().record_fill(
+                        ticker=request.ticker,
+                        side=request.side,
+                        quantity=float(result.filled_quantity),
+                    )
+                except LedgerInvariantError as ledger_exc:
+                    # ledger 가 거부했다 = 내부 정합성이 이미 깨졌다는 신호.
+                    # 주문은 이미 브로커에 체결되어 롤백 불가하므로, 사후
+                    # 관측만 하고 reconcile 사이클이 mismatch 를 잡도록 둔다.
+                    logger.critical(
+                        "PortfolioLedger refused fill: ticker=%s side=%s qty=%d order_id=%s err=%s",
+                        request.ticker,
+                        request.side.value,
+                        result.filled_quantity,
+                        result.order_id,
+                        ledger_exc,
+                    )
+
             # 결과를 데이터베이스에 저장
             await self._store_order(result)
 
