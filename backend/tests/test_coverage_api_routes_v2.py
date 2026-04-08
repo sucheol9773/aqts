@@ -579,14 +579,26 @@ class TestOrderRoutes:
 
     @pytest.mark.asyncio
     async def test_cancel_order_non_cancellable(self, mock_user, mock_db):
+        """FILLED 주문 취소 시 OrderStateMachine 이 409 로 차단한다.
+
+        근거: docs/security/security-integrity-roadmap.md §7.3 — 종결 상태
+        (FILLED/CANCELLED/FAILED) 에서의 취소 시도는 HTTPException(409,
+        INVALID_ORDER_TRANSITION) 으로 fail-closed 거부된다. 이전 구현은
+        200 + success=False 로 응답했으나 HTTP 의미와 맞지 않아 교체되었다.
+        """
+        from fastapi import HTTPException
+
         from api.routes.orders import cancel_order
 
         mock_result = MagicMock()
         mock_result.fetchone.return_value = ("FILLED",)
         mock_db.execute.return_value = mock_result
-        resp = await cancel_order(order_id="ORD-001", current_user=mock_user, db=mock_db)
-        assert resp.success is False
-        assert "취소 불가" in resp.message
+        with pytest.raises(HTTPException) as excinfo:
+            await cancel_order(order_id="ORD-001", current_user=mock_user, db=mock_db)
+        assert excinfo.value.status_code == 409
+        assert excinfo.value.detail["error_code"] == "INVALID_ORDER_TRANSITION"
+        assert excinfo.value.detail["context"]["current_status"] == "FILLED"
+        assert excinfo.value.detail["context"]["target_status"] == "CANCELLED"
 
 
 # ══════════════════════════════════════════════════════════════════════════════

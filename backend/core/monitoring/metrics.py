@@ -193,6 +193,17 @@ RECONCILIATION_LEDGER_DIFF_ABS = Gauge(
     "Absolute ledger difference (broker_total - internal_total) from last run",
 )
 
+# P1-정합성 (security-integrity-roadmap §7.3): 주문 상태 전이 유효성 거부.
+# from_state 에서 to_state 로의 전이가 VALID_ORDER_TRANSITIONS 에 없어 거부된
+# 경우 증가. 종결 상태(FILLED/CANCELLED/FAILED)에서의 모든 전이 시도,
+# 취소 불가능한 상태에서의 취소 시도, 스킵 전이(PENDING→FILLED 등) 전부
+# 포함. 알람 임계 0 — 관측되는 즉시 코드 경로 버그 또는 DB 무결성 위반 조사.
+ORDER_STATE_TRANSITION_REJECTS_TOTAL = Counter(
+    "aqts_order_state_transition_rejects_total",
+    "Order state transition attempts rejected by the state machine (must remain 0)",
+    labelnames=["from_state", "to_state"],
+)
+
 # ══════════════════════════════════════
 # 3. 비즈니스 메트릭
 # ══════════════════════════════════════

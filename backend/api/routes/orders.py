@@ -33,6 +33,11 @@ from core.idempotency import (
 )
 from core.idempotency.order_idempotency import record_hit
 from core.order_executor.executor import OrderExecutor, OrderRequest, OrderResult
+from core.order_executor.order_state_machine import (
+    InvalidOrderTransition,
+    assert_can_cancel,
+    parse_order_status,
+)
 from db.database import get_db_session
 from db.repositories.audit_log import AuditLogger, AuditWriteFailure
 
@@ -571,11 +576,35 @@ async def cancel_order(
                 order_id=order_id,
             )
 
-        current_status = row[0]
-        if current_status not in ("PENDING", "SUBMITTED"):
-            return APIResponse(
-                success=False,
-                message=f"취소 불가: 현재 상태가 {current_status}입니다. PENDING 또는 SUBMITTED만 취소 가능합니다.",
+        current_status_raw = row[0]
+        # DB 무결성 가정: status 컬럼은 OrderStatus enum 범위여야 한다. 알 수
+        # 없는 값이면 fail-closed 503 (토큰 저장소/감사 저장소와 동일 정책).
+        try:
+            current_status = parse_order_status(current_status_raw)
+        except ValueError:
+            logger.error(f"Order {order_id} has unknown status value in DB: {current_status_raw!r}")
+            raise_api_error(
+                503,
+                ErrorCode.ORDER_STORE_UNAVAILABLE,
+                "주문 저장소에 알 수 없는 상태값이 기록되어 있습니다.",
+                headers={"Retry-After": "30"},
+                order_id=order_id,
+            )
+
+        # P1-정합성: 상태 전이 유효성 검증 (OrderStateMachine 단일 진실원천).
+        # 종결 상태(FILLED/CANCELLED/FAILED) 또는 PENDING/SUBMITTED/PARTIAL 외
+        # 의 상태에서 취소 시도 → 409 + INVALID_ORDER_TRANSITION + Prometheus
+        # counter 증가 (알람 임계 0).
+        try:
+            assert_can_cancel(current_status, order_id=order_id)
+        except InvalidOrderTransition as exc:
+            raise_api_error(
+                409,
+                ErrorCode.INVALID_ORDER_TRANSITION,
+                "현재 상태에서는 주문을 취소할 수 없습니다.",
+                order_id=order_id,
+                current_status=exc.from_state.value if exc.from_state else None,
+                target_status=exc.to_state.value,
             )
 
         # 상태 변경
@@ -594,7 +623,7 @@ async def cancel_order(
                 action_type="ORDER_CANCELLED",
                 module="order_executor",
                 description=f"Order {order_id} cancelled by user {current_user}",
-                metadata={"order_id": order_id, "previous_status": current_status},
+                metadata={"order_id": order_id, "previous_status": current_status.value},
             )
         except AuditWriteFailure:
             _raise_audit_unavailable()
