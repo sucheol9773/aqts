@@ -34,6 +34,7 @@ def _make_user(*, user_id: str, username: str, role_name: str, is_active=True, i
         totp_enabled=False,
         totp_secret=None,
         failed_login_attempts=0,
+        role_version=0,
         created_at=now,
         updated_at=now,
     )
@@ -58,7 +59,7 @@ def _mock_session_raises(exc: Exception):
 
 
 def _token(role: str, uid: str = "u-1", sub: str = "u1"):
-    return AuthService.create_access_token({"sub": sub, "uid": uid, "role": role})
+    return AuthService.create_access_token({"sub": sub, "uid": uid, "role": role, "rv": 0})
 
 
 def _creds(token: str):

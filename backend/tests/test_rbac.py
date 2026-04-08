@@ -93,6 +93,7 @@ class TestRBACEndpoints:
                     "sub": "viewer",
                     "uid": "test-viewer-uuid",
                     "role": "viewer",
+                    "rv": 0,
                 }
             )
             response = await client.get(

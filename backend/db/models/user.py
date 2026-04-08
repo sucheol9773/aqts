@@ -62,6 +62,9 @@ class User(Base):
     email: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role_id: Mapped[int] = mapped_column(Integer, ForeignKey("roles.id", ondelete="RESTRICT"), nullable=False)
+    # P2-역할 변경 즉시 세션 무효화 (alembic 004). 역할 변경 시마다 단조 증가.
+    # JWT rv 클레임과 DB 값이 다르면 get_current_user 가 401 재로그인 요구.
+    role_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False, server_default="0")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_locked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

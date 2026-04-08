@@ -77,7 +77,10 @@ async def login(request: Request, login_req: LoginRequest, db_session: AsyncSess
 
 
 @router.post("/refresh", response_model=APIResponse[TokenResponse])
-async def refresh_token(request: RefreshTokenRequest):
+async def refresh_token(
+    request: RefreshTokenRequest,
+    db_session=Depends(get_db_session),
+):
     """
     토큰 갱신
 
@@ -109,18 +112,73 @@ async def refresh_token(request: RefreshTokenRequest):
 
     settings = get_settings()
 
+    # P2-역할 변경 즉시 세션 무효화: refresh 경로도 rv 클레임을 유지/검증한다.
+    # - 원칙적으로 refresh 는 기존 세션 연장일 뿐 역할을 재확인하지 않지만,
+    #   이전 토큰의 rv 가 누락(None) 이면 get_current_user 가 어차피 거부할
+    #   것이므로 여기서도 INVALID_TOKEN_TYPE 과 동일한 수준에서 거부한다.
+    # - 추가 재확인은 get_current_user (access token 검증) 에서 수행되므로,
+    #   refresh 경로는 DB 재조회 없이 rv 를 pass-through 한다. 그러면 역할이
+    #   바뀐 후 발급된 refresh 에 대해 새 access 의 rv 가 여전히 구 값이 되어
+    #   다음 요청에서 자연스럽게 거부되는 것을 방지하기 위해, DB 에서 현재
+    #   role_version 을 읽어 최신화한다.
+    token_rv = payload.get("rv")
+    if token_rv is None or not isinstance(token_rv, int):
+        raise_api_error(
+            401,
+            ErrorCode.ROLE_VERSION_MISMATCH,
+            "Refresh token missing role_version; please re-authenticate",
+            headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
+        )
+
+    # 현재 DB 의 role / role_version 재조회 — 재확인 통과 시에만 새 토큰 발급.
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    from db.models.user import User
+
+    token_uid = payload.get("uid")
+    try:
+        result = await db_session.execute(select(User).options(selectinload(User.role)).where(User.id == token_uid))
+        db_user = result.scalars().first()
+    except Exception as e:
+        logger.error(f"refresh_token: DB lookup failed: {type(e).__name__}")
+        raise_api_error(
+            503,
+            ErrorCode.USER_STORE_UNAVAILABLE,
+            "User store unavailable",
+            headers={"Retry-After": "5"},
+        )
+
+    if db_user is None or db_user.role is None:
+        raise_api_error(
+            401,
+            ErrorCode.ROLE_VERSION_MISMATCH,
+            "User no longer exists or role missing",
+            headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
+        )
+
+    if db_user.role_version != token_rv:
+        raise_api_error(
+            401,
+            ErrorCode.ROLE_VERSION_MISMATCH,
+            "Role version has changed; please re-authenticate",
+            headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
+        )
+
     new_access = AuthService.create_access_token(
         {
-            "sub": payload.get("sub", "admin"),
-            "uid": payload.get("uid"),
-            "role": payload.get("role", "viewer"),
+            "sub": db_user.username,
+            "uid": db_user.id,
+            "role": db_user.role.name,
+            "rv": db_user.role_version,
         }
     )
     new_refresh = AuthService.create_refresh_token(
         {
-            "sub": payload.get("sub", "admin"),
-            "uid": payload.get("uid"),
-            "role": payload.get("role", "viewer"),
+            "sub": db_user.username,
+            "uid": db_user.id,
+            "role": db_user.role.name,
+            "rv": db_user.role_version,
         }
     )
 

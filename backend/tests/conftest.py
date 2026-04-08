@@ -319,6 +319,7 @@ def admin_token():
         "sub": "admin",
         "uid": "test-admin-uuid",
         "role": "admin",
+        "rv": 0,
     }
     return AuthService.create_access_token(data)
 
@@ -332,6 +333,7 @@ def operator_token():
         "sub": "operator",
         "uid": "test-operator-uuid",
         "role": "operator",
+        "rv": 0,
     }
     return AuthService.create_access_token(data)
 
@@ -345,6 +347,7 @@ def viewer_token():
         "sub": "viewer",
         "uid": "test-viewer-uuid",
         "role": "viewer",
+        "rv": 0,
     }
     return AuthService.create_access_token(data)
 
@@ -373,6 +376,7 @@ def test_user_admin():
         totp_enabled=False,
         totp_secret=None,
         failed_login_attempts=0,
+        role_version=0,
         created_at=now,
         updated_at=now,
     )
@@ -401,6 +405,7 @@ def test_user_operator():
         totp_enabled=False,
         totp_secret=None,
         failed_login_attempts=0,
+        role_version=0,
         created_at=now,
         updated_at=now,
     )
@@ -429,6 +434,7 @@ def test_user_viewer():
         totp_enabled=False,
         totp_secret=None,
         failed_login_attempts=0,
+        role_version=0,
         created_at=now,
         updated_at=now,
     )

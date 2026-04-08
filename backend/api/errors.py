@@ -56,6 +56,7 @@ class ErrorCode(str, Enum):
 
     # auth
     INVALID_TOKEN_TYPE = "INVALID_TOKEN_TYPE"
+    ROLE_VERSION_MISMATCH = "ROLE_VERSION_MISMATCH"
 
     # orders / idempotency (P0-3a 레거시 — dict detail 에서 인식)
     IDEMPOTENCY_KEY_REQUIRED = "IDEMPOTENCY_KEY_REQUIRED"

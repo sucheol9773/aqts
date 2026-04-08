@@ -17,7 +17,7 @@ P0-1: Refresh 엔드포인트 토큰 type 강제 검증
 """
 
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
 from jose import jwt
@@ -47,25 +47,79 @@ def _build_test_client():
     return TestClient(app)
 
 
+def _override_db_with_user(rv: int = 0, uid: str = "1", username: str = "tester", role_name: str = "viewer"):
+    """refresh 라우트가 기대하는 DB 재조회 결과를 주입한다.
+
+    P2-역할 변경 즉시 세션 무효화 이후 refresh 는 DB 에서 role_version 을
+    재조회하므로, 정상 refresh 시나리오 테스트는 get_db_session 을 오버라이드해
+    일치하는 role_version 을 가진 사용자를 반환해야 한다.
+    """
+    from db.database import get_db_session
+    from db.models.user import Role, User
+    from main import app
+
+    role = Role(id={"admin": 1, "operator": 2, "viewer": 3}[role_name], name=role_name)
+    now = datetime.now(timezone.utc)
+    user = User(
+        id=uid,
+        username=username,
+        password_hash="dummy",
+        email=f"{username}@test.local",
+        role_id=role.id,
+        is_active=True,
+        is_locked=False,
+        totp_enabled=False,
+        failed_login_attempts=0,
+        role_version=rv,
+        created_at=now,
+        updated_at=now,
+    )
+    user.role = role
+
+    session = AsyncMock()
+    result = MagicMock()
+    scalars_obj = MagicMock()
+    scalars_obj.first = MagicMock(return_value=user)
+    result.scalars = MagicMock(return_value=scalars_obj)
+    session.execute = AsyncMock(return_value=result)
+
+    async def _fake_get_db():
+        yield session
+
+    app.dependency_overrides[get_db_session] = _fake_get_db
+    return user
+
+
+def _clear_db_override():
+    from db.database import get_db_session
+    from main import app
+
+    app.dependency_overrides.pop(get_db_session, None)
+
+
 class TestRefreshTokenTypeEnforcement:
     """P0-1 — refresh 엔드포인트는 type=refresh 토큰만 받아들여야 한다."""
 
     def test_valid_refresh_token_returns_200(self):
         """정상 refresh token 으로 호출 시 200 + 새 access/refresh 발급."""
-        with patch("api.middleware.auth.get_settings", return_value=_make_settings()):
-            from api.middleware.auth import AuthService
+        _override_db_with_user(rv=0, uid="1", username="tester", role_name="viewer")
+        try:
+            with patch("api.middleware.auth.get_settings", return_value=_make_settings()):
+                from api.middleware.auth import AuthService
 
-            refresh = AuthService.create_refresh_token({"sub": "tester", "uid": 1, "role": "viewer"})
+                refresh = AuthService.create_refresh_token({"sub": "tester", "uid": "1", "role": "viewer", "rv": 0})
 
-            with patch("api.routes.auth.get_settings", return_value=_make_settings()):
-                client = _build_test_client()
-                resp = client.post("/api/auth/refresh", json={"refresh_token": refresh})
+                with patch("api.routes.auth.get_settings", return_value=_make_settings()):
+                    client = _build_test_client()
+                    resp = client.post("/api/auth/refresh", json={"refresh_token": refresh})
 
-            assert resp.status_code == 200, resp.text
-            body = resp.json()
-            assert body["success"] is True
-            assert "access_token" in body["data"]
-            assert "refresh_token" in body["data"]
+                assert resp.status_code == 200, resp.text
+                body = resp.json()
+                assert body["success"] is True
+                assert "access_token" in body["data"]
+                assert "refresh_token" in body["data"]
+        finally:
+            _clear_db_override()
 
     def test_access_token_is_rejected_with_401(self):
         """access token 으로 refresh 시도 시 401 + counter 증가."""
@@ -153,13 +207,17 @@ class TestRefreshTokenTypeEnforcement:
         before_access = _counter_value("non_refresh:access")
         before_missing = _counter_value("missing_type")
 
-        with patch("api.middleware.auth.get_settings", return_value=_make_settings()):
-            from api.middleware.auth import AuthService
+        _override_db_with_user(rv=0, uid="1", username="tester", role_name="viewer")
+        try:
+            with patch("api.middleware.auth.get_settings", return_value=_make_settings()):
+                from api.middleware.auth import AuthService
 
-            refresh = AuthService.create_refresh_token({"sub": "tester", "uid": 1, "role": "viewer"})
-            with patch("api.routes.auth.get_settings", return_value=_make_settings()):
-                client = _build_test_client()
-                resp = client.post("/api/auth/refresh", json={"refresh_token": refresh})
+                refresh = AuthService.create_refresh_token({"sub": "tester", "uid": "1", "role": "viewer", "rv": 0})
+                with patch("api.routes.auth.get_settings", return_value=_make_settings()):
+                    client = _build_test_client()
+                    resp = client.post("/api/auth/refresh", json={"refresh_token": refresh})
+        finally:
+            _clear_db_override()
 
         assert resp.status_code == 200
         assert _counter_value("non_refresh:access") == before_access

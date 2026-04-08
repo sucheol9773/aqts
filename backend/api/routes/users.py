@@ -196,14 +196,23 @@ async def update_user(
             user.is_active = update_req.is_active
             changes.append(f"is_active={update_req.is_active}")
 
-        # 역할 변경
+        # 역할 변경 — P2: role_id 또는 role 이름 변경 여부와 무관하게 단조 증가.
+        # 이렇게 해야 operator→viewer→operator 복구 같은 "이름이 같아진" 변경도
+        # 기존 토큰을 무효화할 수 있다. 단조 증가 invariant: 감소 / 롤백 금지.
         if update_req.role is not None:
             role_result = await db_session.execute(select(Role).where(Role.name == update_req.role))
             role = role_result.scalars().first()
             if not role:
                 return APIResponse(success=False, data=None, message=f"Invalid role: {update_req.role}")
+            previous_role_id = user.role_id
             user.role_id = role.id
-            changes.append(f"role={update_req.role}")
+            # role_id 가 실제로 바뀐 경우에만 role_version 증가 — 동일 역할로의
+            # 재지정은 불필요한 세션 폭파를 일으키지 않는다.
+            if previous_role_id != role.id:
+                user.role_version = (user.role_version or 0) + 1
+                changes.append(f"role={update_req.role} (rv={user.role_version})")
+            else:
+                changes.append(f"role={update_req.role}")
 
         if changes:
             await db_session.commit()

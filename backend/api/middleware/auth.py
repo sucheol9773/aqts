@@ -440,11 +440,14 @@ class AuthService:
         user.last_login_at = datetime.now(timezone.utc)
         await db_session.commit()
 
-        # 토큰 발급
+        # 토큰 발급 — P2-역할 변경 즉시 세션 무효화: 현재 role_version 을 rv
+        # 클레임으로 포함. get_current_user 가 DB 값과 등식 검증하여 역할 변경
+        # 이력(동일 이름으로 복구된 경우 포함) 을 기존 토큰에서 탐지한다.
         data = {
             "sub": user.username,
             "uid": user.id,
             "role": user.role.name,
+            "rv": user.role_version,
         }
         access_token = AuthService.create_access_token(data)
         refresh_token = AuthService.create_refresh_token(data)
@@ -490,6 +493,9 @@ async def get_current_user(
     username: str = payload.get("sub")
     user_id: str = payload.get("uid")
     token_role: str = payload.get("role", "viewer")
+    # P2-역할 변경 즉시 세션 무효화: 기존(rv 없는) 토큰은 fail-closed 로 거부.
+    # 의도된 1회 강제 재로그인 — 배포 시점에 모든 기존 세션이 끊긴다.
+    token_role_version = payload.get("rv")
 
     if not username or not user_id:
         raise HTTPException(
@@ -540,11 +546,27 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     if current_role != token_role:
-        # role 변경 → 토큰 role 클레임이 오래된 상태. 재로그인 요구.
+        # role 이름 변경 → 토큰 role 클레임이 오래된 상태. 재로그인 요구.
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User role has changed; please re-authenticate",
             headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # P2-역할 변경 즉시 세션 무효화: role_version 단조 증가 비교.
+    # - token_role_version is None → 과거(rv 이전) 토큰 또는 변조 → 거부
+    # - user.role_version > token_role_version → 역할 변경 이력 발생 → 거부
+    # - user.role_version < token_role_version → DB 롤백/조작 의심 → 거부
+    # 즉 "완전 일치" 만 통과. 이름이 같아도 이력이 다르면 재로그인.
+    user_role_version = user.role_version
+    if token_role_version is None or not isinstance(token_role_version, int) or token_role_version != user_role_version:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "error_code": "ROLE_VERSION_MISMATCH",
+                "message": "Role version has changed; please re-authenticate",
+            },
+            headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
         )
 
     return AuthenticatedUser(id=user.id, username=user.username, role=current_role)
