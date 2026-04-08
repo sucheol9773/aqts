@@ -426,3 +426,18 @@ P0 5개 머지 후, 본 로드맵을 갱신하여 새 P0 5개를 선정한다.
 
 본 문서는 P0 진행 및 P1/P2 재정렬에 따라 지속적으로 갱신된다. 모든 변경은
 관련 커밋과 함께 §9 진행 기록에 추가된다.
+
+---
+
+## 11. 상위 전략 문서 — production-grade 로드맵
+
+본 문서의 §7.3 정합성/보안 강화는 현재 시스템(retail REST API 기반)을 운영
+가능한 수준으로 끌어올리는 데 초점이 있다. 자본 규모 확장, 외부 자금 유치,
+다중 시장 진출 등으로 production-grade 인프라가 요구되는 시점에 보강해야 할
+항목(이벤트 소싱, FIX 전환, pre-trade risk gateway 마이크로서비스, WORM 감사
+저장소, DR/멀티리전, secret rotation 등)은 별도 문서로 분리되어 있다:
+
+- [`docs/architecture/production-grade-roadmap.md`](../architecture/production-grade-roadmap.md)
+
+§7.3 의 P0/P1 항목을 마무리한 뒤 위 문서의 우선순위 매트릭스를 기준으로 다음
+단계를 선정한다.
