@@ -17,6 +17,7 @@ import signal
 from config.logging import logger, setup_logging
 from config.settings import get_settings
 from core.data_collector.kis_client import KISClient
+from core.portfolio_ledger import configure_portfolio_ledger
 from core.reconciliation import ReconciliationEngine
 from core.reconciliation_providers import (
     KISBrokerPositionProvider,
@@ -25,7 +26,8 @@ from core.reconciliation_providers import (
 from core.reconciliation_runner import ReconciliationRunner
 from core.scheduler_handlers import register_pipeline_handlers
 from core.trading_scheduler import TradingScheduler
-from db.database import MongoDBManager, RedisManager, engine
+from db.database import MongoDBManager, RedisManager, async_session_factory, engine
+from db.repositories.portfolio_positions import SqlPortfolioLedgerRepository
 
 
 async def main():
@@ -60,6 +62,22 @@ async def main():
         logger.info("PostgreSQL engine ready")
     except Exception as e:
         logger.error(f"DB 연결 실패: {e}")
+        raise
+
+    # P1-정합성: PortfolioLedger 영속 계층 구성 + cache hydrate.
+    # DB engine 이 준비된 직후에 ledger singleton 을 SQL repository 로 (재)구성
+    # 하고, 부팅 시 1회 hydrate 하여 cache 에 기존 잔량을 채운다. 이후
+    # OrderExecutor 의 record_fill 은 매 호출마다 DB 트랜잭션을 통해 누적되며,
+    # 프로세스 재시작 후에도 broker 잔고와의 mismatch 회귀가 발생하지 않는다.
+    try:
+        portfolio_ledger = configure_portfolio_ledger(SqlPortfolioLedgerRepository(async_session_factory))
+        await portfolio_ledger.hydrate()
+        logger.info(
+            "PortfolioLedger hydrated from DB (positions=%d)",
+            len(portfolio_ledger.get_positions()),
+        )
+    except Exception as e:
+        logger.error(f"PortfolioLedger hydrate 실패: {e}")
         raise
 
     # KIS API 토큰 초기화

@@ -105,10 +105,16 @@ async def test_main_startup_injects_alerts_collection_into_singleton(monkeypatch
 
     fake_collection = MagicMock(name="fake_alerts_collection")
 
+    # P1-정합성: lifespan 이 PortfolioLedger 를 SQL repo 로 (재)구성하므로
+    # 본 통합 테스트는 hydrate 가 실제 DB 에 도달하지 않도록 fake repo 를 주입한다.
+    fake_repo = MagicMock(name="fake_portfolio_repo")
+    fake_repo.load_all = AsyncMock(return_value={})
+
     with (
         patch("main.MongoDBManager") as mock_mongo,
         patch("main.RedisManager") as mock_redis,
         patch("main.signal.signal"),
+        patch("main.SqlPortfolioLedgerRepository", return_value=fake_repo),
     ):
         mock_mongo.connect = AsyncMock()
         mock_mongo.disconnect = AsyncMock()
@@ -124,6 +130,10 @@ async def test_main_startup_injects_alerts_collection_into_singleton(monkeypatch
                 mock_mongo.get_collection.assert_called_with("alerts")
         finally:
             alerts_module._alert_manager = original_alert_manager
+            # 다음 테스트에 ledger SQL repo 가 새지 않도록 정리.
+            from core.portfolio_ledger import reset_portfolio_ledger
+
+            reset_portfolio_ledger()
 
 
 def test_set_collection_can_be_called_multiple_times():

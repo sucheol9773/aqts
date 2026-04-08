@@ -67,6 +67,25 @@ from config.constants import (
 
 
 # ══════════════════════════════════════
+# PortfolioLedger 격리 (P1-정합성 DB 영속화)
+# ══════════════════════════════════════
+@pytest.fixture(autouse=True)
+def _reset_portfolio_ledger_singleton():
+    """각 테스트 전후로 PortfolioLedger 싱글톤을 초기화한다.
+
+    main.py lifespan 통합 테스트는 SQL repository 를 주입한 ledger 를
+    프로세스 전역에 남길 수 있다. 다음 테스트가 ``record_fill`` 을 호출하면
+    실제 DB 에 도달하여 socket 오류로 실패하는 회귀가 발생하므로,
+    autouse 로 명시적 격리 경계를 둔다.
+    """
+    from core.portfolio_ledger import reset_portfolio_ledger
+
+    reset_portfolio_ledger()
+    yield
+    reset_portfolio_ledger()
+
+
+# ══════════════════════════════════════
 # Mock KIS Client
 # ══════════════════════════════════════
 @pytest.fixture

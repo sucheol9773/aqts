@@ -65,8 +65,10 @@ from core.data_collector.kis_startup import (
 from core.graceful_shutdown import GracefulShutdownManager
 from core.monitoring.metrics import COMPONENT_HEALTH, SYSTEM_STATUS, setup_prometheus
 from core.monitoring.tracing import setup_tracing
+from core.portfolio_ledger import configure_portfolio_ledger
 from core.trading_scheduler import TradingScheduler
-from db.database import MongoDBManager, RedisManager, engine
+from db.database import MongoDBManager, RedisManager, async_session_factory, engine
+from db.repositories.portfolio_positions import SqlPortfolioLedgerRepository
 
 # ══════════════════════════════════════
 # 그레이스풀 셧다운 매니저 (NFR-06)
@@ -122,6 +124,18 @@ async def lifespan(app: FastAPI):
         logger.info("Redis connected successfully")
 
         logger.info("PostgreSQL (TimescaleDB) engine ready")
+
+        # P1-정합성: PortfolioLedger 영속 계층 구성 + cache hydrate (embedded mode).
+        try:
+            portfolio_ledger = configure_portfolio_ledger(SqlPortfolioLedgerRepository(async_session_factory))
+            await portfolio_ledger.hydrate()
+            logger.info(
+                "PortfolioLedger hydrated from DB (positions=%d)",
+                len(portfolio_ledger.get_positions()),
+            )
+        except Exception as e:
+            logger.error(f"PortfolioLedger hydrate 실패: {e}")
+            raise
 
         # ── 스케줄러 시작 ──
         # SCHEDULER_ENABLED=false 설정 시 API 서버에서 스케줄러를 시작하지 않음
