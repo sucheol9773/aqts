@@ -7,9 +7,15 @@
 #   warning  → 5분 그룹핑 후 텔레그램 발송
 #   info     → 15분 그룹핑 후 텔레그램 발송
 #
-# 환경변수:
-#   TELEGRAM_BOT_TOKEN: 텔레그램 봇 토큰
-#   TELEGRAM_CHAT_ID: 알림 수신 채널 ID
+# 환경변수 (alertmanager 컨테이너 entrypoint 의 sed 가 치환):
+#   TELEGRAM_BOT_TOKEN: 텔레그램 봇 토큰 (string)
+#   TELEGRAM_CHAT_ID:   알림 수신 채널 ID (int64)
+#
+# 주의:
+#   - 본 파일은 *템플릿*이다. alertmanager 바이너리는 환경변수를
+#     네이티브로 치환하지 않으므로 docker-compose.yml 의 entrypoint
+#     에서 sed 로 렌더링한 뒤 alertmanager 가 읽는다.
+#   - chat_id 필드는 int64 스키마이므로 따옴표 없이 둬야 한다.
 #
 
 global:

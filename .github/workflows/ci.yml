@@ -44,6 +44,41 @@ jobs:
       - name: Black format check
         run: cd backend && black --check . --config pyproject.toml
 
+      # ── Alertmanager 템플릿 렌더링 + amtool check-config ──
+      # alertmanager.yml.tmpl 은 docker-compose 의 entrypoint sed 로 렌더링되는
+      # 템플릿이다. CI 에서는 더미 env 로 sed 렌더 → schema 검증 → amtool 로
+      # alertmanager 스키마 검증한다. 회귀 방지: telegram_configs.chat_id 가
+      # int64 가 아닌 문자열로 들어가는 누락(2026-04 회귀)을 잡는다.
+      - name: Render alertmanager template (dummy env) and validate schema
+        run: |
+          set -eu
+          export TELEGRAM_BOT_TOKEN="123456:CI_DUMMY_TOKEN"
+          export TELEGRAM_CHAT_ID="987654321"
+          sed -e 's|${TELEGRAM_BOT_TOKEN}|'"$TELEGRAM_BOT_TOKEN"'|g' \
+              -e 's|${TELEGRAM_CHAT_ID}|'"$TELEGRAM_CHAT_ID"'|g' \
+              monitoring/alertmanager/alertmanager.yml.tmpl > /tmp/alertmanager.rendered.yml
+          python3 - <<'PY'
+          import yaml
+          d = yaml.safe_load(open("/tmp/alertmanager.rendered.yml"))
+          for r in d["receivers"]:
+              tg = r["telegram_configs"][0]
+              assert isinstance(tg["chat_id"], int), (
+                  f"{r['name']}: chat_id must be int64, got {type(tg['chat_id']).__name__}"
+              )
+              assert isinstance(tg["bot_token"], str) and tg["bot_token"], (
+                  f"{r['name']}: bot_token must be non-empty str"
+              )
+          print("rendered yaml schema OK")
+          PY
+
+      - name: amtool check-config (alertmanager schema)
+        run: |
+          docker run --rm \
+            -v /tmp/alertmanager.rendered.yml:/etc/alertmanager/alertmanager.yml:ro \
+            --entrypoint /bin/amtool \
+            prom/alertmanager:v0.27.0 \
+            check-config /etc/alertmanager/alertmanager.yml
+
       # ── SCA: Python 의존성 취약점 스캔 (10위 supply-chain) ──
       # pip-audit 는 OSV 데이터베이스 기반 CVE 검사. 화이트리스트는
       # backend/.pip-audit-ignore 에 만료일 + 사유와 함께 기록.
