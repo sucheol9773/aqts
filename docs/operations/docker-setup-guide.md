@@ -150,6 +150,17 @@ ADMIN_BOOTSTRAP_PASSWORD=<강한_초기_비밀번호>
 
 
 # ══════════════════════════════════════
+# 컨테이너 이미지 레지스트리 (운영 서버 필수)
+# ══════════════════════════════════════
+# docker-compose.yml 의 backend/scheduler 는
+# ghcr.io/${IMAGE_NAMESPACE}/aqts-backend:${IMAGE_TAG:-latest} 를 참조한다.
+# ${IMAGE_NAMESPACE:?...} 가드로 인해 값이 비어있으면 compose parse 가
+# 전체 중단되어 `docker compose ps prometheus` 같은 무관한 타겟 명령도 실패한다.
+# 운영 서버 .env 에는 반드시 설정한다 (값: GitHub owner 소문자).
+IMAGE_NAMESPACE=<github_owner_lowercase>
+# IMAGE_TAG=latest                  # 미지정 시 latest 폴백
+
+# ══════════════════════════════════════
 # 외부 데이터 API (선택)
 # ══════════════════════════════════════
 DART_API_KEY=                    # DART 전자공시 (선택)

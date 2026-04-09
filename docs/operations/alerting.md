@@ -90,7 +90,14 @@ STATUS 컬럼이 `(healthy)` 인지를 1차 지표로 사용한다. `(unhealthy)
 
 ```bash
 # 컨테이너 상태 (healthy/unhealthy 확인)
+# 주의: 운영 서버 .env 에 IMAGE_NAMESPACE 가 설정되어 있어야 한다.
+# compose 는 parse 단계에서 모든 서비스의 interpolation 을 한번에 검사하므로
+# backend 의 ${IMAGE_NAMESPACE:?...} 가드가 prometheus/alertmanager 만 타겟한
+# 명령까지 차단한다. 값 설정 방법: docs/operations/docker-setup-guide.md §3.2.
 docker compose ps prometheus alertmanager
+
+# compose parse 우회 (IMAGE_NAMESPACE 미설정 상황 fallback)
+docker inspect --format '{{.State.Health.Status}}' aqts-prometheus aqts-alertmanager
 
 # 상세 healthcheck 결과 (최근 실패 로그 포함)
 docker inspect --format '{{json .State.Health}}' aqts-alertmanager | jq
