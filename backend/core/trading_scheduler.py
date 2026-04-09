@@ -344,6 +344,15 @@ class TradingScheduler:
         """메인 스케줄러 루프"""
         while self._running:
             try:
+                # liveness heartbeat — 파일 mtime 을 갱신하여 컨테이너
+                # healthcheck 가 루프가 살아있음을 감지할 수 있게 한다.
+                # 외부 의존성(redis/http) 없이 동작하며 실패해도 루프를
+                # 중단시키지 않는다 (scheduler_heartbeat.write_heartbeat 이
+                # 내부적으로 OSError 를 삼킨다).
+                from core.scheduler_heartbeat import write_heartbeat
+
+                write_heartbeat()
+
                 now = now_kst()
                 today = now.date()
 

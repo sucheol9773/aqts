@@ -125,6 +125,24 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # scheduler 는 FastAPI HTTP 프로세스가 아니므로 backend 의 Dockerfile
+    # HEALTHCHECK (curl localhost:8000/...) 를 상속하면 구조적으로 실패한다.
+    # core/scheduler_heartbeat.py 가 _scheduler_loop 매 iteration 마다 파일
+    # mtime 을 갱신하므로, 해당 mtime 이 SCHEDULER_HEARTBEAT_STALE_SECONDS
+    # (기본 180s) 이내인지를 healthcheck 로 본다. 외부 의존성이 전혀 없어
+    # healthcheck 자체가 장애원이 되지 않는다.
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - >-
+          python -c "import os,time,sys;
+          p=os.environ.get('SCHEDULER_HEARTBEAT_PATH','/tmp/scheduler.heartbeat');
+          max_age=int(os.environ.get('SCHEDULER_HEARTBEAT_STALE_SECONDS','180'));
+          sys.exit(0 if os.path.exists(p) and (time.time()-os.path.getmtime(p))<max_age else 1)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     networks:
       - aqts-network
     stop_grace_period: 30s

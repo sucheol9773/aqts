@@ -80,6 +80,49 @@ if snapshot_missing_or_empty:
 - [ ] KIS API 가 `degraded` 인 시점에 `handle_market_close` 가 `snapshot_skip_reason=kis_error` 로 종료되는지 로그 확인.
 - [ ] 멱등성 키 강제 초기화가 필요하면 `python -c "import asyncio; from core.scheduler_idempotency import clear_for_date; from datetime import date; asyncio.run(clear_for_date(date.today()))"`.
 
+## 4a. Scheduler 컨테이너 Liveness Heartbeat (2026-04-09 추가)
+
+### 배경
+
+`scheduler` 컨테이너는 `scheduler_main.py` 로 기동되며 FastAPI HTTP 프로세스가 아니다.
+그러나 backend 와 동일한 이미지를 공유하므로 Dockerfile 의
+`HEALTHCHECK curl localhost:8000/api/system/health` 를 상속받아 **구조적으로 항상
+unhealthy** 상태로 누적된다 (2026-04-08 관측: FailingStreak 597). 이 상태에서는
+운영 가시성이 손상되고, `depends_on: condition: service_healthy` 로 scheduler 에
+의존하는 후속 서비스가 있으면 블로킹된다.
+
+### 설계
+
+외부 의존성(redis, http)이 전혀 없는 **파일 mtime 기반 heartbeat** 을 도입한다.
+healthcheck 자체가 또 다른 장애원이 되지 않도록 redis/network 를 쓰지 않는다.
+
+- 모듈: `backend/core/scheduler_heartbeat.py`
+- 경로: `SCHEDULER_HEARTBEAT_PATH` (기본 `/tmp/scheduler.heartbeat`)
+- 임계치: `SCHEDULER_HEARTBEAT_STALE_SECONDS` (기본 180s — `_scheduler_loop` 의 최대 sleep 60s × 3 사이클 여유)
+- `_scheduler_loop` 매 iteration 최상단에서 `write_heartbeat()` 를 호출하여 파일 mtime 갱신
+- IO 오류는 호출자까지 전파되지 않고 조용히 무시 — heartbeat 실패가 스케줄러 본 루프를 멈추게 하면 안 된다
+- `docker-compose.yml::scheduler.healthcheck` 는 순수 Python 한 줄로 mtime 검사 (redis/curl 불필요)
+
+### 3-layer 방어와의 관계
+
+heartbeat 은 멱등성/스냅샷 가드와 독립적이다. Idempotency + snapshot guard 가
+**데이터 정합성**(중복/0원 리포트 차단)을 담당한다면, heartbeat 은 **컨테이너
+liveness 관측**을 담당한다. 두 축은 직교한다.
+
+### 테스트
+
+`backend/tests/test_scheduler_heartbeat.py` (11 케이스):
+
+| 클래스 | 검증 항목 |
+|--------|-----------|
+| `TestWriteHeartbeat` | 부재 시 생성, 재호출 시 mtime 갱신, 부모 디렉토리 자동 생성, PermissionError 비전파 |
+| `TestCheckHeartbeatFresh` | 파일 부재 시 False, fresh 시 True, stale 시 False, 경계값, 환경변수 기본값 |
+| `TestLoopWiring` | `_scheduler_loop` AST 에 `write_heartbeat()` 호출이 존재하는지, import 경로가 `core.scheduler_heartbeat` 인지 검증 |
+
+루프 전체를 돌리는 통합테스트는 `now_kst/is_trading_day/event_time` 등 시각
+의존성이 많아 취약하므로, wiring 회귀는 AST 레벨로 결정적으로 검증한다. 파일
+갱신 본체 동작은 `TestWriteHeartbeat` 이 보장한다.
+
 ## 5. 변경 파일
 
 - 신규: `backend/core/scheduler_idempotency.py`
@@ -88,5 +131,9 @@ if snapshot_missing_or_empty:
 - 수정: `backend/core/scheduler_handlers.py` (market_close + post_market 가드)
 - 수정: `backend/tests/test_scheduler_handlers_extended.py` (post_market 입력 보강)
 - 신규: 본 문서 `docs/operations/scheduler-idempotency.md`
+- 신규 (2026-04-09): `backend/core/scheduler_heartbeat.py`
+- 신규 (2026-04-09): `backend/tests/test_scheduler_heartbeat.py`
+- 수정 (2026-04-09): `backend/core/trading_scheduler.py` (`_scheduler_loop` heartbeat wiring)
+- 수정 (2026-04-09): `docker-compose.yml` (scheduler 전용 healthcheck 블록 추가)
 
-Last reviewed: 2026-04-07
+Last reviewed: 2026-04-09
