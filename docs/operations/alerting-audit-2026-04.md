@@ -334,6 +334,112 @@ sed -n '178,200p' backend/config/constants.py
   MongoDB 운영 환경에서는 motor 가 지원하는 표준 연산이다 (인덱스/권한
   요구사항 동일).
 
+## 6.2 Commit 2 — NotificationRouter wiring (2026-04-10)
+
+**설계 결정 (2026-04-10 확정)**:
+
+금융 기업 기준으로 세 가지 설계 결정을 사용자와 확정하고 진행했다.
+
+1. **AlertManager ↔ Router 주입 방식**: `set_router(router)` setter 주입.
+   `set_collection` 과 동형이라 인지 부하가 없고, 운영 중 재주입 (Telegram
+   토큰 로테이션 등) 이 가능하며, 싱글톤 라이프사이클을 깨지 않는다.
+   생성자 주입(옵션 B) 은 `api.routes.alerts._alert_manager` import-time
+   싱글톤 패턴 재설계를 강제하여 Commit 2 범위를 초과하고, DI 프레임워크
+   (옵션 C) 도입은 관심사 분리 원칙 위반이라 비채택.
+2. **즉시 디스패치 옵트아웃**: 플래그 없음, "router 주입 = 디스패치" 단일
+   규칙. Outbox 패턴의 "저장 = 전송 계약 발생" 불변식을 코드로 드러내고,
+   테스트 격리는 `set_router(None)` 으로 충분. `immediate_dispatch` 플래그
+   (옵션 A) 는 API 표면 확장 + 관심사 분리 약화로 비채택.
+3. **디스패치 실패 시 예외 정책**: Swallow + `logger.warning` + FAILED
+   영속화. 관찰성 채널 장애가 원인 이벤트(KIS 복원 실패 등) 처리 경로를
+   막으면 안 된다는 금융 시스템 제1원칙에 따름. Re-raise (옵션 B) 는
+   `_kis_alert_callback` → `try_recover_kis` 경로를 오염시키는 안티패턴.
+   FAILED 영속화된 alert 는 Commit 3 의 스케줄러가 재픽업하여 at-least-once
+   를 보장한다.
+
+**경로 A 축소 결정**:
+
+Commit 2 초안에서는 `telegram_notifier.dispatch_alert` 내부 리팩터와
+`dispatch_pending_alerts` 의 `mark_alert_read` 버그 수정을 포함할 예정이었으나,
+기존 테스트 표면(7곳, `test_notification.py` / `test_gate_c_notification.py`)
+을 건드려야 하여 "wiring 부재 해결" + "기존 API 리팩터" 로 이중화되는 문제가
+있었다. CLAUDE.md 의 "bug fix 커밋에 무관한 변경 끼워넣기 금지" 원칙과
+bisect 용이성을 위해 **Commit 2 는 wiring 신규 코드에 한정**, 기존 코드
+zero-diff 로 축소하였다. Commit 1 블록의 non-scope 에 "Commit 2 범위" 로
+적힌 두 항목(`dispatch_alert` 내부 정리, `mark_alert_read` 버그 수정,
+`Alert.mark_sent()` dataclass 메서드 대체)은 **Commit 3 로 이월**된다.
+이는 Commit 1 작성 당시의 계획 수정임을 명시적으로 기록한다.
+
+**범위** (wiring 신규 코드만, 기존 코드 zero-diff):
+
+- `AlertManager.__init__` 에 `self._router: Optional[Any] = None` 추가.
+  NotificationRouter 타입을 직접 import 하면 순환 의존성이 발생하므로
+  `Any` 로 선언하고 duck typing 을 활용한다.
+- `AlertManager.set_router(router)` 신규 메서드. `set_collection` 과 동형.
+  `None` 주입으로 디스패치 경로 비활성화 가능.
+- `AlertManager.create_and_persist_alert` 말미에 router 주입 시
+  `_dispatch_via_router(alert)` 호출 추가. 기존 `save_alert` 호출 경로는
+  변경 없음.
+- `AlertManager._dispatch_via_router(alert)` 신규 헬퍼 메서드. 흐름:
+  1. `claim_for_sending(alert.id)` 로 PENDING → SENDING 원자 전이. 실패 시
+     스킵 (이미 claim 됐거나 상태가 PENDING 이 아닌 경우).
+  2. `router.dispatch(alert)` await. 예외 시 `mark_failed_with_retry` 호출
+     후 swallow.
+  3. `DispatchResult.success` 에 따라 `mark_sent_by_id` 또는
+     `mark_failed_with_retry` 호출.
+  4. 최상위 `except` 로 모든 예외를 swallow — `create_and_persist_alert`
+     호출자(예: `_kis_alert_callback` → `try_recover_kis`) 보호.
+- `main.py` lifespan 에 NotificationRouter wiring 블록 추가. `set_collection`
+  바로 아래에 배치하여 주입 순서를 보장. 채널 구성은
+  `TelegramChannelAdapter` → `FileNotifier` → `ConsoleNotifier` 캐스케이드.
+  wiring 실패는 logger.warning 으로 swallow 하여 서버 기동을 차단하지 않는다.
+
+**의도적 non-scope** (Commit 3/4 로 이월):
+
+- `telegram_notifier.dispatch_alert` 내부의 `save_alert` 이중 호출 정리,
+  `mark_alert_read` → `mark_sent_by_id` 버그 수정, 기존 테스트 7곳 조정 →
+  **Commit 3** (스케줄러 등록과 함께 일괄 처리).
+- `dispatch_pending_alerts` 스케줄러 주기 등록, exp backoff, DEAD 전이,
+  Prometheus counter (`aqts_alert_send_attempts_total{status}`), histogram
+  (`aqts_telegram_notifier_send_latency_seconds`), meta-alert 규칙
+  (`AlertPipelineFailureRate`) → **Commit 3**.
+- `docs/architecture/notification-pipeline.md` 신규, CLAUDE.md 에 RBAC
+  Wiring Rule 의 alerting 도메인 확장 → **Commit 4** (문서 전용).
+- `TelegramTransport` SSOT 추출 (`TelegramChannelAdapter` 와
+  `TelegramNotifier` 의 send_message 중복 제거) → Phase 2 별도 세션.
+
+**검증 결과**:
+
+- 신규 테스트 `backend/tests/test_alert_manager_dispatch_wiring.py` — 15
+  케이스 전 통과. 커버 범위:
+  - setter 주입 메커니즘 (기본값, 주입, 재주입, None 해제) — 4 케이스
+  - create_and_persist 디스패치 경로 (미주입 스킵, 1회 호출, SENT 전이,
+    all_failed FAILED 전이, 예외 swallow, 실패 후 조회 가능) — 6 케이스
+  - Commit 1 재시도 모델 정합성 (send_attempts 증가, last_send_attempt_at
+    기록) — 2 케이스
+  - lifespan wiring import smoke — 3 케이스
+- `_SpyRouter` 는 `DispatchResult` duck typing 으로 테스트 의존성을 최소화.
+- `cd backend && python -m ruff check . --config pyproject.toml` — 0 errors
+- `cd backend && python -m black --check . --config pyproject.toml` — 0 diffs
+- `cd backend && python -m pytest tests/ -q` — 3785 passed, 0 failed
+  (test_gen_status drift 는 `gen_status.py --update` 로 3707 업데이트 후 재통과)
+- `python scripts/check_doc_sync.py --verbose` — 0 errors, 0 warnings
+- `python scripts/check_bool_literals.py` — PASSED
+
+**회귀 영향 요약**:
+
+- 기존 코드는 zero-diff. router 미주입 상태(현재 모든 테스트 + 기동 시
+  MongoDB 미연결 환경) 에서 `create_and_persist_alert` 동작은 Commit 1
+  이전과 완전 동일.
+- router 주입은 lifespan 의 try/except 로 격리되므로 wiring 실패가 서버
+  기동을 막지 않는다. degraded 모드로 진입.
+- `_kis_alert_callback` 경로가 처음으로 Telegram 까지 도달 가능해진다
+  (현재는 AlertManager → in-memory 에서 멈춤). 단, Commit 3 의 스케줄러/
+  메타알림이 부재한 상태에서는 "FAILED 영속 후 재픽업 없음" 공백 구간이
+  존재하므로, **Commit 2 단독 배포 금지**. Commit 3 와 한 릴리스 게이트로
+  묶어 feature 브랜치(`feature/alert-notification-wiring`) 에서 순차 쌓은
+  뒤 main 으로 한 번에 머지한다.
+
 ## 7. 관련 문서
 
 - 템플릿 렌더링 및 운영 절차: [`docs/operations/alerting.md`](./alerting.md)
