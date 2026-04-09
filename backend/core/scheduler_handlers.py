@@ -426,6 +426,7 @@ async def handle_post_market() -> dict:
     portfolio_value_end = 0.0
     cash_balance = 0.0
     positions_data = []
+    snapshot_read_failed = False
 
     try:
         redis = RedisManager.get_client()
@@ -441,28 +442,59 @@ async def handle_post_market() -> dict:
             positions_data = snapshot.get("positions", [])
 
         # 전일 스냅샷 (시작 가치)
+        # 주의: prev_raw 가 존재해도 portfolio_value 가 0 인 경우(오염된 snapshot)
+        # 를 "없음" 과 동일하게 취급해야 한다. 2026-04-08 회귀에서 전일 키가
+        # 전부 0 으로 오염된 채 존재하여 start=0 → -100% 에 준하는 리포트가
+        # 발사된 사례가 있다.
         from datetime import timedelta
 
         yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
         prev_raw = await redis.get(f"portfolio:snapshot:{yesterday}")
 
+        prev_portfolio_value = 0.0
         if prev_raw:
-            prev_snapshot = json.loads(prev_raw)
-            portfolio_value_start = prev_snapshot.get("portfolio_value", 0)
+            try:
+                prev_snapshot = json.loads(prev_raw)
+                prev_portfolio_value = float(prev_snapshot.get("portfolio_value", 0) or 0)
+            except (ValueError, TypeError, json.JSONDecodeError) as exc:
+                logger.warning(f"[PostMarket] 전일 스냅샷 파싱 실패: {exc}")
+                prev_portfolio_value = 0.0
+
+        if prev_portfolio_value > 0:
+            portfolio_value_start = prev_portfolio_value
         else:
-            # 전일 스냅샷 없으면 초기자본 사용
+            # 전일 스냅샷이 없거나 오염(value==0)된 경우 초기자본 사용
             from config.settings import get_settings
 
             portfolio_value_start = get_settings().risk.initial_capital_krw
+            if prev_raw:
+                logger.warning(
+                    "[PostMarket] 전일 스냅샷이 존재하나 portfolio_value<=0 — "
+                    "오염된 것으로 간주하고 initial_capital 로 fallback"
+                )
+                result["prev_snapshot_polluted"] = True
 
     except Exception as e:
         logger.warning(f"[PostMarket] 스냅샷 조회 실패: {e}")
         result["snapshot_error"] = str(e)
+        snapshot_read_failed = True
 
-    # ── 1.5. 안전망: snapshot 부재 또는 전부 0 이면 리포트/텔레그램 발송 skip ──
-    # market_close 가 KIS 실패로 snapshot 을 저장하지 않은 경우, 또는 snapshot 자체가
-    # 모두 0 인 경우, 0원/-100% 리포트가 텔레그램으로 발사되는 것을 차단한다.
+    # ── 1.5. 안전망 (3-layer 방어) ──
+    # (a) snapshot 부재 또는 전부 0 — market_close 가 KIS 실패로 저장 skip 한 경우
+    # (b) snapshot 조회 자체가 예외로 실패한 경우 — 부분 읽기 후 0 값으로 진입할 위험
+    # (c) end>0 인데 start<=0 인 정합성 붕괴 — 수학적으로 나올 수 없는 상태
+    # 어느 경우든 텔레그램 발사 자체를 차단한다. 0원/-100% 또는 -79.97% 같은
+    # 환각 리포트를 사용자가 수신하지 않는다.
     snapshot_missing_or_empty = portfolio_value_end == 0 and cash_balance == 0 and not positions_data
+
+    if snapshot_read_failed:
+        logger.warning(
+            "[PostMarket] snapshot 읽기 예외 — 일일 리포트 발송 skip " "(부분 읽기로 인한 0 값 진입 위험 차단)"
+        )
+        result["report_skipped"] = True
+        result["skip_reason"] = "snapshot_read_exception"
+        return result
+
     if snapshot_missing_or_empty:
         logger.warning(
             "[PostMarket] snapshot 부재 또는 전부 0 — 일일 리포트 발송 skip "
@@ -470,6 +502,15 @@ async def handle_post_market() -> dict:
         )
         result["report_skipped"] = True
         result["skip_reason"] = "snapshot_missing_or_empty"
+        return result
+
+    if portfolio_value_end > 0 and portfolio_value_start <= 0:
+        logger.warning(
+            "[PostMarket] 정합성 붕괴: end>0 이지만 start<=0 — 일일 리포트 발송 skip "
+            f"(end={portfolio_value_end}, start={portfolio_value_start})"
+        )
+        result["report_skipped"] = True
+        result["skip_reason"] = "start_nonpositive_with_end_positive"
         return result
 
     # ── 2. 금일 체결 내역 조회 ──

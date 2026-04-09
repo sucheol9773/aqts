@@ -51,13 +51,31 @@ if result.get("kis_error") or snapshot_is_empty:
 
 ### 2.5 post_market safety net
 
+3층 방어는 **세 종류의 skip 조건**으로 구성된다 (2026-04-09 보강).
+
 ```python
+# (a) snapshot 조회 자체가 예외
+if snapshot_read_failed:
+    result["skip_reason"] = "snapshot_read_exception"
+    return result
+
+# (b) snapshot 이 부재하거나 전부 0
 snapshot_missing_or_empty = portfolio_value_end == 0 and cash_balance == 0 and not positions_data
 if snapshot_missing_or_empty:
-    result["report_skipped"] = True
     result["skip_reason"] = "snapshot_missing_or_empty"
-    return result   # 텔레그램/리포트 저장 진입 자체 차단
+    return result
+
+# (c) end>0 이지만 start<=0 인 정합성 붕괴
+if portfolio_value_end > 0 and portfolio_value_start <= 0:
+    result["skip_reason"] = "start_nonpositive_with_end_positive"
+    return result
 ```
+
+추가로 **전일 snapshot 오염 처리**: `prev_raw` 가 존재해도 `portfolio_value<=0`
+이면 "없음" 과 동일하게 취급하여 `initial_capital_krw` 로 fallback 한다.
+2026-04-08 회귀 Report 2 의 직접 원인이 `portfolio:snapshot:2026-04-07` 가
+전부 0 으로 오염된 채 존재했던 것이었기 때문이다. fallback 발생 시
+`result["prev_snapshot_polluted"] = True` 를 기록한다.
 
 ## 3. 테스트
 

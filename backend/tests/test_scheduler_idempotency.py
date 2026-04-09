@@ -10,7 +10,7 @@ Scheduler 멱등성 + handle_market_close/handle_post_market 안전망 유닛테
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -228,4 +228,146 @@ class TestPostMarketSafetyNet:
             result = await handle_post_market()
 
         assert result.get("report_skipped") is True
+        mock_reporter.send_telegram_report.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_polluted_prev_snapshot_falls_back_to_initial_capital(self):
+        """전일 snapshot 이 존재하지만 portfolio_value 가 0 으로 오염된 경우
+        initial_capital 로 fallback 하고, end 가 정상이면 리포트는 진행된다.
+        단, start<=0 인 정합성 붕괴 케이스는 별도 테스트로 분리.
+        """
+        import json
+
+        today_key = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        yesterday_key = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+
+        today_snapshot = json.dumps(
+            {
+                "date": today_key,
+                "portfolio_value": 50_500_000,
+                "cash_balance": 10_000_000,
+                "positions_count": 1,
+                "positions": [
+                    {
+                        "ticker": "005930",
+                        "name": "삼성전자",
+                        "quantity": 100,
+                        "avg_price": 70000,
+                        "current_price": 70500,
+                        "eval_amount": 7_050_000,
+                        "pnl_amount": 50_000,
+                        "pnl_percent": 0.71,
+                    }
+                ],
+                "timestamp": f"{today_key}T15:30:00+09:00",
+            }
+        )
+        polluted_prev = json.dumps(
+            {
+                "date": yesterday_key,
+                "portfolio_value": 0,
+                "cash_balance": 0,
+                "positions_count": 0,
+                "positions": [],
+                "timestamp": f"{yesterday_key}T15:30:00+09:00",
+            }
+        )
+
+        async def fake_get(key):
+            if key == f"portfolio:snapshot:{today_key}":
+                return today_snapshot
+            if key == f"portfolio:snapshot:{yesterday_key}":
+                return polluted_prev
+            return None
+
+        mock_redis = MagicMock()
+        mock_redis.get = AsyncMock(side_effect=fake_get)
+        mock_redis.set = AsyncMock(return_value=True)
+
+        mock_settings = MagicMock()
+        mock_settings.risk.initial_capital_krw = 50_000_000
+
+        mock_report = MagicMock()
+        mock_report.daily_pnl = 500_000
+        mock_report.daily_return_pct = 1.0
+        mock_report.total_trades = 0
+        mock_report.total_positions = 1
+        mock_report.to_dict = MagicMock(return_value={})
+
+        mock_reporter = MagicMock()
+        mock_reporter.generate_report = AsyncMock(return_value=mock_report)
+        mock_reporter.send_telegram_report = AsyncMock(return_value=True)
+
+        with (
+            patch(_REDIS_HANDLERS, return_value=mock_redis),
+            patch("config.settings.get_settings", return_value=mock_settings),
+            patch("core.daily_reporter.DailyReporter", return_value=mock_reporter),
+        ):
+            result = await handle_post_market()
+
+        assert result.get("prev_snapshot_polluted") is True
+        assert result.get("report_skipped") is not True
+        mock_reporter.send_telegram_report.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_snapshot_read_exception_skips_telegram(self):
+        """redis.get 이 예외를 던지면 부분 읽기 상태로 진입하지 않고 skip."""
+        mock_redis = MagicMock()
+        mock_redis.get = AsyncMock(side_effect=RuntimeError("redis down"))
+
+        mock_reporter = MagicMock()
+        mock_reporter.send_telegram_report = AsyncMock(return_value=True)
+
+        with (
+            patch(_REDIS_HANDLERS, return_value=mock_redis),
+            patch("core.daily_reporter.DailyReporter", return_value=mock_reporter),
+        ):
+            result = await handle_post_market()
+
+        assert result.get("report_skipped") is True
+        assert result.get("skip_reason") == "snapshot_read_exception"
+        assert "snapshot_error" in result
+        mock_reporter.send_telegram_report.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_end_positive_but_start_nonpositive_skips_telegram(self):
+        """end>0 인데 initial_capital 도 0 이라 start<=0 인 정합성 붕괴 케이스."""
+        import json
+
+        today_key = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+        today_snapshot = json.dumps(
+            {
+                "date": today_key,
+                "portfolio_value": 10_000_000,
+                "cash_balance": 5_000_000,
+                "positions_count": 0,
+                "positions": [],
+                "timestamp": f"{today_key}T15:30:00+09:00",
+            }
+        )
+
+        async def fake_get(key):
+            if key == f"portfolio:snapshot:{today_key}":
+                return today_snapshot
+            return None  # 전일 snapshot 부재
+
+        mock_redis = MagicMock()
+        mock_redis.get = AsyncMock(side_effect=fake_get)
+
+        mock_settings = MagicMock()
+        mock_settings.risk.initial_capital_krw = 0  # fallback 조차 0
+
+        mock_reporter = MagicMock()
+        mock_reporter.send_telegram_report = AsyncMock(return_value=True)
+
+        with (
+            patch(_REDIS_HANDLERS, return_value=mock_redis),
+            patch("config.settings.get_settings", return_value=mock_settings),
+            patch("core.daily_reporter.DailyReporter", return_value=mock_reporter),
+        ):
+            result = await handle_post_market()
+
+        assert result.get("report_skipped") is True
+        assert result.get("skip_reason") == "start_nonpositive_with_end_positive"
         mock_reporter.send_telegram_report.assert_not_called()
