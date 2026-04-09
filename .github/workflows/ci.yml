@@ -49,6 +49,9 @@ jobs:
       # 템플릿이다. CI 에서는 더미 env 로 sed 렌더 → schema 검증 → amtool 로
       # alertmanager 스키마 검증한다. 회귀 방지: telegram_configs.chat_id 가
       # int64 가 아닌 문자열로 들어가는 누락(2026-04 회귀)을 잡는다.
+      - name: Install PyYAML (alertmanager render check)
+        run: pip install pyyaml==6.0.1
+
       - name: Render alertmanager template (dummy env) and validate schema
         run: |
           set -eu
