@@ -116,10 +116,22 @@ healthcheck 자체가 또 다른 장애원이 되지 않도록 redis/network 를
 
 - 모듈: `backend/core/scheduler_heartbeat.py`
 - 경로: `SCHEDULER_HEARTBEAT_PATH` (기본 `/tmp/scheduler.heartbeat`)
-- 임계치: `SCHEDULER_HEARTBEAT_STALE_SECONDS` (기본 180s — `_scheduler_loop` 의 최대 sleep 60s × 3 사이클 여유)
+- 임계치: `SCHEDULER_HEARTBEAT_STALE_SECONDS` (기본 180s — 루프 최상단 heartbeat + chunked sleep 30s × 6 사이클 여유)
 - `_scheduler_loop` 매 iteration 최상단에서 `write_heartbeat()` 를 호출하여 파일 mtime 갱신
+- **긴 대기 경로(비거래일, "오늘 모든 이벤트 완료")는 `_heartbeat_sleep(seconds, chunk=30)` helper 로 진입**. helper 는 chunk(기본 30초) 단위로 `write_heartbeat()` 를 호출하며 대기해서, 최대 3600초 블로킹 중에도 mtime 이 30초 이상 stale 이 되지 않는다. `self._running` 이 False 로 바뀌면 즉시 조기 반환.
 - IO 오류는 호출자까지 전파되지 않고 조용히 무시 — heartbeat 실패가 스케줄러 본 루프를 멈추게 하면 안 된다
 - `docker-compose.yml::scheduler.healthcheck` 는 순수 Python 한 줄로 mtime 검사 (redis/curl 불필요)
+
+#### 2026-04-09 회귀: 긴 sleep 경로에서 heartbeat stale
+
+배포 직후 post-deploy smoke(C4) 가 `heartbeat stale: age=1638s > 120s` 로 실패. 원인:
+
+- `_scheduler_loop` 에서 heartbeat 는 while 루프 최상단에서만 갱신됨
+- 그러나 두 분기(비거래일 대기 L367, "오늘 모든 이벤트 완료" 대기 L416)는 `await asyncio.sleep(min(wait_seconds, 3600))` 로 **최대 1시간 블로킹**
+- 2026-04-09 Thursday 18:27 KST 시점에 POST_MARKET 이 약 27분 전에 완료되어 L416 진입 → heartbeat 이 27분째 stale 상태
+- `HEARTBEAT_STALE_SECONDS=180` 자체로도 뚫리는 구조적 결함이었음 (smoke 120s 임계는 단지 먼저 실패했을 뿐)
+
+Fix: `_heartbeat_sleep(seconds, chunk=30)` helper 도입 + 두 분기를 raw `asyncio.sleep` → `self._heartbeat_sleep` 으로 치환. 회귀 테스트 4건(`TestHeartbeatSleepHelper`) 을 추가해 chunk 갱신 횟수, `_running` 응답성, 0 이하 입력 방어, 두 분기의 정적 교체 여부를 검증.
 
 ### 3-layer 방어와의 관계
 
@@ -129,13 +141,14 @@ liveness 관측**을 담당한다. 두 축은 직교한다.
 
 ### 테스트
 
-`backend/tests/test_scheduler_heartbeat.py` (11 케이스):
+`backend/tests/test_scheduler_heartbeat.py` (15 케이스):
 
 | 클래스 | 검증 항목 |
 |--------|-----------|
 | `TestWriteHeartbeat` | 부재 시 생성, 재호출 시 mtime 갱신, 부모 디렉토리 자동 생성, PermissionError 비전파 |
 | `TestCheckHeartbeatFresh` | 파일 부재 시 False, fresh 시 True, stale 시 False, 경계값, 환경변수 기본값 |
 | `TestLoopWiring` | `_scheduler_loop` AST 에 `write_heartbeat()` 호출이 존재하는지, import 경로가 `core.scheduler_heartbeat` 인지 검증 |
+| `TestHeartbeatSleepHelper` (2026-04-09) | chunk 단위 mtime 갱신 횟수, `_running=False` 즉시 조기 반환, 0/음수 입력 no-op, L367/L416 분기가 `_heartbeat_sleep` 호출로 교체됐는지 정적 검증 |
 
 루프 전체를 돌리는 통합테스트는 `now_kst/is_trading_day/event_time` 등 시각
 의존성이 많아 취약하므로, wiring 회귀는 AST 레벨로 결정적으로 검증한다. 파일
@@ -151,7 +164,7 @@ liveness 관측**을 담당한다. 두 축은 직교한다.
 - 신규: 본 문서 `docs/operations/scheduler-idempotency.md`
 - 신규 (2026-04-09): `backend/core/scheduler_heartbeat.py`
 - 신규 (2026-04-09): `backend/tests/test_scheduler_heartbeat.py`
-- 수정 (2026-04-09): `backend/core/trading_scheduler.py` (`_scheduler_loop` heartbeat wiring)
+- 수정 (2026-04-09): `backend/core/trading_scheduler.py` (`_scheduler_loop` heartbeat wiring + `_heartbeat_sleep` helper 도입, 긴 sleep 경로 2곳 교체)
 - 수정 (2026-04-09): `docker-compose.yml` (scheduler 전용 healthcheck 블록 추가)
 
 Last reviewed: 2026-04-09

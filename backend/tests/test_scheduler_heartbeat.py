@@ -149,3 +149,125 @@ class TestLoopWiring:
         assert "from core.scheduler_heartbeat import write_heartbeat" in src, (
             "_scheduler_loop 이 core.scheduler_heartbeat.write_heartbeat 를 " "import 하지 않는다"
         )
+
+
+class TestHeartbeatSleepHelper:
+    """_heartbeat_sleep 이 긴 대기 구간에서 heartbeat 를 chunk 단위로 갱신하는지 검증.
+
+    2026-04-09 회귀:
+        _scheduler_loop 이 "오늘 모든 이벤트 완료" 또는 "비거래일" 브랜치에
+        진입하면 최대 3600 초 ``await asyncio.sleep(min(wait_seconds, 3600))``
+        로 블로킹되는데, 이 구간 동안 heartbeat 가 갱신되지 않아 compose
+        healthcheck 와 post-deploy smoke(C4) 가 동시에 실패했다.
+
+    Fix:
+        긴 대기를 chunk(기본 30 초) 단위로 분할하여 각 chunk 사이에
+        write_heartbeat() 를 호출하는 _heartbeat_sleep helper 를 도입.
+        본 테스트는 helper 가 실제로 chunk 단위 갱신을 수행하고,
+        self._running 이 False 가 되면 즉시 조기 반환하는지 검증한다.
+    """
+
+    def _make_scheduler(self):
+        """TradingScheduler 를 __init__ 우회로 생성 (이 테스트는 _heartbeat_sleep
+        로직만 타게팅하므로 전체 초기화 비용은 불필요하다)."""
+        from core.trading_scheduler import TradingScheduler
+
+        scheduler = TradingScheduler.__new__(TradingScheduler)
+        scheduler._running = True
+        return scheduler
+
+    def test_heartbeat_sleep_updates_file_multiple_times(self, tmp_path, monkeypatch):
+        """1.5 초 대기를 0.3 초 chunk 로 돌리면 최소 3회 이상 mtime 갱신."""
+        import asyncio
+
+        target = tmp_path / "heartbeat"
+        monkeypatch.setattr("core.scheduler_heartbeat.HEARTBEAT_PATH", target)
+
+        scheduler = self._make_scheduler()
+
+        call_mtimes: list[float] = []
+        original_write = None
+
+        def tracking_write(path=None):
+            # 실제 파일을 쓰고 mtime 을 기록한다.
+            nonlocal original_write
+            original_write(path)
+            if target.exists():
+                call_mtimes.append(target.stat().st_mtime)
+
+        import core.scheduler_heartbeat as hb_mod
+
+        original_write = hb_mod.write_heartbeat
+        monkeypatch.setattr(hb_mod, "write_heartbeat", tracking_write)
+
+        asyncio.get_event_loop_policy().new_event_loop().run_until_complete(scheduler._heartbeat_sleep(1.5, chunk=0.3))
+
+        # 1.5 / 0.3 = 5 chunk → 최소 5회 heartbeat 갱신.
+        assert len(call_mtimes) >= 5, f"chunk 단위 heartbeat 갱신 횟수가 부족: {len(call_mtimes)}"
+        # 마지막 mtime 은 현재 시각과 근사해야 한다 (stale 아님).
+        assert (time.time() - call_mtimes[-1]) < 2.0, "마지막 heartbeat 가 stale"
+
+    def test_heartbeat_sleep_respects_running_flag(self, tmp_path, monkeypatch):
+        """self._running=False 로 바뀌면 즉시 조기 반환."""
+        import asyncio
+
+        target = tmp_path / "heartbeat"
+        monkeypatch.setattr("core.scheduler_heartbeat.HEARTBEAT_PATH", target)
+
+        scheduler = self._make_scheduler()
+
+        async def stop_after_two_chunks():
+            # 두 chunk (0.2초) 후 running 을 False 로 내린다.
+            await asyncio.sleep(0.2)
+            scheduler._running = False
+
+        async def runner():
+            await asyncio.gather(
+                scheduler._heartbeat_sleep(10.0, chunk=0.1),
+                stop_after_two_chunks(),
+            )
+
+        start = time.time()
+        asyncio.get_event_loop_policy().new_event_loop().run_until_complete(runner())
+        elapsed = time.time() - start
+
+        # 10 초 요청이었지만 0.3 초 내외에 종료되어야 한다.
+        assert elapsed < 1.0, f"_heartbeat_sleep 이 _running=False 에 조기 반환하지 않음: elapsed={elapsed:.2f}s"
+
+    def test_heartbeat_sleep_zero_or_negative_returns_immediately(self, tmp_path, monkeypatch):
+        """0 이하 대기는 즉시 반환하고 heartbeat 도 갱신하지 않는다."""
+        import asyncio
+
+        target = tmp_path / "heartbeat"
+        monkeypatch.setattr("core.scheduler_heartbeat.HEARTBEAT_PATH", target)
+
+        scheduler = self._make_scheduler()
+
+        asyncio.get_event_loop_policy().new_event_loop().run_until_complete(scheduler._heartbeat_sleep(0))
+        asyncio.get_event_loop_policy().new_event_loop().run_until_complete(scheduler._heartbeat_sleep(-5))
+
+        # 둘 다 파일이 생성되지 않아야 한다 (write_heartbeat 미호출).
+        assert not target.exists(), "0 이하 대기에서 heartbeat 가 갱신됨"
+
+    def test_long_sleep_branches_use_heartbeat_sleep(self):
+        """_scheduler_loop 의 긴 sleep 경로가 _heartbeat_sleep 으로 교체됐는지 정적 검증.
+
+        L367(비거래일), L416(오늘 완료) 두 분기가 raw asyncio.sleep 대신
+        self._heartbeat_sleep 를 호출해야 한다. 짧은 대기(L399, max 60s)는
+        루프 상단 heartbeat 로 충분하므로 제외.
+        """
+        import inspect
+
+        from core.trading_scheduler import TradingScheduler
+
+        src = inspect.getsource(TradingScheduler._scheduler_loop)
+
+        # _heartbeat_sleep 호출이 최소 2회 (비거래일 + 오늘 완료)
+        assert (
+            src.count("self._heartbeat_sleep(") >= 2
+        ), "_scheduler_loop 의 긴 sleep 경로 2곳이 _heartbeat_sleep 으로 교체되지 않음"
+
+        # raw asyncio.sleep(min(wait_seconds, 3600)) 패턴은 더 이상 존재하면 안 됨.
+        assert (
+            "asyncio.sleep(min(wait_seconds, 3600))" not in src
+        ), "raw asyncio.sleep(min(wait_seconds, 3600)) 이 남아있음 — 회귀"

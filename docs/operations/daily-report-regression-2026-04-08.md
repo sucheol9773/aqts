@@ -447,6 +447,43 @@ CD 워크플로 연결 지점을 정적으로 강제. 계약을 약화시키는 
 방어가 실제로 실행되는 환경에 도달하도록** 공급망-배포 층위의 보강을 추가하는
 것이다. 애플리케이션 레이어의 가드/멱등성은 회귀가 없다.
 
+## 5.1 2026-04-09 smoke 실패 및 heartbeat 긴 sleep 버그
+
+커밋 `051c453` 배포 직후 첫 post-deploy smoke 실행에서 **C4 단독 실패**:
+
+```
+[C4] Scheduler heartbeat liveness
+  ✗ heartbeat stale: age=1638s > 120s
+```
+
+C1(Running), C2(digest match), C3(heartbeat-based healthcheck), C5(/api/system/health 200) 은 전부 통과. scheduler 컨테이너는 올바른 설정으로 기동했고 heartbeat 파일도 존재하지만, **mtime 이 27분째 갱신되지 않는** 상태였다.
+
+### 원인
+
+`_scheduler_loop` 은 heartbeat 를 while 루프 **최상단에서만** 호출한다. 그러나 두 분기가 각각 최대 1시간 블로킹한다:
+
+- L367 (비거래일): `await asyncio.sleep(min(wait_seconds, 3600))`
+- L416 ("오늘 모든 이벤트 완료"): `await asyncio.sleep(min(wait_seconds, 3600))`
+
+2026-04-09 Thursday 18:27 KST 시점에 POST_MARKET (약 17:00 KST) 이 끝나 L416 분기로 진입한 직후 heartbeat 갱신이 멈췄고, 27분 후 smoke 시점에 age=1638s 로 관측됐다. `HEARTBEAT_STALE_SECONDS=180` 기준으로도 뚫리는 **구조적 결함**이며, smoke 의 120s 임계가 먼저 실패했을 뿐이다. 3-layer 가드(idempotency/market_close/post_market) 와는 직교하는 liveness 층위의 버그다.
+
+### Fix
+
+`_heartbeat_sleep(seconds, chunk=30.0)` helper 를 `TradingScheduler` 에 도입. 요청된 대기 시간을 chunk 단위로 분할하여 각 chunk 직전에 `write_heartbeat()` 를 호출한다. `self._running=False` 로 바뀌면 즉시 조기 반환하여 `stop()` 응답성도 유지.
+
+긴 sleep 두 분기(L367, L416)의 `await asyncio.sleep(...)` 를 `await self._heartbeat_sleep(...)` 로 치환. 짧은 대기 분기(L399, max 60s)는 루프 상단 heartbeat 로 충분하므로 그대로 둠.
+
+회귀 테스트 4건 (`tests/test_scheduler_heartbeat.py::TestHeartbeatSleepHelper`):
+
+1. `test_heartbeat_sleep_updates_file_multiple_times` — 1.5s / chunk 0.3s → 최소 5회 mtime 갱신 확인
+2. `test_heartbeat_sleep_respects_running_flag` — 10s 요청 후 0.2s 시점에 `_running=False` → 1.0s 이내 반환
+3. `test_heartbeat_sleep_zero_or_negative_returns_immediately` — 0/음수 입력에서 파일 생성 no-op
+4. `test_long_sleep_branches_use_heartbeat_sleep` — `_scheduler_loop` 소스에 `self._heartbeat_sleep(` 호출 ≥ 2회, raw `asyncio.sleep(min(wait_seconds, 3600))` 패턴 0회 (정적 회귀 방어)
+
+### 재발 방지 원칙 추가
+
+긴 `await asyncio.sleep(...)` 블로킹 전후에 heartbeat, metric, 기타 liveness 신호를 갱신하지 않으면 동일 패턴이 다시 발생한다. 루프 내부에서 60초 이상 블로킹이 생길 수 있는 분기는 **항상 chunked-sleep helper 를 거치도록** 한다. 이 원칙은 `CLAUDE.md::상태 전이 로직 검증 규칙` 의 연장선상이다 — "긴 대기 중에도 liveness 신호가 유지되는가" 를 엣지 케이스로 명시.
+
 ## 6. 후속 조치 (체크리스트)
 
 - [x] Redis 실측값 §1.3 에 채워 넣기 (2026-04-09 관찰 완료)

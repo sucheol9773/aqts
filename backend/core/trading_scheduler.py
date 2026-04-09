@@ -340,6 +340,39 @@ class TradingScheduler:
 
     # ── 스케줄러 메인 루프 ──
 
+    async def _heartbeat_sleep(self, seconds: float, chunk: float = 30.0) -> None:
+        """heartbeat 를 chunk 단위로 갱신하면서 seconds 만큼 대기한다.
+
+        _scheduler_loop 안의 긴 ``await asyncio.sleep(...)`` (비거래일 대기,
+        "오늘 모든 이벤트 완료" 후 다음 거래일 대기 등) 은 최대 3600 초까지
+        블로킹되므로, 루프 최상단에서만 ``write_heartbeat()`` 를 호출하는
+        구조에서는 heartbeat mtime 이 수십 분 stale 상태가 된다. 그 결과
+        docker-compose 의 heartbeat healthcheck 가 unhealthy 로 판정되고,
+        배포 직후 post-deploy smoke(C4) 도 실패한다 (2026-04-09 관측).
+
+        본 helper 는 요청된 대기 시간을 ``chunk`` 초 단위로 분할하여 각
+        chunk 사이에 ``write_heartbeat()`` 를 호출한다. 기본 chunk 는 30 초로,
+        기본 ``HEARTBEAT_STALE_SECONDS=180`` 및 smoke 기본 임계 120 초
+        양쪽에 안전 마진을 둔다. ``self._running`` 이 False 로 바뀌면 즉시
+        조기 반환하여 stop() 응답성을 유지한다.
+
+        주의: 이 함수는 ``_scheduler_loop`` 의 **긴 대기 구간 전용**이다.
+        이벤트 직전의 1분 이내 짧은 대기(``wait_seconds, 60`` 분기)는
+        루프 상단 heartbeat 로 충분하므로 여기서 호출하지 않는다.
+        """
+        from core.scheduler_heartbeat import write_heartbeat
+
+        remaining = float(seconds)
+        if remaining <= 0:
+            return
+        # chunk 는 양의 유한값만 허용 — 방어적 클램프.
+        step_size = max(0.1, float(chunk))
+        while remaining > 0 and self._running:
+            write_heartbeat()
+            step = min(step_size, remaining)
+            await asyncio.sleep(step)
+            remaining -= step
+
     async def _scheduler_loop(self) -> None:
         """메인 스케줄러 루프"""
         while self._running:
@@ -364,7 +397,8 @@ class TradingScheduler:
                     if wait_seconds > 0:
                         logger.info(f"비거래일 ({today}). 다음 거래일 {next_td}까지 대기")
                         self._state.next_event_at = wake_time
-                        await asyncio.sleep(min(wait_seconds, 3600))  # 최대 1시간 단위 체크
+                        # 최대 1시간 단위 체크, 그 안에서 heartbeat 를 30초마다 갱신.
+                        await self._heartbeat_sleep(min(wait_seconds, 3600))
                     continue
 
                 # 새로운 거래일 시작
@@ -413,7 +447,11 @@ class TradingScheduler:
                     logger.info(f"오늘 스케줄 완료. 다음 거래일 {next_td}까지 대기")
                     self._state.next_event = None
                     self._state.next_event_at = wake_time
-                    await asyncio.sleep(min(wait_seconds, 3600))
+                    # 최대 1시간 단위 체크, 그 안에서 heartbeat 를 30초마다 갱신.
+                    # 2026-04-09 회귀: 이 경로에 진입하면 heartbeat 이 최대
+                    # 3600초 stale 상태로 방치되어 compose healthcheck 와
+                    # post-deploy smoke(C4) 가 fail 했다.
+                    await self._heartbeat_sleep(min(wait_seconds, 3600))
 
             except asyncio.CancelledError:
                 break
