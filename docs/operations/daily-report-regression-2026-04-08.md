@@ -561,10 +561,58 @@ SSH heredoc (`ssh ... bash -s << 'EOF' ... EOF`) 컨텍스트에서 비대화형
 
 강제 검사: `docker exec -i` 가 `.github/workflows/*.yml` 과 `scripts/*.sh` 에 등장하지 않도록 Doc Sync 레인트로 grep 가드를 추가해야 하지만, 본 커밋은 근본 원인 수정과 문서화로 범위를 한정한다. grep 가드는 별도 커밋에서 진행한다.
 
+## 4.8 회귀의 재재현 (2026-04-09, `8fcd6c6` 배포, §4.7 보강)
+
+§4.7 에서 `docker exec -i` 를 `docker exec ... </dev/null` 로 고친 뒤 `8fcd6c6` 이 푸시되어 CD 가 다시 돌았다. 이번엔 Step 5b 는 무사히 `alembic_version exists → skip baseline stamp` 까지 찍고 Step 5c 진입에 성공했다. 그러나 Deploy to server 로그는 정확히 다음 줄에서 끊겼다:
+
+```
+═══ Step 5c: Run alembic upgrade head ═══
+...
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+```
+
+이후 Step 5d / 5e / Step 6 의 헤더가 단 한 줄도 출력되지 않았다. Post-deploy 에서 Atomic Digest Cross-Check 는 `sha256:6fa17bd...` (= `sha-70eee29` 구 이미지) 를 그대로 찍었고, 같은 digest 라 "drift 없음" 으로 통과한 뒤 smoke C4 에서 heartbeat age=2375s 로 실패했다. 새로 pull 된 `sha256:b2037828...` 은 단 한 번도 실행되지 않았다.
+
+### 메커니즘
+
+원인은 §4.7 과 **같은 병, 다른 환자**다. `docker exec -i` 는 고쳤지만 `docker compose run` 은 고치지 않았다. `docker compose run` 은 기본적으로 stdin 을 attach 한다. `-T` 플래그가 없으면 TTY 할당과 stdin forwarding 이 모두 켜진 채로 실행되며, `ssh -T ... bash -s << 'DEPLOY'` heredoc 컨텍스트 안에서는 자식이 부모 bash 의 fd 0 을 상속받아 heredoc 의 나머지 줄을 모두 소진한다. alembic upgrade 프로세스가 실제 마이그레이션을 수행하는 도중/직후에 부모 heredoc 의 잔여 라인(Step 5d, 5e, 6)을 stdin 으로 같이 빨아들였고, 부모 bash 는 다음 줄이 없어 EOF → exit 0 으로 clean exit 했다. `set -e` 는 여전히 이 경로를 잡지 못한다.
+
+§4.7 의 교훈("비대화형 원격 명령에 stdin forwarding 을 붙이지 말라")은 옳았으나, 그 원칙이 `docker exec -i` 라는 특정 flag 에만 묶여 규칙화되었고 "stdin 을 attach 하는 모든 자식 프로세스" 라는 더 일반화된 층위까지 확장되지 않았던 것이 직접적 누락 원인이다. RBAC Wiring Rule 의 "정의 ≠ 적용" 이 CD 도메인에서 두 번 연속 재현된 셈이다. 첫 번째는 "헬퍼 정의 ≠ 라우트 적용", 이번은 "docker exec 에 대한 규칙 적용 ≠ docker compose run 에 대한 규칙 적용".
+
+### Fix (2026-04-09, `.github/workflows/cd.yml` Step 5b stamp + Step 5c upgrade)
+
+- `docker compose -f docker-compose.yml run --rm backend alembic ...` → `docker compose -f docker-compose.yml run --rm -T backend alembic ... </dev/null` (stamp, upgrade 두 군데).
+- `-T` 는 TTY 할당을 끄고, `</dev/null` 은 방어적으로 stdin 을 명시 격리한다. 둘 중 하나만으로는 충분치 않다는 판단이 아니라, 회귀의 재재현 비용이 너무 크기 때문에 이중화한다.
+- 수정 위치에 2026-04-09 8fcd6c6 배포 경위 주석을 인라인으로 남겨 재발 방지.
+
+### 재발 방지 원칙의 일반화 (CLAUDE.md "SSH Heredoc 비대화형 원격 명령 작성 규칙" 보강)
+
+기존 규칙은 `docker exec -i` / `kubectl exec -i` 를 명시 금지 플래그로 나열했다. 이것만으로는 `docker compose run` 처럼 **플래그가 아니라 기본값으로 stdin 을 attach 하는 명령** 을 커버하지 못한다. 규칙을 다음과 같이 일반화해 보강한다:
+
+> SSH heredoc 안에서 실행되는 **모든 자식 프로세스** 에 대해 "이 프로세스가 fd 0 을 읽는가" 를 먼저 질문한다. `-i`/`--interactive` 같은 명시적 forwarding 플래그가 없더라도 기본값으로 stdin 을 attach 하는 명령 (`docker compose run`, `docker run` 등) 이 있다. 이런 명령에는 반드시:
+>
+> 1. 해당 명령의 TTY/stdin 끄는 옵션을 사용한다 (`docker compose run -T`, `docker run -T`, 등).
+> 2. 그 위에 `</dev/null` 로 stdin 을 명시 격리한다 (이중 방어).
+>
+> "플래그 이름을 금지 목록에 올리는 것" 으로는 부족하다. "stdin 을 소비할 수 있는 모든 자식" 을 대상으로 한다.
+
+### 검증 계획
+
+본 수정은 푸시 후 CD 에서 직접 검증된다. 기대 시퀀스:
+
+1. Deploy to server 로그에 `═══ Step 5d: Restart services with new image (atomic recreate) ═══`, `═══ Step 5e: ...`, `═══ Step 6: ...` 헤더가 실제로 출력되어야 한다 (이전 두 사이클에서는 단 한 번도 출력되지 않았다).
+2. Step 5e 의 `BACKEND_IMAGE_ID`, `SCHEDULER_IMAGE_ID` 가 `EXPECTED_IMAGE_ID` 와 일치해야 한다.
+3. Post-deploy Atomic Digest Cross-Check 가 새 digest 로 찍혀야 한다 (지금까지 `sha256:6fa17bd...` 고정).
+4. Smoke C4 heartbeat age < 120s 로 통과해야 한다.
+
+본 수정이 옳았는지는 푸시 후 4번이 통과할 때에만 확정된다. 또 다른 stdin-consuming 자식이 숨어 있을 가능성을 원천 배제할 수는 없으므로, 1번(헤더 출력) 을 첫 번째 관찰 지표로 삼고, 실패 시 동일 관찰 우선 원칙으로 다음 후보 명령을 좁혀 간다.
+
 ## 참고
 
 - 수정 커밋: `a93fd8e fix(scheduler): 일일 리포트 중복/0원 회귀 — 멱등성 + 안전망 3종`
 - 후속 수정: `a48c4c8 fix(scheduler): heartbeat 을 독립 백그라운드 태스크로 분리` (§4.6, 코드 자체의 수정은 올바르나 CD 가 이 이미지를 실행시킨 적이 없어 검증되지 못한 채 rollback 됨)
-- 본 문서 §4.7 의 CD 수정: `fix(ci): docker exec -i → docker exec </dev/null — SSH heredoc stdin 소진 차단`
+- 본 문서 §4.7 의 CD 수정: `8fcd6c6 fix(ci): docker exec -i → docker exec </dev/null — SSH heredoc stdin 소진 차단`
+- 본 문서 §4.8 의 CD 수정: `fix(ci): docker compose run 에도 -T + </dev/null — SSH heredoc stdin 소진 차단 (part 2)`
 - 관련 문서: `docs/operations/scheduler-idempotency.md`
 - 사고 패턴 참조: `docs/security/security-integrity-roadmap.md` "정의 ≠ 적용" 항목군

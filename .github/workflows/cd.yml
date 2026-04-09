@@ -220,14 +220,24 @@ jobs:
                 BASELINE=001
               fi
               echo "→ alembic stamp $BASELINE"
-              docker compose -f docker-compose.yml run --rm backend \
-                alembic -c alembic.ini stamp "$BASELINE"
+              # 2026-04-09 회귀 (8fcd6c6 배포): `docker compose run` 은 기본적으로
+              # stdin 을 attach 한다. `ssh -T ... bash -s << 'DEPLOY'` heredoc 컨텍스트
+              # 안에서는 부모 bash 의 fd 0 을 자식이 상속받아 heredoc 의 나머지 줄을
+              # 모두 소진하므로, 이 줄 이후의 Step 5c/5d/5e/6 이 실행되지 않은 채
+              # 부모 bash 가 EOF → exit 0 으로 clean exit 한다. Step 5b 의
+              # `docker exec -i` 회귀와 동일 메커니즘이며, "docker exec 만 고치면
+              # 된다"는 일반화 누락이 직접 원인이다. 재발 방지: `-T` 로 TTY 할당을
+              # 끄고, 방어적으로 `</dev/null` 로 stdin 을 명시 격리한다.
+              docker compose -f docker-compose.yml run --rm -T backend \
+                alembic -c alembic.ini stamp "$BASELINE" </dev/null
             fi
 
             echo "═══ Step 5c: Run alembic upgrade head ═══"
             # 마이그레이션 실패 시 backend 컨테이너는 기동하지 않는다 (fail-closed).
-            docker compose -f docker-compose.yml run --rm backend \
-              alembic -c alembic.ini upgrade head
+            # `-T` + `</dev/null` 근거는 Step 5b 의 stamp 호출 주석 참조
+            # (2026-04-09 8fcd6c6 배포 회귀).
+            docker compose -f docker-compose.yml run --rm -T backend \
+              alembic -c alembic.ini upgrade head </dev/null
 
             echo "═══ Step 5d: Restart services with new image (atomic recreate) ═══"
             # backend 와 scheduler 는 동일 이미지 태그를 공유하므로, compose 가
