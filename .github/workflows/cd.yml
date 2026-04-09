@@ -107,9 +107,16 @@ jobs:
             set -e
             cd ~/aqts
 
-            echo "═══ Step 1: Pull latest compose/config ═══"
-            git checkout main
-            git pull origin main
+            echo "═══ Step 1: Sync compose/config to origin/main ═══"
+            # 배포 서버는 remote main 의 팔로워이므로 local merge/rebase 는
+            # 절대 수행하지 않는다. `git pull` 은 force-push (amend, rebase)
+            # 이후 "divergent branches" 로 실패하므로 fetch + reset --hard
+            # 패턴을 사용한다. 이 패턴은 rollback 경로와도 동일하여 경로별
+            # 불일치가 없다. `git reset --hard` 는 tracked 파일만 건드리므로
+            # 서버의 .env, data 볼륨, 로그 등 untracked 자산은 보존된다.
+            git fetch origin main
+            git checkout -f main
+            git reset --hard origin/main
 
             echo "═══ Step 2: Ensure cosign installed ═══"
             if ! command -v cosign >/dev/null 2>&1; then

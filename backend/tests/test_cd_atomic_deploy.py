@@ -107,6 +107,35 @@ class TestVerifyCrossCheck:
         assert r'-z "\${SCHEDULER_IMAGE_ID}"' in vf_block
 
 
+class TestGitSyncPattern:
+    """배포 서버 git sync 는 remote 의 팔로워여야 한다.
+
+    `git pull origin main` 은 force-push (amend/rebase) 이후 divergent
+    branches 에러로 실패한다. 2026-04-09 CD run 이 실제로 이 에러로
+    exit 128 실패했다. 재발 방지를 위해 deploy 경로가 `git pull` 이
+    아닌 `git fetch + git reset --hard origin/main` 패턴을 쓰는지 정적
+    어서트한다. 이 패턴은 rollback 경로와도 동일하여 경로별 불일치가
+    없다.
+    """
+
+    def test_deploy_script_does_not_use_git_pull(self, cd_content: str) -> None:
+        deploy_start = cd_content.index("DEPLOY_SCRIPT")
+        deploy_end = cd_content.index("DEPLOY_SCRIPT", deploy_start + 1)
+        deploy_block = cd_content[deploy_start:deploy_end]
+        assert "git pull origin main" not in deploy_block, (
+            "deploy 경로에서 `git pull origin main` 을 사용하면 force-push 이후 "
+            "divergent branches 에러로 배포가 실패한다. "
+            "`git fetch origin main && git reset --hard origin/main` 을 사용해야 한다."
+        )
+
+    def test_deploy_script_uses_fetch_reset_pattern(self, cd_content: str) -> None:
+        deploy_start = cd_content.index("DEPLOY_SCRIPT")
+        deploy_end = cd_content.index("DEPLOY_SCRIPT", deploy_start + 1)
+        deploy_block = cd_content[deploy_start:deploy_end]
+        assert "git fetch origin main" in deploy_block
+        assert "git reset --hard origin/main" in deploy_block
+
+
 class TestComposeImageAlignment:
     """docker-compose.yml 에서 backend/scheduler 가 동일 이미지 참조를 써야만
     atomic deploy 자체가 성립한다. 한쪽이 다른 이미지 태그를 참조하면
