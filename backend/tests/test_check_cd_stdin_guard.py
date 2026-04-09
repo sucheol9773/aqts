@@ -234,3 +234,65 @@ class TestRepositoryClean:
         files = {p.relative_to(REPO_ROOT) for p in GUARD.iter_target_files()}
         assert Path(".github/workflows/cd.yml") in files
         assert Path("scripts/post_deploy_smoke.sh") in files
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# Rule 5: heredoc 내부에서 하위 스크립트 호출은 fd 0 상속 차단이 필요
+# ═════════════════════════════════════════════════════════════════════════
+class TestRule5InheritedScriptInvocation:
+    """2026-04-09 감사(§4.11)에서 식별된 잠재 갭.
+
+    heredoc 내부에서 ``bash X.sh`` 를 호출하면 자식 bash 가 부모의 fd 0
+    (heredoc 스트림) 을 상속한다. X.sh 내부에 장래 ``docker exec -i`` 같은
+    stdin 소비 라인이 추가되는 순간 §4.7/§4.8 과 동일한 은폐 경로가
+    재생성된다. Rule 5 는 호출 지점에서 ``</dev/null`` 로 격리를 강제한다.
+    """
+
+    def test_detects_bash_script_without_redirect(self):
+        script = (
+            "ssh -T host bash -s << 'VERIFY'\n"
+            "echo setup\n"
+            "bash scripts/post_deploy_smoke.sh\n"
+            "echo done\n"
+            "VERIFY\n"
+        )
+        violations = _scan(script)
+        assert len(violations) == 1
+        assert "하위 스크립트" in violations[0][1]
+
+    def test_detects_sh_script_without_redirect(self):
+        script = "ssh host bash -s <<END\n" "sh scripts/run.sh\n" "END\n"
+        violations = _scan(script)
+        assert len(violations) == 1
+
+    def test_detects_dot_slash_script_without_redirect(self):
+        script = "ssh host bash -s <<END\n" "./scripts/run.sh\n" "END\n"
+        violations = _scan(script)
+        assert len(violations) == 1
+
+    def test_passes_with_dev_null_redirect(self):
+        """§4.11 fix: `</dev/null` 로 상속 사슬 격리."""
+        script = "ssh -T host bash -s << 'VERIFY'\n" "bash scripts/post_deploy_smoke.sh </dev/null\n" "VERIFY\n"
+        assert _scan(script) == []
+
+    def test_passes_with_pipe_input(self):
+        """`echo x | bash script.sh` 도 stdin 이 파이프로 치환되어 안전."""
+        script = "ssh host bash -s <<END\n" "echo arg | bash scripts/run.sh\n" "END\n"
+        assert _scan(script) == []
+
+    def test_passes_with_file_redirect(self):
+        """`bash script.sh < input.txt` 도 stdin 이 파일로 치환되어 안전."""
+        script = "ssh host bash -s <<END\n" "bash scripts/run.sh < /tmp/input.txt\n" "END\n"
+        assert _scan(script) == []
+
+    def test_no_false_positive_outside_heredoc(self):
+        """일반 CI 단계의 독립 `bash script.sh` 는 heredoc fd 0 상속이 없다."""
+        script = "jobs:\n" "  t:\n" "    steps:\n" "      - run: |\n" "          bash scripts/post_deploy_smoke.sh\n"
+        assert _scan(script) == []
+
+    def test_no_false_positive_bash_dash_s_heredoc_start(self):
+        """`bash -s << TAG` 자체(heredoc 시작 라인)는 flag 되지 않아야 한다."""
+        # 시작 라인은 heredoc 밖에서 평가되므로 check_line 자체가 호출되지
+        # 않는다. 하위 스크립트 확장자(.sh)도 없어 Rule 5 regex 는 미스.
+        script = "ssh -T host bash -s << 'EOF'\n" "echo hello\n" "EOF\n"
+        assert _scan(script) == []

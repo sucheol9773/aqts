@@ -358,7 +358,15 @@ jobs:
             # 이미 서버에 동기화되어 있다. 본 smoke 는 heartbeat 신선도,
             # scheduler healthcheck 구성 정합성 등 docker inspect 만으로는
             # 잡히지 않는 2026-04-08 회귀 contract 를 최종 강제한다.
-            bash scripts/post_deploy_smoke.sh
+            #
+            # 2026-04-09 §4.11: `</dev/null` 필수. 이 호출은 VERIFY_SCRIPT
+            # heredoc 내부이므로 자식 bash 가 부모 fd 0(=heredoc 스트림)을
+            # 상속한다. smoke 스크립트가 현재는 `docker exec -i` 같은 stdin
+            # 소비 패턴을 갖고 있지 않지만, 장래에 한 줄이라도 추가되면
+            # §4.7/§4.8 과 동일한 은폐 경로가 재생성된다. 상속 사슬을 호출
+            # 지점에서 끊어 smoke 의 내부 변경과 무관하게 VERIFY_SCRIPT 잔여
+            # 라인이 보호되도록 한다.
+            bash scripts/post_deploy_smoke.sh </dev/null
 
             echo "✅ All verification checks passed"
           VERIFY_SCRIPT

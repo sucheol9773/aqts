@@ -26,6 +26,13 @@
   4. ``-T`` 없는 전경 ``docker run ...``. ``-d``/``--detach`` 로 백그라운드 실행되는
      경우는 stdin 을 소비하지 않으므로 예외.
      → ``docker run --rm -T ... </dev/null``.
+  5. heredoc 내부에서 ``bash X.sh`` / ``sh X.sh`` / ``./X.sh`` 형태의 하위 스크립트
+     호출에 ``</dev/null`` 또는 ``< FILE`` redirect, 혹은 상단 ``|`` 파이프 입력이
+     없는 경우. 자식 bash 가 부모 heredoc 의 fd 0 을 상속하면, 해당 스크립트
+     내부 어딘가에 ``docker exec -i`` 같은 stdin 소비 라인이 추가되는 순간
+     §4.7/§4.8 과 동일한 은폐 경로가 재생성된다. 호출 지점에서 상속 사슬을
+     끊어 하위 스크립트의 **장래 변경으로부터 격리**한다.
+     → ``bash scripts/X.sh </dev/null``.
 
 근거: ``ssh -T ... bash -s << 'EOF'`` heredoc 안에서 실행된 자식 프로세스가
 부모 bash 의 fd 0 을 상속받아 heredoc 의 잔여 라인을 모두 소진하면, 부모
@@ -95,6 +102,24 @@ RE_HAS_T_FLAG = re.compile(
 # `-d` 또는 `--detach` 검출 (docker run 예외 — 백그라운드 실행은 stdin 소비 없음)
 RE_HAS_DETACH_FLAG = re.compile(
     r"(?:^|\s)(?:-d\b|--detach\b)"
+)
+
+# Rule 5: heredoc 내부에서 하위 shell 스크립트 호출.
+# `bash foo.sh`, `sh foo.sh`, `./foo.sh`, `bash ./scripts/foo.sh` 등을 매치한다.
+# 주의: 본 가드 스크립트 자체 (`check_cd_stdin_guard.py`) 와 혼동되지 않도록
+# 확장자는 `.sh` 로 한정한다.
+RE_SCRIPT_INVOKE = re.compile(
+    r"(?:\b(?:bash|sh)\s+(?:-[A-Za-z]+\s+)*"
+    r"(?P<script>\.?\.?/?[\w./-]+\.sh)\b"
+    r"|(?:^|[\s;&|])(?P<script2>\./[\w./-]+\.sh)\b)"
+)
+
+# stdin 격리 redirect / 파이프 입력 검출. 아래 중 하나라도 있으면 OK:
+#   `</dev/null`, `< somefile`, `| bash script.sh`, `<<< here-string`.
+# 파이프는 스크립트 호출 "앞" 에 와야 하지만, 라인 전체에 `|` 가 있으면
+# 보통 `cmd | bash script.sh` 형태이므로 단순 presence 검사로 충분하다.
+RE_STDIN_ISOLATED = re.compile(
+    r"(?:<\s*/dev/null\b|<\s+\S|<<<|\|)"
 )
 
 # heredoc 시작 검출: ``<< TAG`` / ``<<-TAG`` / ``<< 'TAG'`` / ``<< "TAG"``.
@@ -209,6 +234,14 @@ def check_line(text: str) -> list[str]:
                 "`-T` 없는 전경 `docker run` — heredoc stdin 을 소진할 수 있다. "
                 "`docker run --rm -T ... </dev/null` 또는 `-d` 로 교체."
             )
+
+    # Rule 5: 하위 shell 스크립트 호출 (bash X.sh / sh X.sh / ./X.sh) 은
+    # heredoc fd 0 을 상속하므로 명시적 stdin 격리가 필요하다.
+    if RE_SCRIPT_INVOKE.search(code) and not RE_STDIN_ISOLATED.search(code):
+        violations.append(
+            "heredoc 내부에서 하위 스크립트 호출 — fd 0 상속으로 잔여 heredoc "
+            "라인이 소진될 수 있다. `bash X.sh </dev/null` 로 stdin 을 격리."
+        )
 
     return violations
 
