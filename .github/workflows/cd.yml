@@ -132,6 +132,18 @@ jobs:
             echo "═══ Step 4: Pull verified image from GHCR ═══"
             docker pull "${IMAGE_REF}"
 
+            # backend 와 scheduler 는 동일 이미지/digest 를 공유해야 한다.
+            # pull 직후의 로컬 digest 를 EXPECTED_IMAGE_ID 로 잠가두고,
+            # 이후 단계에서 두 컨테이너가 실제로 이 digest 를 실행 중인지
+            # 어서트한다. 2026-04-08 회귀(scheduler 가 a93fd8e 이전 이미지로
+            # 계속 동작한 사건)의 재발 방지.
+            EXPECTED_IMAGE_ID=$(docker image inspect "${IMAGE_REF}" --format '{{.Id}}')
+            if [ -z "${EXPECTED_IMAGE_ID}" ]; then
+              echo "❌ pulled image digest 를 읽지 못했다 (docker image inspect 실패)"
+              exit 1
+            fi
+            echo "EXPECTED_IMAGE_ID=${EXPECTED_IMAGE_ID}"
+
             echo "═══ Step 5a: Ensure postgres is up for migrations ═══"
             export IMAGE_NAMESPACE IMAGE_TAG
             docker compose -f docker-compose.yml up -d postgres
@@ -195,8 +207,30 @@ jobs:
             docker compose -f docker-compose.yml run --rm backend \
               alembic -c alembic.ini upgrade head
 
-            echo "═══ Step 5d: Restart services with new image ═══"
+            echo "═══ Step 5d: Restart services with new image (atomic recreate) ═══"
+            # backend 와 scheduler 는 동일 이미지 태그를 공유하므로, compose 가
+            # "변경 없음" 으로 판단하여 한쪽만 recreate 하거나 skip 할 위험을
+            # 제거하기 위해 --force-recreate 로 명시한다. 이는 두 컨테이너가
+            # 같은 EXPECTED_IMAGE_ID 를 실행 중임을 보장하기 위한 첫 번째 장치.
+            docker compose -f docker-compose.yml up -d --force-recreate --no-deps backend scheduler
             docker compose -f docker-compose.yml up -d
+
+            echo "═══ Step 5e: Assert atomic digest (backend ↔ scheduler) ═══"
+            # 두 컨테이너의 실행 중 image digest 가 EXPECTED_IMAGE_ID 와 일치하는지
+            # 확인한다. 하나라도 불일치면 배포를 실패시켜 rollback 경로로 진입한다.
+            BACKEND_IMAGE_ID=$(docker inspect --format '{{.Image}}' aqts-backend 2>/dev/null || echo "")
+            SCHEDULER_IMAGE_ID=$(docker inspect --format '{{.Image}}' aqts-scheduler 2>/dev/null || echo "")
+            echo "BACKEND_IMAGE_ID=${BACKEND_IMAGE_ID}"
+            echo "SCHEDULER_IMAGE_ID=${SCHEDULER_IMAGE_ID}"
+            if [ "${BACKEND_IMAGE_ID}" != "${EXPECTED_IMAGE_ID}" ]; then
+              echo "❌ backend image drift: expected ${EXPECTED_IMAGE_ID}, got ${BACKEND_IMAGE_ID}"
+              exit 1
+            fi
+            if [ "${SCHEDULER_IMAGE_ID}" != "${EXPECTED_IMAGE_ID}" ]; then
+              echo "❌ scheduler image drift: expected ${EXPECTED_IMAGE_ID}, got ${SCHEDULER_IMAGE_ID}"
+              exit 1
+            fi
+            echo "✅ atomic digest asserted — backend ↔ scheduler ↔ pulled image 일치"
 
             echo "═══ Step 6: Wait for health check (max 120s) ═══"
             for i in $(seq 1 60); do
@@ -250,6 +284,25 @@ jobs:
             DEPLOYED_SHA=\$(git rev-parse --short HEAD)
             echo "Deployed commit: \$DEPLOYED_SHA"
 
+            echo "═══ Atomic Digest Cross-Check (backend ↔ scheduler) ═══"
+            # 배포 단계의 Step 5e 와 독립적으로, verify 단계에서도 두 컨테이너가
+            # 동일 image digest 를 실행 중인지 다시 확인한다. Step 5e 이후 수동
+            # 개입 / 부분 재시작 등으로 drift 가 발생했는지 잡아내기 위한
+            # 2중 방어선. 2026-04-08 회귀 재발 방지.
+            BACKEND_IMAGE_ID=\$(docker inspect --format '{{.Image}}' aqts-backend 2>/dev/null || echo "")
+            SCHEDULER_IMAGE_ID=\$(docker inspect --format '{{.Image}}' aqts-scheduler 2>/dev/null || echo "")
+            echo "backend  image=\${BACKEND_IMAGE_ID}"
+            echo "scheduler image=\${SCHEDULER_IMAGE_ID}"
+            if [ -z "\${BACKEND_IMAGE_ID}" ] || [ -z "\${SCHEDULER_IMAGE_ID}" ]; then
+              echo "❌ backend 또는 scheduler 컨테이너를 찾을 수 없음"
+              exit 1
+            fi
+            if [ "\${BACKEND_IMAGE_ID}" != "\${SCHEDULER_IMAGE_ID}" ]; then
+              echo "❌ image drift detected: backend ↔ scheduler digest mismatch"
+              exit 1
+            fi
+            echo "✅ backend ↔ scheduler 동일 digest 확인"
+
             echo "✅ All verification checks passed"
           VERIFY_SCRIPT
 
@@ -296,10 +349,28 @@ jobs:
               "${IMAGE_REF}" > /tmp/cosign-rollback.json
             echo "✅ Rollback image signature verified"
 
-            echo "═══ Pull previous image + restart ═══"
+            echo "═══ Pull previous image + restart (atomic recreate) ═══"
             docker pull "${IMAGE_REF}"
+            EXPECTED_IMAGE_ID=$(docker image inspect "${IMAGE_REF}" --format '{{.Id}}')
+            if [ -z "${EXPECTED_IMAGE_ID}" ]; then
+              echo "❌ rollback: pulled image digest 를 읽지 못했다"
+              exit 1
+            fi
+            echo "rollback EXPECTED_IMAGE_ID=${EXPECTED_IMAGE_ID}"
             export IMAGE_NAMESPACE IMAGE_TAG
+            # 배포 경로와 동일하게 --force-recreate 로 backend/scheduler 를
+            # 원자적으로 교체한다. 롤백 경로에서도 image drift 재발을 방지.
+            docker compose -f docker-compose.yml up -d --force-recreate --no-deps backend scheduler
             docker compose -f docker-compose.yml up -d
+
+            echo "═══ Rollback: assert atomic digest ═══"
+            BACKEND_IMAGE_ID=$(docker inspect --format '{{.Image}}' aqts-backend 2>/dev/null || echo "")
+            SCHEDULER_IMAGE_ID=$(docker inspect --format '{{.Image}}' aqts-scheduler 2>/dev/null || echo "")
+            if [ "${BACKEND_IMAGE_ID}" != "${EXPECTED_IMAGE_ID}" ] || [ "${SCHEDULER_IMAGE_ID}" != "${EXPECTED_IMAGE_ID}" ]; then
+              echo "❌ rollback image drift: expected=${EXPECTED_IMAGE_ID} backend=${BACKEND_IMAGE_ID} scheduler=${SCHEDULER_IMAGE_ID}"
+              exit 1
+            fi
+            echo "✅ rollback atomic digest asserted"
 
             echo "═══ Wait for health check (max 120s) ═══"
             for i in $(seq 1 60); do

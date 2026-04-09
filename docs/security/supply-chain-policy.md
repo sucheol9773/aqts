@@ -41,8 +41,13 @@
 1. `git pull origin main` — compose/config 동기화.
 2. `cosign` 미설치 시 `${COSIGN_VERSION}` (현재 v2.4.0) 자동 설치.
 3. `cosign verify --certificate-identity-regexp "^https://github.com/${REPO_FULL}/" --certificate-oidc-issuer "https://token.actions.githubusercontent.com" "${IMAGE_REF}"` — 통과해야만 다음 단계 진행. 실패 시 즉시 종료.
-4. `docker pull "${IMAGE_REF}"` → `docker compose -f docker-compose.yml up -d`.
-5. 헬스체크 실패 시 자동 롤백. 롤백 경로 역시 동일한 cosign verify 를 강제한다 (이전 SHA 의 이미지에 대해서도 서명 검증).
+4. `docker pull "${IMAGE_REF}"` 후 `EXPECTED_IMAGE_ID=$(docker image inspect "${IMAGE_REF}" --format '{{.Id}}')` 로 로컬 digest 잠금.
+5. `docker compose -f docker-compose.yml up -d --force-recreate --no-deps backend scheduler` → `docker compose -f docker-compose.yml up -d`. `--force-recreate` 는 compose 의 "변경 없음" 최적화를 무력화하여 backend/scheduler 가 **원자적으로 교체**되도록 강제한다.
+6. 배포 직후 `docker inspect --format '{{.Image}}'` 로 `aqts-backend`/`aqts-scheduler` 의 실행 중 image digest 가 `EXPECTED_IMAGE_ID` 와 일치하는지 어서트. 하나라도 drift 가 관측되면 즉시 exit 1 → 자동 롤백 경로 진입.
+7. `Post-deploy verification` 단계는 Step 5e 와 독립적으로 backend ↔ scheduler digest 일치 여부를 재확인한다 (수동 개입/부분 재시작으로 인한 drift 재발 방지 2중 방어선).
+8. 헬스체크 실패 시 자동 롤백. 롤백 경로 역시 동일한 cosign verify + `EXPECTED_IMAGE_ID` 캡처 + `--force-recreate` + digest 어서트를 강제한다. 이전 SHA 의 이미지에 대해서도 서명/digest 검증이 모두 동일하게 적용된다.
+
+위 4–7 항목은 2026-04-08 POST_MARKET 회귀 (backend ↔ scheduler image drift 로 인해 구버전 scheduler 가 `a93fd8e` 의 멱등성/안전망 가드 없이 동작한 사건) 의 재발 방지 조치이다. 정적 wiring 검증은 `backend/tests/test_cd_atomic_deploy.py` 가 `cd.yml` 을 파싱하여 강제한다.
 
 `docker-compose.yml` 의 `backend`/`scheduler` 서비스는 `image: ghcr.io/${IMAGE_NAMESPACE:?...}/aqts-backend:${IMAGE_TAG:-latest}` 만 참조한다. `build:` 블록은 `docker-compose.override.yml` (개발용)에만 존재한다.
 

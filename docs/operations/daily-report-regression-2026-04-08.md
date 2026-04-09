@@ -273,24 +273,57 @@ docker compose exec -T redis redis-cli -a "$REDIS_PW" --no-auth-warning \
 삭제 이후 `handle_post_market` 은 fallback 경로(`initial_capital_krw`)로
 떨어진다. 본 절의 P1 코드 보강(§4.5)이 커밋/배포되기 전까지의 단기 완화책이다.
 
-### 4.1 우선순위 P0 — CD atomic 배포 강제 (별도 커밋)
+### 4.1 우선순위 P0 — CD atomic 배포 강제 (2026-04-09 반영)
 
-`.github/workflows/cd.yml` 수정:
+`.github/workflows/cd.yml` 에 다음 세 층 방어를 적용했다 (커밋:
+`fix(cd): atomic deploy 강제 — EXPECTED_IMAGE_ID + force-recreate + digest
+assertion`).
 
-1. 배포 스텝에서 `docker compose pull backend scheduler` 를 명시적으로 먼저
-   실행하여 두 서비스에 동일한 `latest` digest 를 당긴다.
-2. `docker compose up -d --force-recreate backend scheduler` 로 둘을 같은
-   명령에서 재생성한다 (부분 적용 금지).
-3. 배포 후 sanity assertion 추가:
-   ```bash
-   BACKEND_DIGEST=$(docker inspect aqts-backend --format '{{.Image}}')
-   SCHEDULER_DIGEST=$(docker inspect aqts-scheduler --format '{{.Image}}')
-   test "$BACKEND_DIGEST" = "$SCHEDULER_DIGEST" || {
-     echo "FATAL: backend/scheduler digest drift ($BACKEND_DIGEST vs $SCHEDULER_DIGEST)" >&2
-     exit 1
-   }
-   ```
-   두 서비스가 다른 digest 로 배포되면 CD 가 즉시 실패하도록 한다.
+**(1) EXPECTED_IMAGE_ID 잠금 (Step 4 직후)**
+
+```bash
+EXPECTED_IMAGE_ID=$(docker image inspect "${IMAGE_REF}" --format '{{.Id}}')
+```
+
+pull 직후 로컬 digest 를 잠가두어, 이후 단계의 모든 비교 기준점으로 사용한다.
+
+**(2) `--force-recreate` 로 원자적 재생성 (Step 5d)**
+
+```bash
+docker compose -f docker-compose.yml up -d --force-recreate --no-deps backend scheduler
+docker compose -f docker-compose.yml up -d
+```
+
+compose 가 "이미지 태그가 바뀌지 않았다" 고 판단하여 한쪽만 recreate 하거나
+skip 하는 경로를 원천 차단한다. 두 컨테이너를 같은 명령 안에서 강제 교체한
+뒤, 나머지 서비스는 일반 `up -d` 로 수렴시킨다.
+
+**(3) 배포 직후 digest 어서트 (Step 5e)**
+
+```bash
+BACKEND_IMAGE_ID=$(docker inspect --format '{{.Image}}' aqts-backend)
+SCHEDULER_IMAGE_ID=$(docker inspect --format '{{.Image}}' aqts-scheduler)
+[ "${BACKEND_IMAGE_ID}"   = "${EXPECTED_IMAGE_ID}" ] || exit 1
+[ "${SCHEDULER_IMAGE_ID}" = "${EXPECTED_IMAGE_ID}" ] || exit 1
+```
+
+둘 중 하나라도 불일치하면 즉시 exit 1 → rollback 경로로 진입.
+
+**(4) Verify 단계 2중 체크 (Step 5e 와 독립)**
+
+`Post-deploy verification` 단계에서 backend/scheduler digest 가 서로 일치하는지
+다시 확인한다. Step 5e 이후 수동 개입이나 부분 재시작으로 drift 가 발생했는지
+잡는 2중 방어선이다.
+
+**(5) Rollback 경로 동일 적용**
+
+롤백 스크립트에도 `EXPECTED_IMAGE_ID` 캡처 + `--force-recreate` + digest 어서트를
+동일하게 적용하여 롤백 중에도 drift 가 재발하지 않도록 한다.
+
+**회귀 테스트**: `backend/tests/test_cd_atomic_deploy.py` 가 `cd.yml` 을 정적
+파싱하여 위 다섯 항목의 문자열 존재를 어서트한다. 누구든 실수로 `--force-recreate`
+나 digest 비교를 제거하면 CI 가 즉시 실패한다. 이는 CLAUDE.md 의 RBAC Wiring
+Rule("정의 ≠ 적용") 을 CD 도메인에 확장한 것이다.
 
 ### 4.2 우선순위 P0 — scheduler healthcheck 분리 (별도 커밋)
 
