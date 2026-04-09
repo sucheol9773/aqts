@@ -17,7 +17,10 @@ post_deploy_smoke.sh 정적 회귀 테스트.
 
 강제 항목:
     * C1: aqts-backend / aqts-scheduler 두 컨테이너에 대한 Running check
-    * C2: backend ↔ scheduler digest 비교
+    * C2a: backend ↔ scheduler digest 비교
+    * C2b: 두 컨테이너의 org.opencontainers.image.revision 라벨이 서버
+      git HEAD 와 일치 — 2026-04-09 §4.7/§4.8 회귀(같은 구 digest 로 고정된
+      채 C2a 가 위양성 통과한 경로)에 대한 2차 방어선
     * C3: scheduler healthcheck 가 heartbeat 기반인지 확인 + legacy
       curl healthcheck 검출 브랜치 존재
     * C4: /tmp/scheduler.heartbeat mtime 비교 + max age env var
@@ -76,7 +79,10 @@ class TestContractC1Containers:
         assert "State.Running" in smoke_text, "Running 상태 검사 누락"
 
 
-class TestContractC2DigestMatch:
+class TestContractC2aDigestMatch:
+    def test_has_c2a_section_header(self, smoke_text: str) -> None:
+        assert "[C2a]" in smoke_text, "C2a 섹션 헤더가 없음 (C2 → C2a 재명명 누락)"
+
     def test_compares_backend_and_scheduler_image_digest(self, smoke_text: str) -> None:
         # backend / scheduler 의 .Image(digest) 를 각각 inspect 하고 비교해야 함.
         assert smoke_text.count("docker inspect --format='{{.Image}}' aqts-backend") >= 1
@@ -86,6 +92,47 @@ class TestContractC2DigestMatch:
             or "BACKEND_IMG" in smoke_text
             and "SCHEDULER_IMG" in smoke_text
         ), "digest 비교 식이 없음"
+
+
+class TestContractC2bRevisionLabel:
+    """C2b: OCI revision label ↔ 서버 git HEAD 교차 일치.
+
+    2026-04-09 §4.7/§4.8 회귀에서 두 컨테이너가 동일한 구 digest 로
+    고정되어 있어 C2a 는 drift 없음으로 위양성 통과했다. C2b 는
+    각 컨테이너의 ``org.opencontainers.image.revision`` 라벨(docker/
+    metadata-action 이 CI 빌드 시점 git SHA 로 주입)을 서버 git HEAD 와
+    비교하여 "새 이미지가 한 번도 기동되지 않은" 상태를 직접 검출한다.
+    """
+
+    def test_has_c2b_section_header(self, smoke_text: str) -> None:
+        assert "[C2b]" in smoke_text, "C2b 섹션 헤더 누락"
+
+    def test_reads_revision_label_from_both_containers(self, smoke_text: str) -> None:
+        assert "org.opencontainers.image.revision" in smoke_text
+        assert "BACKEND_REV" in smoke_text
+        assert "SCHEDULER_REV" in smoke_text
+        # 두 컨테이너 각각에 대해 라벨 조회가 존재해야 함.
+        assert smoke_text.count("org.opencontainers.image.revision") >= 2
+
+    def test_reads_server_git_head(self, smoke_text: str) -> None:
+        assert "SERVER_HEAD" in smoke_text
+        assert "rev-parse HEAD" in smoke_text
+        # AQTS_REPO_DIR 환경변수로 git 경로를 override 가능해야 함.
+        assert "AQTS_REPO_DIR" in smoke_text
+
+    def test_has_all_four_failure_branches(self, smoke_text: str) -> None:
+        # (1) 서버 HEAD 조회 실패
+        assert "서버 git HEAD 조회 실패" in smoke_text
+        # (2) 라벨 부재 (CI metadata-action 미구성)
+        assert "revision 라벨 부재" in smoke_text
+        # (3) 두 컨테이너 간 revision drift
+        assert "revision drift" in smoke_text
+        # (4) 컨테이너 revision 과 서버 HEAD 불일치 (force-recreate 누락)
+        assert "server drift" in smoke_text
+
+    def test_compares_backend_rev_to_server_head(self, smoke_text: str) -> None:
+        assert '"$BACKEND_REV" != "$SERVER_HEAD"' in smoke_text
+        assert '"$BACKEND_REV" != "$SCHEDULER_REV"' in smoke_text
 
 
 class TestContractC3HealthcheckConfig:

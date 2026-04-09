@@ -631,6 +631,23 @@ INFO  [alembic.runtime.migration] Will assume transactional DDL.
 
 또한 `doc-sync-check.yml` 의 `paths:` 트리거에 `scripts/**`, `.github/workflows/**` 를 포함시켜, 이 두 경로를 수정하는 PR 이 항상 가드를 통과해야 머지될 수 있게 했다. RBAC Wiring Rule 의 `check_rbac_coverage.py` 와 동일한 "정의 = 적용" 강제선 패턴이다.
 
+## 4.10 Post-deploy smoke C2 강화 — OCI revision label ↔ 서버 git HEAD 교차 체크
+
+§4.7/§4.8 회귀의 은폐 경로 중 하나는 "두 컨테이너가 동일한 **구** digest 로 고정된 채 새 이미지가 단 한 번도 기동되지 않은 상태" 였다. 이 상태에서 기존 C2 (backend ↔ scheduler digest 동일성) 은 참이 되어 통과했고 — 같은 구 digest 끼리 비교하므로 — C4 heartbeat 신선도가 간접적으로 드러내기 전까지 드리프트가 은폐됐다. C4 는 "scheduler 코드 자체의 문제" 와 "컨테이너가 교체되지 않은 문제" 를 구분할 수 없다.
+
+대응: `scripts/post_deploy_smoke.sh` 의 C2 를 **C2a / C2b 두 계약** 으로 분리했다.
+
+- **C2a (기존 강화)**: backend ↔ scheduler `.Image` digest 동일성. 여전히 동일 이미지 참조 drift 의 1차 방어선.
+- **C2b (신규)**: 두 컨테이너의 `org.opencontainers.image.revision` 라벨(`docker/metadata-action@v5` 가 CI 빌드 시점의 full git SHA 를 주입) 을 읽어서 서버가 이번 배포에서 `git reset --hard origin/main` 직후 확정한 `git HEAD` 와 비교한다. 네 가지 실패 모드:
+  1. 서버 git HEAD 조회 실패 (`AQTS_REPO_DIR` 기본값 `$HOME/aqts`)
+  2. 라벨 부재 — CI 의 `docker/metadata-action` 구성이 깨진 경우 (공급망 계약 위반)
+  3. backend ↔ scheduler revision drift
+  4. server drift — 컨테이너 revision 과 서버 HEAD 불일치 (force-recreate 누락 / §4.7·§4.8 재현 경로)
+
+C2b 는 C2a 가 통과해도 독립적으로 실패 가능하다. 두 컨테이너가 같은 구 digest 로 고정된 §4.7 상태에서는 revision label 도 구 SHA 로 고정되어 있으므로 서버 HEAD 와 다르다 — 즉 C2b (4) 브랜치가 즉시 실패한다. 이로써 "새 이미지가 한 번도 기동되지 않은" 사태를 post-deploy 단에서 즉시 검출할 수 있다.
+
+회귀 테스트: `backend/tests/test_post_deploy_smoke.py::TestContractC2aDigestMatch` (재명명) 와 `TestContractC2bRevisionLabel` (신규 5 케이스) 이 섹션 헤더, 라벨 조회, 서버 HEAD 비교, 네 실패 분기의 존재를 정적으로 강제한다.
+
 ## 참고
 
 - 수정 커밋: `a93fd8e fix(scheduler): 일일 리포트 중복/0원 회귀 — 멱등성 + 안전망 3종`
@@ -638,5 +655,6 @@ INFO  [alembic.runtime.migration] Will assume transactional DDL.
 - 본 문서 §4.7 의 CD 수정: `8fcd6c6 fix(ci): docker exec -i → docker exec </dev/null — SSH heredoc stdin 소진 차단`
 - 본 문서 §4.8 의 CD 수정: `43b388b fix(ci): docker compose run 에도 -T + </dev/null — SSH heredoc stdin 소진 차단 (part 2)`
 - 본 문서 §4.9 의 정적 가드: `chore(ci): check_cd_stdin_guard.py + 회귀 테스트 + Doc Sync 등록`
+- 본 문서 §4.10 의 C2b 교차 체크: `fix(ops): post_deploy_smoke C2 → C2a/C2b 분리 + OCI revision label 교차 체크`
 - 관련 문서: `docs/operations/scheduler-idempotency.md`
 - 사고 패턴 참조: `docs/security/security-integrity-roadmap.md` "정의 ≠ 적용" 항목군
