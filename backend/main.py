@@ -120,6 +120,29 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"AlertManager MongoDB 주입 실패 (in-memory 폴백): {e}")
 
+        # AlertManager 싱글톤에 NotificationRouter 주입 (Commit 2 wiring)
+        # Telegram → File → Console 캐스케이드. 어느 단계가 실패해도
+        # 알림 전송이 완전히 중단되지 않도록 다층 방어.
+        # set_collection 이후에 실행되어야 하며, router 주입에 실패해도
+        # 원인 이벤트 처리 경로에 영향을 주지 않기 위해 swallow.
+        try:
+            from api.routes.alerts import _alert_manager as _am_for_router
+            from core.notification.fallback_notifier import (
+                ConsoleNotifier,
+                FileNotifier,
+                NotificationRouter,
+            )
+            from core.notification.telegram_adapter import TelegramChannelAdapter
+
+            notification_router = NotificationRouter()
+            notification_router.add_channel(TelegramChannelAdapter(_am_for_router))
+            notification_router.add_channel(FileNotifier())
+            notification_router.add_channel(ConsoleNotifier())
+            _am_for_router.set_router(notification_router)
+            logger.info("NotificationRouter wired: telegram → file → console cascade")
+        except Exception as e:
+            logger.warning(f"NotificationRouter wiring 실패 (즉시 디스패치 비활성): {e}")
+
         await RedisManager.connect()
         logger.info("Redis connected successfully")
 

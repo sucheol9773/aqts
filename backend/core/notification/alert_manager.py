@@ -16,7 +16,7 @@ Phase 5: 알림 생성·관리·이력 조회
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 from uuid import uuid4
 
 from config.constants import AlertType
@@ -225,6 +225,10 @@ class AlertManager:
         """
         self._collection = mongo_collection
         self._in_memory_alerts: list[Alert] = []
+        # NotificationRouter 인스턴스 (lifespan 에서 set_router 로 주입).
+        # 순환 import 회피를 위해 타입은 Any 로 선언한다.
+        # 주입 여부가 곧 "즉시 디스패치 활성" 플래그 역할을 한다 (Commit 2).
+        self._router: Optional[Any] = None
 
     def set_collection(self, mongo_collection) -> None:
         """런타임에 MongoDB 컬렉션을 주입한다.
@@ -238,6 +242,22 @@ class AlertManager:
             f"AlertManager: MongoDB 컬렉션 주입 완료 ({'enabled' if mongo_collection is not None else 'disabled'})"
         )
 
+    def set_router(self, router: Optional[Any]) -> None:
+        """런타임에 NotificationRouter 를 주입한다 (Commit 2).
+
+        `set_collection` 과 동형의 setter. import 시점 싱글톤 패턴을 유지하기
+        위해 생성자 주입 대신 setter 를 사용한다.
+
+        주입 시점 이후 `create_and_persist_alert` 는 저장 직후 router 를 통해
+        즉시 디스패치를 수행한다. `None` 을 주입하면 디스패치 경로가 비활성화
+        되어 in-memory 또는 단순 영속화 경로만 동작한다 (테스트 격리 용도).
+
+        운영 중 재주입 가능 — 예를 들어 Telegram 토큰 로테이션 후 router 를
+        재조립하여 무중단으로 교체할 수 있다.
+        """
+        self._router = router
+        logger.info(f"AlertManager: NotificationRouter 주입 완료 ({'enabled' if router is not None else 'disabled'})")
+
     async def create_and_persist_alert(
         self,
         alert_type: AlertType,
@@ -248,9 +268,20 @@ class AlertManager:
     ) -> Alert:
         """알림을 생성하고, 컬렉션이 주입되어 있으면 MongoDB에 영속화한다.
 
-        - `_collection` 이 None 이면 in-memory 만 저장하고 반환 (회귀 동작 호환).
-        - `_collection` 이 있으면 `save_alert` 까지 호출하여 영속화한다.
-        - DB 쓰기 실패는 예외를 그대로 올린다 (호출자가 try/except 로 swallow 하도록).
+        Commit 2: router 가 주입되어 있으면 저장 직후 즉시 디스패치를 시도한다.
+
+        파이프라인 계약:
+          1. create_alert (in-memory) — 항상 실행
+          2. save_alert (MongoDB) — collection 주입 시
+          3. _dispatch_via_router — router 주입 시, 예외 swallow
+
+        예외 정책:
+          - DB 쓰기 실패는 그대로 raise (호출자가 try/except 로 swallow 하도록)
+          - router.dispatch 실패는 내부에서 swallow + FAILED 영속화
+            이유: 관찰성 채널 장애가 원인 이벤트(KIS 복원 실패 등) 처리 경로를
+            막으면 안 됨. NotificationRouter 가 이미 Telegram → File → Console
+            캐스케이드를 수행하므로 최소 한 채널까지는 도달함. FAILED 영속화는
+            Commit 3 의 스케줄러가 재픽업하여 at-least-once 보장.
         """
         alert = self.create_alert(
             alert_type=alert_type,
@@ -261,7 +292,61 @@ class AlertManager:
         )
         if self._collection is not None:
             await self.save_alert(alert)
+        if self._router is not None:
+            await self._dispatch_via_router(alert)
         return alert
+
+    async def _dispatch_via_router(self, alert: Alert) -> None:
+        """router 를 통해 alert 를 디스패치하고 상태 전이를 수행한다 (Commit 2).
+
+        흐름:
+          1. claim_for_sending(alert.id) 로 PENDING → SENDING 원자 전이.
+             실패(False) 시 dispatch 스킵 — 이미 다른 워커가 claim 했거나
+             상태가 PENDING 이 아닌 경우 (e.g. in-memory 모드에서 재호출).
+          2. router.dispatch(alert) await.
+          3. DispatchResult.success 에 따라 mark_sent_by_id 또는
+             mark_failed_with_retry 호출.
+          4. router.dispatch 자체가 예외를 raise 하면 그 예외 메시지로
+             mark_failed_with_retry 호출 후 swallow.
+
+        이 메서드는 예외를 raise 하지 않는다. 호출자(`create_and_persist_alert`)
+        의 계약을 유지하기 위함이다.
+        """
+        try:
+            claimed = await self.claim_for_sending(alert.id)
+            if not claimed:
+                logger.debug(f"dispatch skipped, alert not in PENDING state: {alert.id}")
+                return
+
+            try:
+                result = await self._router.dispatch(alert)
+            except Exception as exc:  # noqa: BLE001 — router 내부 예외 격리 필요
+                logger.warning(f"NotificationRouter.dispatch raised: alert_id={alert.id} error={exc}")
+                await self.mark_failed_with_retry(
+                    alert.id,
+                    error=str(exc),
+                    status_code=None,
+                )
+                return
+
+            if getattr(result, "success", False):
+                await self.mark_sent_by_id(alert.id)
+            else:
+                channels_tried = getattr(result, "channels_tried", [])
+                error_msg = f"all channels failed: {channels_tried}"
+                logger.warning(
+                    f"NotificationRouter.dispatch all channels failed: "
+                    f"alert_id={alert.id} channels={channels_tried}"
+                )
+                await self.mark_failed_with_retry(
+                    alert.id,
+                    error=error_msg,
+                    status_code=None,
+                )
+        except Exception as exc:  # noqa: BLE001 — 최상위 swallow 가드
+            # claim_for_sending / mark_* 자체가 예외를 낸 경우에도
+            # 원인 이벤트 처리 경로를 막지 않기 위해 최종 swallow.
+            logger.warning(f"_dispatch_via_router unexpected error: alert_id={alert.id} error={exc}")
 
     # ── 알림 생성 ──
     def create_alert(
