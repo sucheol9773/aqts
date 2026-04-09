@@ -25,7 +25,7 @@ Gate A (개발/QA) → Gate B (보안) → Gate C (리스크/운영) → Gate D 
 
 | 항목 | 기준 | 현재 상태 |
 |------|------|----------|
-| 단위 테스트 전체 통과 | pytest 0 failures | PASS (3,621건 통과) |
+| 단위 테스트 전체 통과 | pytest 0 failures | PASS (3,632건 통과) |
 | 코드 커버리지 | >= 80% | PASS (90%) |
 | 린트/포맷 검사 | ruff/black 위반 0건 | PASS (ruff 0.15.9 + black 26.3.1, 위반 0건) |
 | 의존성 취약점 | pip-audit critical 0건 | PASS (starlette CVE 해소, torch CPU 인덱스 설치로 2.6.0+ 적용 — Dockerfile 반영 완료) |
@@ -105,7 +105,7 @@ Gate A (개발/QA) → Gate B (보안) → Gate C (리스크/운영) → Gate D 
 ## 8. 현재 게이트 통과 현황
 
 ```
-Gate A: PASS (스트레스 테스트 28건 추가, 3,621건 통과, 90% 커버리지)
+Gate A: PASS (스트레스 테스트 28건 추가, 3,632건 통과, 90% 커버리지)
 Gate B: PASS (torch CVE 해소, 보안 전 항목 통과)
 Gate C: PASS (알림 채널 검증 + 백업 알림 구현 완료)
 Gate D: PASS (감사/보존/PII/리포트/비밀키 전 항목 통과, 97 tests)

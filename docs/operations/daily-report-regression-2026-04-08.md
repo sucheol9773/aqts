@@ -408,14 +408,30 @@ if snapshot_read_failed:
 이 변경으로 Apr 8 Report 1 과 정확히 같은 실패 모드(Redis read 실패 → 0 default
 → 리포트 송신)가 **현재 코드에서도** 일어나지 않도록 명시적으로 차단된다.
 
-### 4.5 우선순위 P1 — 배포 검증 smoke test
+### 4.5 우선순위 P1 — 배포 검증 smoke test  ✅ 2026-04-09 구현 완료
 
-배포 직후 다음을 자동 검증:
+**구현**: `scripts/post_deploy_smoke.sh` (commit 예정). CD 워크플로의
+`Post-deploy verification` step(Step 6 다음) 에서 자동 실행되며, 운영자가
+서버에서 수동으로도 재실행 가능하다.
 
-- `docker compose exec scheduler python -c 'from core.scheduler_idempotency import is_executed; print("ok")'`
-  로 import 경로 존재 확인 (코드 롤백 방지).
-- scheduler 컨테이너 로그에서 `load_executed_for_date` 문자열이 60초 안에
-  출력되는지 확인 (trading_scheduler.start 실행 확인).
+계약 (모두 0 tolerance, 하나라도 실패하면 exit 1):
+
+| ID | 항목 | 원인 대응 |
+|----|------|-----------|
+| C1 | `aqts-backend` / `aqts-scheduler` Running=true | — |
+| C2 | 두 컨테이너의 `.Image` digest 일치 | 원인 ① compose up -d drift |
+| C3 | `aqts-scheduler` 의 `Config.Healthcheck.Test` 가 `scheduler_heartbeat*` 참조 (legacy `curl /api/system/health` 검출 시 실패) | 원인 ② backend HEALTHCHECK 상속 |
+| C4 | `/tmp/scheduler.heartbeat` mtime age ≤ 120s (`SCHEDULER_HEARTBEAT_MAX_AGE_SEC` 로 조정 가능, 음수 age 도 실패) | scheduler 프로세스 liveness |
+| C5 | `GET /api/system/health` HTTP 200 | backend 기본 liveness |
+
+기존 아이디어(import 경로 확인, scheduler 로그 grep) 는 본 계약의 C3/C4 에
+흡수됐다. import 확인은 Dockerfile 에 이미 포함된 상태에서 `docker inspect`
+단계면 충분하고, `load_executed_for_date` 로그 grep 은 로그 rotation 타이밍
+의존성이 있어 플래키하므로 heartbeat 파일 mtime 으로 대체했다.
+
+회귀 테스트: `backend/tests/test_post_deploy_smoke.py` (11건) — 스크립트 본문과
+CD 워크플로 연결 지점을 정적으로 강제. 계약을 약화시키는 방향의 수정은
+반드시 본 테스트도 함께 수정해야 한다.
 
 ### 4.4 우선순위 P2 — 운영 서버 `.env` 정리 (운영자 수동 작업)
 
@@ -439,7 +455,7 @@ if snapshot_read_failed:
 - [ ] (P0) `docker-compose.yml` scheduler healthcheck 분리 커밋 (+ heartbeat 구현)
 - [ ] (P1) `handle_post_market` yesterday read 강화 커밋 (§4.3)
 - [ ] (P1) `handle_post_market` read 예외 경로 명시적 skip 커밋 (§4.4)
-- [ ] (P1) 배포 smoke test 스크립트 추가 (§4.5)
+- [x] (P1) 배포 smoke test 스크립트 추가 (§4.5, 2026-04-09 커밋 예정)
 - [ ] (P2) 운영 서버 `.env` 정리 (수동 작업)
 
 ## 참고

@@ -310,6 +310,13 @@ jobs:
             fi
             echo "✅ backend ↔ scheduler 동일 digest 확인"
 
+            echo "═══ Post-deploy smoke test ═══"
+            # scripts/post_deploy_smoke.sh 는 git reset --hard 단계(Step 1)에서
+            # 이미 서버에 동기화되어 있다. 본 smoke 는 heartbeat 신선도,
+            # scheduler healthcheck 구성 정합성 등 docker inspect 만으로는
+            # 잡히지 않는 2026-04-08 회귀 contract 를 최종 강제한다.
+            bash scripts/post_deploy_smoke.sh
+
             echo "✅ All verification checks passed"
           VERIFY_SCRIPT
 
