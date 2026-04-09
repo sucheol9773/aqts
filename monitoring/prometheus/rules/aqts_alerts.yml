@@ -206,11 +206,16 @@ groups:
   # 6. KIS 자동 복원 (KIS Recovery)
   # ─────────────────────────────────────
   #
-  # 앱 내부 알림(backend/main.py → AlertManager)과 이중화된 인프라 레벨 알림.
-  # 앱 프로세스가 다운되어 in-app 알림이 발송되지 못하는 상황에서도 Prometheus
-  # 는 /metrics scrape 를 통해 상태를 감지할 수 있다.
+  # 운영자에게 도달하는 유일한 알림 경로다. `backend/main.py` 의
+  # `_kis_alert_callback` → `AlertManager.create_and_persist_alert` 는 현재
+  # MongoDB 영속화까지만 수행하고 Telegram/webhook 과 wiring 되어 있지 않다
+  # (docs/operations/alerting-audit-2026-04.md §0, §2 참조). 따라서 이 그룹의
+  # 룰이 Prometheus → AlertManager → Telegram 체인으로 발화되는 것이 운영자
+  # 알림의 유일한 in-band 경로다. wiring 복구 전까지 이 룰은 단일 장애점이다.
   #
-  # 관련 문서: docs/operations/kis-degraded-recovery.md
+  # 관련 문서:
+  #   - docs/operations/kis-degraded-recovery.md
+  #   - docs/operations/alerting-audit-2026-04.md
   - name: aqts_kis_recovery
     rules:
       - alert: KISDegraded
@@ -230,7 +235,7 @@ groups:
           severity: critical
         annotations:
           summary: "KIS API degraded 10분 이상 지속"
-          description: "자동 복원이 10분 이상 실패. 운영자가 KIS appkey/appsecret, 레이트리밋 상태를 직접 확인해야 함. 앱 내부 알림(SYSTEM_ERROR)도 동시에 발송되었어야 함."
+          description: "자동 복원이 10분 이상 실패. 운영자가 KIS appkey/appsecret, 레이트리밋 상태를 직접 확인해야 함. 본 Prometheus 경로가 유일한 운영자 알림 경로다 (앱 내부 AlertManager 는 Mongo 영속화 전용이며 Telegram 과 wiring 되어 있지 않음 — docs/operations/alerting-audit-2026-04.md §0, §2)."
           runbook: "docs/operations/kis-degraded-recovery.md"
 
       - alert: KISRecoveryAttemptsSpike

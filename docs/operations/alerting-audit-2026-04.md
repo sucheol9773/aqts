@@ -138,7 +138,7 @@ await _alert_manager.create_and_persist_alert(
 
 2.2 에서 확인한 대로 `_alert_manager.create_and_persist_alert` 는 MongoDB 영속화와 in-memory 저장만 수행하고 Telegram 으로는 발송하지 않는다. 즉, **"KIS API 자동 복원 연속 실패" 알림은 6개월간 DB 에는 기록됐을 수 있으나 운영자의 Telegram 에는 단 한 번도 도착한 적이 없다**. alertmanager 경로도 같은 기간 사일런트 실패였으므로, 해당 이벤트에 대한 운영자 알림 경로는 양쪽 모두 공백이었다.
 
-`aqts_alerts.yml` §6 의 주석("앱 내부 알림(backend/main.py → AlertManager)과 이중화된 인프라 레벨 알림") 은 기술적으로 **절반만 사실**이다. main.py → AlertManager 경로는 존재하지만, AlertManager → Telegram 경로가 존재하지 않는다.
+`aqts_alerts.yml` §6 의 주석은 본 감사 이전까지 "앱 내부 알림(backend/main.py → AlertManager)과 이중화된 인프라 레벨 알림" 이라고 표기되어 있었으나 이는 기술적으로 **절반만 사실**이다 — main.py → AlertManager 경로는 존재하지만 AlertManager → Telegram 경로가 존재하지 않는다. 동일한 오기가 `KISDegradedProlonged` 룰의 description "앱 내부 알림(SYSTEM_ERROR)도 동시에 발송되었어야 함" 에도 있었다. 본 감사 후속으로 두 문구 모두 "Prometheus 경로가 유일한 운영자 알림 경로이며 AlertManager 는 Mongo 영속화 전용" 으로 정정됐다 (본 문서 §5 후속 액션 참조).
 
 ### 2.4 scheduler_handlers.py 의 POST_MARKET 일일 리포트 — 정상
 
