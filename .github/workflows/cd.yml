@@ -163,16 +163,31 @@ jobs:
             # upgrade 를 진행한다. 판별 매트릭스는 각 마이그레이션 파일을 직접 grep
             # 으로 검증한 결과를 코드화한 것이다 (002→roles/users, 003→order_idempotency_keys,
             # 004→users.role_version 컬럼, 005→portfolio_positions).
-            HAS_VER=$(docker exec -i aqts-postgres bash -c '
+            # 2026-04-09 회귀 (a48c4c8/6500bcb/051c453): 과거 이 줄은
+            # `docker exec -i` 를 사용했는데, `ssh -T ... bash -s << 'DEPLOY'`
+            # 컨텍스트에서 `bash -s` 는 heredoc 을 stdin 으로 스트리밍하며
+            # 한 줄씩 파싱한다. `-i` 로 실행된 docker exec 은 부모 bash 의
+            # fd 0 을 상속받아 heredoc 의 나머지 전체를 소비해버리므로,
+            # 이 줄 이후의 Step 5c (alembic), 5d (force-recreate),
+            # 5e (digest assert), Step 6 (health) 이 한 줄도 실행되지
+            # 않은 채 bash 가 EOF 로 clean exit 했다. 외부에서는
+            # `Deploy to server ✓ 9s` 로만 보여 드리프트가 은폐되었고,
+            # Step 5e 의 어설션도 애초에 실행되지 않았으므로
+            # "정의했다 ≠ 적용했다" 가 RBAC Wiring Rule 과 동일한 형태로
+            # CD 파이프라인에서 재현됐다.
+            # 재발 방지: 비대화형 exec 에는 `-i` 를 쓰지 않고, 방어적으로
+            # `< /dev/null` 로 stdin 을 명시 격리한다. 아래 모든
+            # `docker exec` 호출에 동일 패턴을 적용한다.
+            HAS_VER=$(docker exec aqts-postgres bash -c '
               psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "
                 SELECT 1 FROM information_schema.tables
                  WHERE table_schema = '"'"'public'"'"' AND table_name = '"'"'alembic_version'"'"';
-              "' | tr -d '[:space:]')
+              "' </dev/null | tr -d '[:space:]')
             if [ "$HAS_VER" = "1" ]; then
               echo "alembic_version exists → skip baseline stamp"
             else
               echo "alembic_version 부재 → 스키마 관찰 후 baseline 결정"
-              SCHEMA=$(docker exec -i aqts-postgres bash -c '
+              SCHEMA=$(docker exec aqts-postgres bash -c '
                 psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "
                   SELECT
                     (SELECT COUNT(*) FROM information_schema.tables
@@ -185,7 +200,7 @@ jobs:
                        WHERE table_schema='"'"'public'"'"' AND table_name='"'"'users'"'"' AND column_name='"'"'role_version'"'"'),
                     (SELECT COUNT(*) FROM information_schema.tables
                        WHERE table_schema='"'"'public'"'"' AND table_name='"'"'portfolio_positions'"'"');
-                "')
+                "' </dev/null)
               # SCHEMA 형식: "n1|n2|n3|n4|n5"
               IFS='|' read -r HAS_OHLCV HAS_USERS HAS_IDEMP HAS_ROLEVER HAS_PORTFOLIO <<< "$(echo "$SCHEMA" | tr -d '[:space:]')"
               echo "schema observed: ohlcv=$HAS_OHLCV users=$HAS_USERS idemp=$HAS_IDEMP role_ver=$HAS_ROLEVER portfolio=$HAS_PORTFOLIO"
