@@ -313,8 +313,26 @@ jobs:
             fi
 
             echo "═══ Version Check ═══"
-            DEPLOYED_SHA=\$(git rev-parse --short HEAD)
-            echo "Deployed commit: \$DEPLOYED_SHA"
+            # 2026-04-09 §4.10: "Deployed commit" 은 git HEAD 가 아니라
+            # **실제로 실행 중인 backend 컨테이너의 revision label** 에서
+            # 읽는다. §4.7/§4.8 회귀에서는 서버 git 은 새 SHA 로 reset 된
+            # 상태였지만 컨테이너는 구 이미지로 고정되어 있었고, git HEAD
+            # 를 찍는 기존 로그는 "새 커밋이 배포됐다" 는 위양성을 만들었다.
+            # 컨테이너 라벨은 CI 빌드 시점의 git SHA 이므로 실제 실행
+            # 이미지와 1:1 로 묶인다. 라벨 부재는 CI metadata-action 구성
+            # 위반이므로 즉시 실패시킨다.
+            DEPLOYED_SHA=\$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' aqts-backend 2>/dev/null || echo "")
+            if [ -z "\${DEPLOYED_SHA}" ]; then
+              echo "❌ aqts-backend 에 org.opencontainers.image.revision 라벨이 없음 — CI metadata-action 구성 확인 필요"
+              exit 1
+            fi
+            SERVER_SHA=\$(git rev-parse HEAD)
+            echo "Deployed commit:  \${DEPLOYED_SHA:0:12} (from container label)"
+            echo "Server git HEAD:  \${SERVER_SHA:0:12}"
+            if [ "\${DEPLOYED_SHA}" != "\${SERVER_SHA}" ]; then
+              echo "❌ server drift: 컨테이너 revision 이 서버 git HEAD 와 다름 (force-recreate 누락 가능성)"
+              exit 1
+            fi
 
             echo "═══ Atomic Digest Cross-Check (backend ↔ scheduler) ═══"
             # 배포 단계의 Step 5e 와 독립적으로, verify 단계에서도 두 컨테이너가
