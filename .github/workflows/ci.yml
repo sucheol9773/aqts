@@ -286,6 +286,10 @@ jobs:
             type=semver,pattern={{version}}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
+      - name: Compute apt upgrade date (cache-bust)
+        id: apt_date
+        run: echo "today=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
       - name: Build & push backend image
         id: build
         uses: docker/build-push-action@v6
@@ -299,6 +303,10 @@ jobs:
           cache-to: type=gha,mode=max
           provenance: true
           sbom: true
+          # apt 레이어만 일(day)-단위로 cache-bust — debian 보안 피드(deb12uX)
+          # 흡수 보장. pip/torch 등 상위 레이어 캐시는 유지된다.
+          build-args: |
+            APT_UPGRADE_DATE=${{ steps.apt_date.outputs.today }}
 
       # ── 빌드된 이미지 기본 검증 (non-root, healthcheck) ──
       - name: Verify image attributes

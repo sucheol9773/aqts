@@ -96,3 +96,29 @@ cosign download attestation "${IMAGE_REF}" \
 - (B) SBOM/SCA 만 추가하고 서버 빌드 유지. 변경 폭 작지만 "서명한 이미지가 실제 배포되는지" 보장 불가.
 
 A 를 선택했다. 이유: SBOM/서명을 만들어도 실제로 배포되는 산출물이 다르면 통제가 형식적이 된다. 빌드/검증/실행이 동일 digest 를 따라가는 단일 흐름이 엔터프라이즈 통제의 본질이다.
+
+## 8. 회고 — 2026-04-09 CVE-2026-31790 (apt 레이어 cache 재사용)
+
+### 증상
+CI `Grype Scan backend image (fail on High/Critical)` 단계가 High 2건으로 실패:
+
+```
+High  libssl3  3.0.18-1~deb12u2  3.0.19-1~deb12u2  CVE-2026-31790
+High  openssl  3.0.18-1~deb12u2  3.0.19-1~deb12u2  CVE-2026-31790
+```
+
+### 원인
+`backend/Dockerfile` 의 builder/runtime stage 양쪽에 이미 `apt-get update && apt-get upgrade -y` 가 있었음에도 불구하고, `.github/workflows/ci.yml` 의 `docker/build-push-action@v6` 가 `cache-from: type=gha` 로 **apt upgrade RUN 레이어를 재사용**했다. 그 결과 deb12u3 보안 피드가 흡수되지 않고 구 버전(3.0.18-1~deb12u2) 이 그대로 포함됐다.
+
+핵심 오독: "Dockerfile 에 `apt-get upgrade` 를 넣었으므로 OS 패치는 흡수된다" 는 가정은 **레이어 캐시가 없을 때만** 성립한다. buildx gha cache 를 쓰면 RUN 문자열이 동일한 이상 레이어가 재사용되고, debian 보안 피드 업데이트는 반영되지 않는다. 이는 supply-chain 도메인의 Wiring Rule — "정의했다(Dockerfile에 upgrade 가 있다) ≠ 적용됐다(빌드 시점에 실제로 apt 가 돌았다)" — 와 같은 구조다.
+
+### Fix
+apt 레이어에만 **일(day)-단위 cache-bust build-arg** 를 주입한다. pip/torch 등 상위 레이어 캐시는 유지되어 빌드 시간 impact 가 거의 없다.
+
+- `backend/Dockerfile`: builder/runtime stage 양쪽에 `ARG APT_UPGRADE_DATE=unknown` 선언 + apt RUN 블록 첫 줄에 `echo "apt-upgrade-date=${APT_UPGRADE_DATE}"` 추가. ARG 참조가 RUN 문자열에 포함되어야 레이어 해시가 날짜별로 달라진다.
+- `.github/workflows/ci.yml`: `Compute apt upgrade date (cache-bust)` step 을 추가해 `date -u +%Y-%m-%d` 출력을 `steps.apt_date.outputs.today` 로 노출하고, `docker/build-push-action` 의 `build-args:` 에 `APT_UPGRADE_DATE=${{ steps.apt_date.outputs.today }}` 로 전달한다.
+- `backend/tests/test_dockerfile_apt_cachebust.py`: 두 stage 의 ARG 선언, apt RUN 의 변수 참조, ci.yml 의 build-arg 주입을 정적으로 강제하는 회귀 테스트 6건 추가.
+
+### 운영 원칙 업데이트
+- **새 base image / Dockerfile 변경 시** 체크리스트에 다음을 추가한다: "apt 레이어 cache-bust 메커니즘이 여전히 작동하는지 확인" (ARG 이름 변경, RUN 문자열에서 참조 제거 등은 회귀). 회귀 테스트(`test_dockerfile_apt_cachebust.py`) 가 이를 정적 검사로 잡는다.
+- CVE 게이트 실패 → 첫 반응은 **화이트리스트 확장이 아니라 fix 버전 흡수 경로 점검**이다. 본 건은 fix 버전(`3.0.19-1~deb12u2`) 이 이미 upstream 에 있었고 단순히 캐시 재사용으로 인해 흡수되지 못한 케이스였다. 화이트리스트는 fix 가 없거나 fix 일정이 잡힌 경우의 마지막 수단이어야 한다.

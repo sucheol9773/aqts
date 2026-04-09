@@ -347,7 +347,7 @@
 ## Test Coverage Summary
 
 ```
-Total Tests: 3,615 tests (413 smoke-marked) — ALL PASS, Coverage 90%
+Total Tests: 3,621 tests (413 smoke-marked) — ALL PASS, Coverage 90%
 ├── Core Features: 40+ modules with passing tests
 ├── Data Contracts: 154 tests (9 contracts) [smoke]
 ├── Pipeline Gates: 59 tests (12 components)

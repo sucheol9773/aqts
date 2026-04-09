@@ -7,7 +7,12 @@
 FROM python:3.11-slim-bookworm AS builder
 
 # OS 패키지 + 보안 패치 일괄 적용 (deb12u 보안 피드 흡수)
-RUN apt-get update \
+# APT_UPGRADE_DATE 는 CI 에서 오늘 날짜(YYYY-MM-DD)로 주입되어 apt 레이어를
+# 일(day)-단위로 cache-bust 한다. pip/torch 레이어 캐시는 유지하면서
+# debian 보안 피드(deb12uX)는 하루 1회 확실히 흡수된다.
+ARG APT_UPGRADE_DATE=unknown
+RUN echo "apt-upgrade-date=${APT_UPGRADE_DATE}" \
+    && apt-get update \
     && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends \
        build-essential \
@@ -50,7 +55,10 @@ FROM python:3.11-slim-bookworm
 LABEL maintainer="AQTS Project"
 
 # OS 패키지 보안 패치 흡수 + 런타임 의존성만 설치 (build-essential 제외)
-RUN apt-get update \
+# runtime stage 도 동일하게 APT_UPGRADE_DATE 로 apt 레이어만 cache-bust.
+ARG APT_UPGRADE_DATE=unknown
+RUN echo "apt-upgrade-date=${APT_UPGRADE_DATE}" \
+    && apt-get update \
     && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends \
        libpq5 \
