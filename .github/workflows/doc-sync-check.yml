@@ -10,14 +10,16 @@ on:
       - 'backend/**'
       - 'docs/**'
       - 'README.md'
-      - 'scripts/check_doc_sync.py'
+      - 'scripts/**'
+      - '.github/workflows/**'
   pull_request:
     branches: [main, develop]
     paths:
       - 'backend/**'
       - 'docs/**'
       - 'README.md'
-      - 'scripts/check_doc_sync.py'
+      - 'scripts/**'
+      - '.github/workflows/**'
 
 jobs:
   doc-sync:
@@ -41,3 +43,10 @@ jobs:
 
       - name: Run RBAC coverage check
         run: python scripts/check_rbac_coverage.py
+
+      - name: Run CD stdin guard check
+        # SSH heredoc 컨텍스트에서 자식 프로세스가 부모 bash 의 fd 0 을 소진해
+        # 이후 라인이 조용히 스킵되는 회귀를 막는다. 2026-04-09 daily report
+        # regression §4.7 (docker exec -i) 와 §4.8 (-T 없는 docker compose run)
+        # 두 건의 CD 회귀에 대한 정적 방어선이다.
+        run: python scripts/check_cd_stdin_guard.py

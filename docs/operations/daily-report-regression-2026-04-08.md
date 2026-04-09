@@ -608,11 +608,35 @@ INFO  [alembic.runtime.migration] Will assume transactional DDL.
 
 본 수정이 옳았는지는 푸시 후 4번이 통과할 때에만 확정된다. 또 다른 stdin-consuming 자식이 숨어 있을 가능성을 원천 배제할 수는 없으므로, 1번(헤더 출력) 을 첫 번째 관찰 지표로 삼고, 실패 시 동일 관찰 우선 원칙으로 다음 후보 명령을 좁혀 간다.
 
+### 검증 결과 (2026-04-09, `43b388b` 배포)
+
+위 계획대로 `43b388b` 가 푸시된 뒤 CD 가 다시 돌았고, 관찰 지표 네 가지가 모두 통과했다.
+
+- Deploy to server 로그에 Step 5d / 5e / 6 헤더가 실제로 출력되었다 (직전 두 사이클 동안 단 한 번도 찍히지 않던 라인).
+- Step 5e 의 `BACKEND_IMAGE_ID`, `SCHEDULER_IMAGE_ID` 가 `EXPECTED_IMAGE_ID=sha256:bed9c976...` 와 일치 — backend/scheduler 두 컨테이너가 드디어 새 digest 로 교체됐다.
+- Step 6 Backend health 22s 에 통과.
+- Post-deploy smoke 전 계약 통과 (C4 heartbeat 신선도 포함), Telegram ComponentUnhealthy / NoTrafficReceived 알림도 자동 해제되었다.
+
+이로써 `a48c4c8` 에서 설계한 백그라운드 heartbeat task 가 이 재생성 사이클에서 처음 실제로 기동되었음이 확인되었고, `docker compose run` 의 기본값 stdin attach 경로가 차단되었음이 실측으로 확정됐다.
+
+## 4.9 정적 가드 — `scripts/check_cd_stdin_guard.py` 도입
+
+§4.7 / §4.8 두 사이클 연속 회귀의 공통 원인은 "규칙은 문서화되었지만 기계적 강제선이 없다" 였다. 2026-04-09 에 `docker exec -i` 금지 규칙이 존재하던 상태에서 `docker compose run` 기본값 경로가 그대로 열려 있었다. 규칙을 사람이 기억해 적용하는 구조로는 "같은 병 다른 환자" 를 막을 수 없다.
+
+대응: `scripts/check_cd_stdin_guard.py` 정적 검사기를 추가하고 Doc Sync 워크플로에 등록했다. 본 가드의 설계 원칙은 다음 세 가지다.
+
+1. **범위 정확성**: `.github/workflows/*.yml` 과 `scripts/**/*.sh` 의 **서브쉘 heredoc 내부** 에서만 차단 패턴을 검사한다. heredoc 바깥의 동일 패턴(예: 로컬 `pre_deploy_check.sh` 의 `docker run whoami`, CI 의 독립 `docker run prom/alertmanager check-config`) 은 stdin 소진 위험이 원천 없으므로 flag 하지 않는다. "보수적으로 다 금지" 로 가면 오탐이 쌓여 가드가 비활성화된다.
+2. **차단 패턴**: `docker exec -i` / `--interactive`, `kubectl exec -i` / `--stdin`, `-T` 없는 `docker compose run`(구 표기 `docker-compose` 포함), `-T` 없는 전경 `docker run`(`-d` 제외). 백슬래시 라인 연속은 한 논리 라인으로 합쳐서 검사한다.
+3. **회귀 테스트**: `backend/tests/test_check_cd_stdin_guard.py` 가 회귀 사례 1, 2 에 대한 positive test (heredoc 내부 → flag) 와 negative test (heredoc 밖 / `-T` + `</dev/null` 수정판 → pass) 양쪽을 19개 케이스로 고정한다. 가드의 규칙이 완화되어 과거 회귀를 잡지 못하게 되면 테스트가 실패한다.
+
+또한 `doc-sync-check.yml` 의 `paths:` 트리거에 `scripts/**`, `.github/workflows/**` 를 포함시켜, 이 두 경로를 수정하는 PR 이 항상 가드를 통과해야 머지될 수 있게 했다. RBAC Wiring Rule 의 `check_rbac_coverage.py` 와 동일한 "정의 = 적용" 강제선 패턴이다.
+
 ## 참고
 
 - 수정 커밋: `a93fd8e fix(scheduler): 일일 리포트 중복/0원 회귀 — 멱등성 + 안전망 3종`
 - 후속 수정: `a48c4c8 fix(scheduler): heartbeat 을 독립 백그라운드 태스크로 분리` (§4.6, 코드 자체의 수정은 올바르나 CD 가 이 이미지를 실행시킨 적이 없어 검증되지 못한 채 rollback 됨)
 - 본 문서 §4.7 의 CD 수정: `8fcd6c6 fix(ci): docker exec -i → docker exec </dev/null — SSH heredoc stdin 소진 차단`
-- 본 문서 §4.8 의 CD 수정: `fix(ci): docker compose run 에도 -T + </dev/null — SSH heredoc stdin 소진 차단 (part 2)`
+- 본 문서 §4.8 의 CD 수정: `43b388b fix(ci): docker compose run 에도 -T + </dev/null — SSH heredoc stdin 소진 차단 (part 2)`
+- 본 문서 §4.9 의 정적 가드: `chore(ci): check_cd_stdin_guard.py + 회귀 테스트 + Doc Sync 등록`
 - 관련 문서: `docs/operations/scheduler-idempotency.md`
 - 사고 패턴 참조: `docs/security/security-integrity-roadmap.md` "정의 ≠ 적용" 항목군
