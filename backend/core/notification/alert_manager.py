@@ -36,12 +36,35 @@ class AlertLevel(str, Enum):
 
 
 class AlertStatus(str, Enum):
-    """알림 상태"""
+    """알림 상태.
+
+    상태 전이 (Commit 1 에서 SENDING/DEAD 추가):
+        PENDING  → SENDING (claim_for_sending, atomic)
+        SENDING  → SENT    (mark_sent_by_id)
+        SENDING  → FAILED  (mark_failed_with_retry, attempts < max)
+        SENDING  → DEAD    (mark_failed_with_retry, attempts >= max)
+        FAILED   → PENDING (스케줄러 재픽업, Commit 3 에서 구현)
+        *        → READ    (mark_alert_read, 운영자 확인)
+
+    DEAD 는 최대 재시도 초과 상태로, 메타알림(`AlertPipelineFailureRate`)의
+    1차 타겟이자 운영자 수동 개입이 필요한 terminal 상태다.
+    """
 
     PENDING = "PENDING"  # 발송 대기
+    SENDING = "SENDING"  # 발송 중 (atomic claim, race 방지)
     SENT = "SENT"  # 발송 완료
-    FAILED = "FAILED"  # 발송 실패
+    FAILED = "FAILED"  # 일시 실패 (재시도 대상)
+    DEAD = "DEAD"  # 최대 재시도 초과 (운영자 수동 개입 필요)
     READ = "READ"  # 확인됨
+
+
+# ══════════════════════════════════════
+# 상수 (재시도/에러 길이)
+# ══════════════════════════════════════
+# 알림 발송 실패 시 `last_send_error` 에 기록할 최대 문자열 길이.
+# 텔레그램 메시지 한계(4096자) 및 Mongo 인덱스 효율을 고려한 값.
+# 향후 운영 관찰에 따라 조정 가능하도록 모듈 상수로 분리.
+MAX_ALERT_ERROR_LEN = 500
 
 
 # ══════════════════════════════════════
@@ -61,6 +84,15 @@ class Alert:
     sent_at: Optional[datetime] = None
     read_at: Optional[datetime] = None
     metadata: dict = field(default_factory=dict)
+    # ── 재시도 추적 (Commit 1 신규) ──
+    # metadata dict 에 넣지 않고 1급 필드로 올린 이유:
+    #   (a) MongoDB 쿼리 필터(`send_attempts: {$lt: N}`)에서 직접 사용
+    #   (b) 타입 안정성
+    #   (c) Prometheus 라벨로 직접 노출되는 값
+    send_attempts: int = 0
+    last_send_error: Optional[str] = None
+    last_send_attempt_at: Optional[datetime] = None
+    last_send_status_code: Optional[int] = None
 
     def to_dict(self) -> dict:
         """직렬화 가능한 딕셔너리 반환"""
@@ -75,6 +107,10 @@ class Alert:
             "sent_at": self.sent_at.isoformat() if self.sent_at else None,
             "read_at": self.read_at.isoformat() if self.read_at else None,
             "metadata": self.metadata,
+            "send_attempts": self.send_attempts,
+            "last_send_error": self.last_send_error,
+            "last_send_attempt_at": (self.last_send_attempt_at.isoformat() if self.last_send_attempt_at else None),
+            "last_send_status_code": self.last_send_status_code,
         }
 
     def mark_sent(self) -> None:
@@ -369,11 +405,148 @@ class AlertManager:
 
     # ── 알림 저장 ──
     async def save_alert(self, alert: Alert) -> None:
-        """알림을 MongoDB에 저장"""
+        """알림을 MongoDB 에 upsert 저장 (id 기준, 멱등).
+
+        Commit 1 에서 `insert_one` → `update_one(upsert=True)` 로 전환.
+        기존 `insert_one` 은 `telegram_notifier.dispatch_alert` 및
+        `create_and_persist_alert` 경로에서 동일 id 로 중복 호출될 수 있어
+        중복 행을 만들 수 있었다. upsert 로 전환하여 멱등성을 보장한다.
+        """
         if self._collection is not None:
-            await self._collection.insert_one(alert.to_dict())
-            logger.debug(f"Alert saved to MongoDB: {alert.id}")
+            await self._collection.update_one(
+                {"id": alert.id},
+                {"$set": alert.to_dict()},
+                upsert=True,
+            )
+            logger.debug(f"Alert upserted to MongoDB: {alert.id}")
         # 메모리 모드에서는 이미 _in_memory_alerts에 저장됨
+
+    # ── 재시도 상태 전이 (Commit 1 신규) ──
+    async def claim_for_sending(self, alert_id: str) -> bool:
+        """PENDING → SENDING 원자적 전이 + send_attempts 증가.
+
+        다중 워커/스케줄러 환경에서 동일 Alert 가 중복 발송되는 것을
+        방지하기 위한 atomic claim. MongoDB 의 단일 document update 는
+        atomic 이 보장되므로 정확히 한 워커만 True 를 받는다.
+
+        Returns:
+            True:  claim 성공 (호출자가 발송 로직 진행)
+            False: 이미 다른 워커가 claim 했거나 상태가 PENDING 이 아님
+        """
+        now_iso = datetime.now(timezone.utc).isoformat()
+
+        if self._collection is not None:
+            result = await self._collection.update_one(
+                {"id": alert_id, "status": AlertStatus.PENDING.value},
+                {
+                    "$set": {
+                        "status": AlertStatus.SENDING.value,
+                        "last_send_attempt_at": now_iso,
+                    },
+                    "$inc": {"send_attempts": 1},
+                },
+            )
+            return result.modified_count == 1
+
+        # 메모리 모드: 단일 프로세스라 race 없음. 단순 검사.
+        for alert in self._in_memory_alerts:
+            if alert.id == alert_id and alert.status == AlertStatus.PENDING:
+                alert.status = AlertStatus.SENDING
+                alert.send_attempts += 1
+                alert.last_send_attempt_at = datetime.now(timezone.utc)
+                return True
+        return False
+
+    async def mark_sent_by_id(self, alert_id: str) -> bool:
+        """SENDING → SENT 전이. dispatch 성공 시 호출.
+
+        SENDING 상태가 아닌 Alert 는 전이하지 않고 False 반환
+        (이중 전이 방지).
+        """
+        now = datetime.now(timezone.utc)
+
+        if self._collection is not None:
+            result = await self._collection.update_one(
+                {"id": alert_id, "status": AlertStatus.SENDING.value},
+                {
+                    "$set": {
+                        "status": AlertStatus.SENT.value,
+                        "sent_at": now.isoformat(),
+                        "last_send_error": None,
+                    }
+                },
+            )
+            return result.modified_count == 1
+
+        for alert in self._in_memory_alerts:
+            if alert.id == alert_id and alert.status == AlertStatus.SENDING:
+                alert.status = AlertStatus.SENT
+                alert.sent_at = now
+                alert.last_send_error = None
+                return True
+        return False
+
+    async def mark_failed_with_retry(
+        self,
+        alert_id: str,
+        error: str,
+        status_code: Optional[int] = None,
+        max_attempts: int = 3,
+    ) -> AlertStatus:
+        """SENDING → FAILED(재시도 가능) 또는 DEAD(최대 초과) 전이.
+
+        경계: `send_attempts >= max_attempts` 이면 DEAD, 미만이면 FAILED.
+        `claim_for_sending` 이 이미 `$inc: 1` 을 적용했으므로 세 번째
+        시도 실패 시점의 `send_attempts` 값은 3 이고, 이는 gte 3 으로
+        DEAD 에 전이된다 ("3번 시도 후 포기" 의 직관).
+
+        Args:
+            alert_id: 대상 Alert id
+            error: 실패 사유 문자열 (MAX_ALERT_ERROR_LEN 자에서 절단)
+            status_code: HTTP 상태 코드 (해당하는 경우)
+            max_attempts: 최대 재시도 횟수 (기본 3)
+
+        Returns:
+            최종 상태 (FAILED 또는 DEAD). DEAD 로 전이된 경우 호출자가
+            메타알림/운영 로그 트리거를 수행해야 한다.
+        """
+        truncated_error = error[:MAX_ALERT_ERROR_LEN] if error else ""
+        now_iso = datetime.now(timezone.utc).isoformat()
+
+        if self._collection is not None:
+            doc = await self._collection.find_one({"id": alert_id})
+            if doc is None:
+                # 존재하지 않는 Alert 에 대한 실패 전이 요청 — 논리 오류.
+                # 호출자가 무시할 수 있도록 FAILED 를 반환하되 로그 남김.
+                logger.warning(f"mark_failed_with_retry: alert not found id={alert_id}")
+                return AlertStatus.FAILED
+
+            attempts = int(doc.get("send_attempts", 0))
+            new_status = AlertStatus.DEAD if attempts >= max_attempts else AlertStatus.FAILED
+            await self._collection.update_one(
+                {"id": alert_id},
+                {
+                    "$set": {
+                        "status": new_status.value,
+                        "last_send_error": truncated_error,
+                        "last_send_status_code": status_code,
+                        "last_send_attempt_at": now_iso,
+                    }
+                },
+            )
+            return new_status
+
+        for alert in self._in_memory_alerts:
+            if alert.id == alert_id:
+                new_status = AlertStatus.DEAD if alert.send_attempts >= max_attempts else AlertStatus.FAILED
+                alert.status = new_status
+                alert.last_send_error = truncated_error
+                alert.last_send_status_code = status_code
+                alert.last_send_attempt_at = datetime.now(timezone.utc)
+                return new_status
+
+        logger.warning(f"mark_failed_with_retry: alert not found in memory id={alert_id}")
+        return AlertStatus.FAILED
 
     async def get_alert_stats(self) -> dict:
         """알림 통계"""

@@ -3,15 +3,18 @@
 검증 대상 (CLAUDE.md Wiring Rule):
     - create_and_persist_alert 로 저장된 알림이 실제로 GET /api/alerts 조회 결과에 포함되는지
     - in-memory 폴백 경로 (컬렉션 미주입)
-    - MongoDB 경로 (컬렉션 주입, insert_one 이 호출되고 find cursor 가 소비됨)
+    - MongoDB 경로 (컬렉션 주입, update_one(upsert=True) 호출 + find cursor 소비)
     - AlertResponse 스키마에 실제 Alert 데이터가 매핑되는지 (status 필드 포함)
     - unread_count 가 올바르게 계산되는지
     - 필터 파라미터(alert_type, level) 가 동작하는지
     - /stats 엔드포인트가 by_level 분포를 올바르게 반환하는지
 
-이번 트랙에서 영속화 경로(create_and_persist_alert → MongoDB insert)가 반대편의
+이번 트랙에서 영속화 경로(create_and_persist_alert → MongoDB upsert)가 반대편의
 조회 경로(/api/alerts → get_alerts) 와 맞물려 끝에서 끝까지 동작하는지 한 번도
 통합 검증된 적이 없었다.
+
+Commit 1 (2026-04-10): save_alert 가 insert_one → update_one(upsert=True) 로
+전환됨에 따라 _FakeMongoCollection 도 update_one 인터페이스로 동기화.
 """
 
 from __future__ import annotations
@@ -63,15 +66,55 @@ class _AsyncCursorStub:
 
 
 class _FakeMongoCollection:
-    """insert_one 호출을 캡처하고 find 로 동일 문서를 돌려주는 단순 fake 컬렉션."""
+    """update_one(upsert=True) 호출을 캡처하고 find 로 동일 문서를 돌려주는
+    단순 fake 컬렉션.
+
+    Commit 1 에서 save_alert 가 update_one(upsert=True) 로 전환됨에 따라
+    동일 인터페이스를 fake 에서도 미러링한다. $set / $inc 를 간이 지원하여
+    Commit 3 의 `claim_for_sending` 테스트 재사용도 가능하도록 설계.
+    """
 
     def __init__(self):
         self._docs: list[dict] = []
-        self.insert_calls = 0
+        self.upsert_calls = 0
 
-    async def insert_one(self, doc):
-        self.insert_calls += 1
-        self._docs.append(doc)
+    async def update_one(self, filter, update, upsert=False):
+        """id 기준 upsert. $set / $inc 를 간이 지원."""
+        matched = None
+        for d in self._docs:
+            # 기본: id 매칭. status 조건이 붙어있으면 status 도 검사.
+            if "id" in filter and d.get("id") != filter["id"]:
+                continue
+            if "status" in filter and d.get("status") != filter["status"]:
+                continue
+            matched = d
+            break
+
+        modified = 0
+        if matched is not None:
+            if "$set" in update:
+                matched.update(update["$set"])
+                modified = 1
+            if "$inc" in update:
+                for k, v in update["$inc"].items():
+                    matched[k] = int(matched.get(k, 0)) + int(v)
+                modified = 1
+        elif upsert:
+            # 새 문서 생성. $set 을 기본으로 사용하고 filter 의 id 를 주입.
+            new_doc: dict = {}
+            if "id" in filter:
+                new_doc["id"] = filter["id"]
+            if "$set" in update:
+                new_doc.update(update["$set"])
+            if "$inc" in update:
+                for k, v in update["$inc"].items():
+                    new_doc[k] = int(v)
+            self._docs.append(new_doc)
+            modified = 1
+            self.upsert_calls += 1
+
+        # motor UpdateResult 모방: modified_count 속성만 사용됨
+        return _UpdateResult(modified_count=modified)
 
     def find(self, query=None):
         # 최소한의 필터 매칭: query 가 없으면 전체, alert_type/level 만 지원
@@ -90,6 +133,13 @@ class _FakeMongoCollection:
         if "level" in query:
             return len([d for d in self._docs if d["level"] == query["level"]])
         return len(self._docs)
+
+
+class _UpdateResult:
+    """motor UpdateResult 모방 (modified_count 만 사용)."""
+
+    def __init__(self, modified_count: int):
+        self.modified_count = modified_count
 
 
 def _override_viewer():
@@ -218,7 +268,8 @@ class TestAlertsRouteE2E(unittest.TestCase):
     # ── MongoDB 경로 ──
 
     def test_mongodb_persist_then_list_returns_same_alert(self):
-        """컬렉션 주입 상태에서 insert_one 호출 + find 경로 소비가 끝에서 끝까지 동작."""
+        """컬렉션 주입 상태에서 update_one(upsert=True) 호출 + find 경로
+        소비가 끝에서 끝까지 동작."""
         import asyncio
 
         manager = AlertManager()
@@ -234,8 +285,8 @@ class TestAlertsRouteE2E(unittest.TestCase):
                 metadata={"consecutive_failures": 10},
             )
         )
-        # 영속화 확인
-        assert fake_collection.insert_calls == 1
+        # 영속화 확인 (upsert 신규 생성)
+        assert fake_collection.upsert_calls == 1
 
         self._inject(manager)
 

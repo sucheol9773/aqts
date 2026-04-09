@@ -38,10 +38,16 @@ async def test_create_and_persist_without_collection_falls_back_to_memory():
 
 
 @pytest.mark.asyncio
-async def test_create_and_persist_with_collection_calls_insert_one():
+async def test_create_and_persist_with_collection_calls_upsert():
+    """create_and_persist_alert 가 save_alert → update_one(upsert=True) 를
+    호출하는지 검증.
+
+    Commit 1 에서 `save_alert` 를 `insert_one` → `update_one(upsert=True)`
+    로 전환했다. 운영 코드가 중복 호출되어도 동일 id 에 대해 멱등 보장.
+    """
     manager = AlertManager()
     fake_collection = AsyncMock()
-    fake_collection.insert_one = AsyncMock()
+    fake_collection.update_one = AsyncMock()
     manager.set_collection(fake_collection)
 
     alert = await manager.create_and_persist_alert(
@@ -52,13 +58,20 @@ async def test_create_and_persist_with_collection_calls_insert_one():
         metadata={"consecutive_failures": 3},
     )
 
-    fake_collection.insert_one.assert_awaited_once()
-    inserted_doc = fake_collection.insert_one.await_args.args[0]
+    fake_collection.update_one.assert_awaited_once()
+    call_args = fake_collection.update_one.await_args
+    # filter: id 기준
+    assert call_args.args[0] == {"id": alert.id}
+    # $set 문서 내용 검증
+    assert "$set" in call_args.args[1]
+    inserted_doc = call_args.args[1]["$set"]
     assert inserted_doc["id"] == alert.id
     assert inserted_doc["alert_type"] == AlertType.SYSTEM_ERROR.value
     assert inserted_doc["level"] == AlertLevel.CRITICAL.value
     assert inserted_doc["title"] == "KIS down"
     assert inserted_doc["metadata"]["consecutive_failures"] == 3
+    # upsert 옵션
+    assert call_args.kwargs.get("upsert") is True
     # in-memory 도 함께 보관 (조회 폴백 지원)
     assert len(manager._in_memory_alerts) == 1
 
@@ -67,7 +80,7 @@ async def test_create_and_persist_with_collection_calls_insert_one():
 async def test_create_and_persist_propagates_db_error():
     manager = AlertManager()
     fake_collection = AsyncMock()
-    fake_collection.insert_one = AsyncMock(side_effect=RuntimeError("mongo down"))
+    fake_collection.update_one = AsyncMock(side_effect=RuntimeError("mongo down"))
     manager.set_collection(fake_collection)
 
     with pytest.raises(RuntimeError, match="mongo down"):

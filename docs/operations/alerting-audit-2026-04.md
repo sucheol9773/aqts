@@ -267,6 +267,73 @@ sed -n '178,200p' backend/config/constants.py
 
 관찰 결과는 본 문서 §1~§4 에 본문 그대로 반영되어 있다.
 
+## 6.1 Commit 1 — Alert 모델 재시도 기반 구축 (2026-04-10)
+
+**범위** (wiring 변경 없음, 모델/영속화 레이어만):
+
+- `AlertStatus` 에 `SENDING` / `DEAD` 상태 추가
+  - `SENDING`: `claim_for_sending` 으로 PENDING 에서 atomic 전이된 "발송 중"
+    상태. 다중 워커/스케줄러 환경에서 동일 Alert 중복 발송을 방지하기 위한
+    race 방어.
+  - `DEAD`: 최대 재시도 초과 terminal 상태. 메타알림
+    (`AlertPipelineFailureRate`, Commit 3 예정)의 1차 타겟이며 운영자
+    수동 개입이 필요하다는 신호.
+- `Alert` dataclass 에 재시도 추적 필드 4종 추가:
+  `send_attempts` / `last_send_error` / `last_send_attempt_at` /
+  `last_send_status_code`. metadata dict 가 아닌 1급 필드로 올린 이유는
+  (a) MongoDB 쿼리 필터에서 직접 사용, (b) 타입 안정성,
+  (c) Prometheus 라벨로 직접 노출될 값이기 때문.
+- 모듈 상수 `MAX_ALERT_ERROR_LEN = 500` 도입. `last_send_error` 문자열
+  절단 상한. 향후 운영 관찰에 따라 조정 가능하도록 상수로 분리.
+- `save_alert`: `insert_one` → `update_one({"id": alert.id}, {"$set": ...},
+  upsert=True)` 로 전환하여 멱등성을 보장. 기존에는 `dispatch_alert` 및
+  `create_and_persist_alert` 경로에서 동일 id 로 중복 호출될 때 중복 행이
+  생성되는 잠재적 버그가 있었다.
+- 신규 메서드 3종:
+  - `claim_for_sending(alert_id)`: PENDING → SENDING atomic 전이 +
+    `send_attempts` $inc. 이미 claim 되었거나 상태가 PENDING 이 아니면
+    False 반환.
+  - `mark_sent_by_id(alert_id)`: SENDING → SENT 전이. SENDING 이 아닌
+    상태는 전이하지 않고 False 반환 (이중 전이 방지).
+  - `mark_failed_with_retry(alert_id, error, status_code, max_attempts=3)`:
+    `send_attempts >= max_attempts` 이면 DEAD, 미만이면 FAILED.
+    경계는 사용자 확정 방침(2026-04-10)에 따라 gte — "3번 시도하고 포기" 의
+    직관에 맞춘다.
+
+**의도적 non-scope** (다음 커밋에서 처리):
+
+- `telegram_notifier.dispatch_alert` 내부의 `save_alert` 호출부 정리는
+  Commit 2 에서 NotificationRouter wiring 과 함께 일괄 처리.
+- `dispatch_pending_alerts` 의 `mark_alert_read` 의미 버그 (발송 완료 시
+  실제로는 read 로 표시) 수정은 Commit 2 범위.
+- 스케줄러 등록 / 지수 백오프 / Prometheus counter / 메타알림 규칙은
+  Commit 3 범위.
+- `dispatch_alert` 및 `AlertStatus` 사용처 전반에 걸친 기존
+  `Alert.mark_sent()` / `mark_failed()` dataclass 메서드 대체는 Commit 2
+  에서 호출부와 함께 처리 (범위 책임 분리).
+
+**검증 결과**:
+
+- 신규 테스트 `backend/tests/test_alert_manager_retry.py` — 18 케이스
+  전 통과. 경계 (`>=`, `<`, `>`) 세 케이스 모두 명시적으로 고정.
+- 기존 테스트 `backend/tests/test_alert_manager_persistence.py` 및
+  `backend/tests/test_alerts_route_e2e.py` 의 `_FakeMongoCollection` 을
+  `update_one(upsert=True)` 인터페이스로 동기화. fake 와 운영 코드의
+  호출 표면을 일치시켜 fake 의 신뢰성 유지.
+- `cd backend && python -m ruff check . --config pyproject.toml` — 0 errors
+- `cd backend && python -m black --check . --config pyproject.toml` — 0 diffs
+- `cd backend && python -m pytest tests/ -q` — 전체 회귀 통과
+
+**회귀 영향 요약**:
+
+- `Alert` dataclass 에 기본값 `0` / `None` 인 신규 필드만 추가했으므로
+  기존 호출부는 영향 없음.
+- `to_dict` 출력에 신규 키가 추가되었으나, 기존 소비자(API 응답,
+  대시보드)는 추가 키를 무시하므로 하위호환.
+- `save_alert` 가 `update_one(upsert=True)` 로 전환되었으므로 실제
+  MongoDB 운영 환경에서는 motor 가 지원하는 표준 연산이다 (인덱스/권한
+  요구사항 동일).
+
 ## 7. 관련 문서
 
 - 템플릿 렌더링 및 운영 절차: [`docs/operations/alerting.md`](./alerting.md)
