@@ -145,6 +145,15 @@ services:
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.retention.time=30d"
+    # ── Healthcheck: /-/ready 는 prometheus 가 config 로드 + storage
+    # 준비 완료 후 200 을 반환한다. busybox wget 은 prom/prometheus
+    # 베이스 이미지에 포함되어 있으므로 별도 패키지 불필요.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     depends_on:
       backend:
         condition: service_started
@@ -184,8 +193,19 @@ services:
         exec /bin/alertmanager \
           --config.file=/tmp/alertmanager.yml \
           --storage.path=/alertmanager
+    # ── Healthcheck: /-/ready 는 alertmanager 가 config 로드 + cluster
+    # 합류 완료 후 200 을 반환한다. 본 회귀(2026-04)의 교훈 — config
+    # 로드 실패로 인한 재시작 루프를 분 단위로 감지하기 위한 관측 layer.
+    # busybox wget 은 prom/alertmanager 베이스 이미지에 포함되어 있다.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9093/-/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     depends_on:
-      - prometheus
+      prometheus:
+        condition: service_healthy
     networks:
       - aqts-network
 

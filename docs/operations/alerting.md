@@ -78,11 +78,25 @@ config loader 가 리터럴 문자열로 인식하고, 특히 `chat_id` 처럼 i
 
 ### 5.2 헬스 체크
 
-```bash
-# 컨테이너 상태
-docker compose ps alertmanager
+`docker-compose.yml` 의 `prometheus`/`alertmanager` 두 서비스 모두에 Docker
+healthcheck 가 등록되어 있다 (`wget -qO- http://localhost:<port>/-/ready`,
+15s 간격, 5회 재시도, start_period 20~30s). 따라서 `docker compose ps` 의
+STATUS 컬럼이 `(healthy)` 인지를 1차 지표로 사용한다. `(unhealthy)` 로 표시
+되면 config 로드 실패 또는 storage/cluster 문제를 의미한다.
 
-# Alertmanager 자체 ready
+또한 `alertmanager` 는 `prometheus` 의 healthy 상태를 `depends_on` condition
+으로 요구한다 — prometheus 가 부팅 실패한 상태에서 alertmanager 만 살아
+있는 비정상 조합이 compose 레벨에서 차단된다.
+
+```bash
+# 컨테이너 상태 (healthy/unhealthy 확인)
+docker compose ps prometheus alertmanager
+
+# 상세 healthcheck 결과 (최근 실패 로그 포함)
+docker inspect --format '{{json .State.Health}}' aqts-alertmanager | jq
+docker inspect --format '{{json .State.Health}}' aqts-prometheus | jq
+
+# Alertmanager 자체 ready (수동 재확인)
 curl -fsS http://localhost:9093/-/ready
 
 # 현재 활성 알림
@@ -178,3 +192,5 @@ int64 로 unmarshal 하다 실패한 것이다.
 - [ ] CI 에서 더미 env 로 렌더링 + 스키마 검증이 가능한가?
 - [ ] 첫 배포 후 헬스체크 (`/-/ready` 또는 동등) 가 200 을 반환하는지 직접
       확인했는가?
+- [ ] `docker-compose.yml` 의 해당 서비스에 Docker `healthcheck:` 가 등록
+      되어 있는가? 등록되어 있지 않다면 회귀 발생 시 관측 공백이 생긴다.
