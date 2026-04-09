@@ -136,14 +136,66 @@ jobs:
             export IMAGE_NAMESPACE IMAGE_TAG
             docker compose -f docker-compose.yml up -d postgres
 
-            echo "═══ Step 5b: Run alembic migrations (upgrade head) ═══"
-            # 새 이미지 컨테이너에서 일회성 마이그레이션 실행. postgres 가
-            # service_healthy 가 될 때까지 docker compose 가 대기한다.
+            echo "═══ Step 5b: Detect alembic baseline (init_db.sql 호환) ═══"
+            # init_db.sql 로 부트스트랩된 DB 는 alembic_version 이 비어 있다.
+            # 그 상태에서 곧바로 upgrade head 를 돌리면 001 이 market_ohlcv 를
+            # CREATE TABLE 하다 DuplicateTable 로 실패한다 (회귀 사례 #24165328003).
+            # 따라서 실제 스키마 상태를 관찰하여 가장 높은 일치 리비전으로 stamp 한 뒤
+            # upgrade 를 진행한다. 판별 매트릭스는 각 마이그레이션 파일을 직접 grep
+            # 으로 검증한 결과를 코드화한 것이다 (002→roles/users, 003→order_idempotency_keys,
+            # 004→users.role_version 컬럼, 005→portfolio_positions).
+            HAS_VER=$(docker exec -i aqts-postgres bash -c '
+              psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "
+                SELECT 1 FROM information_schema.tables
+                 WHERE table_schema = '"'"'public'"'"' AND table_name = '"'"'alembic_version'"'"';
+              "' | tr -d '[:space:]')
+            if [ "$HAS_VER" = "1" ]; then
+              echo "alembic_version exists → skip baseline stamp"
+            else
+              echo "alembic_version 부재 → 스키마 관찰 후 baseline 결정"
+              SCHEMA=$(docker exec -i aqts-postgres bash -c '
+                psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "
+                  SELECT
+                    (SELECT COUNT(*) FROM information_schema.tables
+                       WHERE table_schema='"'"'public'"'"' AND table_name='"'"'market_ohlcv'"'"'),
+                    (SELECT COUNT(*) FROM information_schema.tables
+                       WHERE table_schema='"'"'public'"'"' AND table_name='"'"'users'"'"'),
+                    (SELECT COUNT(*) FROM information_schema.tables
+                       WHERE table_schema='"'"'public'"'"' AND table_name='"'"'order_idempotency_keys'"'"'),
+                    (SELECT COUNT(*) FROM information_schema.columns
+                       WHERE table_schema='"'"'public'"'"' AND table_name='"'"'users'"'"' AND column_name='"'"'role_version'"'"'),
+                    (SELECT COUNT(*) FROM information_schema.tables
+                       WHERE table_schema='"'"'public'"'"' AND table_name='"'"'portfolio_positions'"'"');
+                "')
+              # SCHEMA 형식: "n1|n2|n3|n4|n5"
+              IFS='|' read -r HAS_OHLCV HAS_USERS HAS_IDEMP HAS_ROLEVER HAS_PORTFOLIO <<< "$(echo "$SCHEMA" | tr -d '[:space:]')"
+              echo "schema observed: ohlcv=$HAS_OHLCV users=$HAS_USERS idemp=$HAS_IDEMP role_ver=$HAS_ROLEVER portfolio=$HAS_PORTFOLIO"
+              if [ "$HAS_OHLCV" != "1" ]; then
+                echo "❌ market_ohlcv 부재 — init_db.sql 도 적용되지 않은 빈 DB. 운영 환경에서는 발생할 수 없는 상태이므로 중단."
+                exit 1
+              fi
+              if [ "$HAS_PORTFOLIO" = "1" ]; then
+                BASELINE=005
+              elif [ "$HAS_ROLEVER" = "1" ]; then
+                BASELINE=004
+              elif [ "$HAS_IDEMP" = "1" ]; then
+                BASELINE=003
+              elif [ "$HAS_USERS" = "1" ]; then
+                BASELINE=002
+              else
+                BASELINE=001
+              fi
+              echo "→ alembic stamp $BASELINE"
+              docker compose -f docker-compose.yml run --rm backend \
+                alembic -c alembic.ini stamp "$BASELINE"
+            fi
+
+            echo "═══ Step 5c: Run alembic upgrade head ═══"
             # 마이그레이션 실패 시 backend 컨테이너는 기동하지 않는다 (fail-closed).
             docker compose -f docker-compose.yml run --rm backend \
               alembic -c alembic.ini upgrade head
 
-            echo "═══ Step 5c: Restart services with new image ═══"
+            echo "═══ Step 5d: Restart services with new image ═══"
             docker compose -f docker-compose.yml up -d
 
             echo "═══ Step 6: Wait for health check (max 120s) ═══"
