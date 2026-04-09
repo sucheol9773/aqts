@@ -223,6 +223,12 @@ class TradingScheduler:
         self._state = SchedulerState()
         self._running = False
         self._task: Optional[asyncio.Task] = None
+        # 2026-04-09 회귀: heartbeat 을 _scheduler_loop iteration 에 묶으면
+        # 긴 sleep / 오래 걸리는 이벤트 실행 / DB 블로킹 등 임의의 루프 내
+        # 블로킹이 mtime 갱신을 starve 시킨다. 독립 백그라운드 태스크로
+        # 분리하여 loop 가 무엇을 하든 고정 주기로 heartbeat 가 갱신되도록
+        # 한다. 자세한 배경: docs/operations/scheduler-idempotency.md
+        self._heartbeat_task: Optional[asyncio.Task] = None
 
         # 핸들러 콜백 (외부 주입 가능)
         self._handlers: dict[str, Callable[..., Awaitable]] = {}
@@ -298,12 +304,29 @@ class TradingScheduler:
         except Exception as exc:
             logger.warning(f"[Scheduler] 멱등성 복원 실패 (인메모리만 사용): {exc}")
 
+        # 2026-04-09 회귀: heartbeat 을 _scheduler_loop 밖으로 분리.
+        # 루프 시작 직전에 1회 write 하여 smoke/healthcheck 가 기동 직후에도
+        # fresh mtime 을 볼 수 있게 하고, 이후 백그라운드 태스크가 고정 주기로
+        # 갱신한다. _heartbeat_task 를 _scheduler_loop 보다 먼저 create 해도
+        # 실행 순서는 event loop scheduling 에 달려있으므로, 최초 한 번은
+        # 여기서 동기적으로 write 해 race 를 제거한다.
+        from core.scheduler_heartbeat import write_heartbeat
+
+        write_heartbeat()
+        self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
         self._task = asyncio.create_task(self._scheduler_loop())
 
     async def stop(self) -> None:
         """스케줄러 중지"""
         self._running = False
         self._state.status = SchedulerStatus.STOPPED
+
+        if self._heartbeat_task and not self._heartbeat_task.done():
+            self._heartbeat_task.cancel()
+            try:
+                await self._heartbeat_task
+            except asyncio.CancelledError:
+                pass
 
         if self._task and not self._task.done():
             self._task.cancel()
@@ -339,6 +362,41 @@ class TradingScheduler:
         return await self._execute_event(event)
 
     # ── 스케줄러 메인 루프 ──
+
+    # heartbeat 백그라운드 태스크 주기 (초). smoke 의 기본 임계(120s) 와
+    # docker-compose healthcheck 의 SCHEDULER_HEARTBEAT_STALE_SECONDS(180s)
+    # 양쪽에 충분한 마진을 두기 위해 15s 로 설정한다. 값을 낮춘다고
+    # IO 부담이 의미 있게 늘지는 않는다 (파일 1개 touch).
+    _HEARTBEAT_INTERVAL_SEC: float = 15.0
+
+    async def _heartbeat_loop(self) -> None:
+        """heartbeat 전용 백그라운드 루프.
+
+        `_scheduler_loop` 의 iteration 주기와 독립적으로 동작하여, 루프
+        안에서 어떤 블로킹(긴 sleep, 이벤트 실행, DB 대기 등)이 있어도
+        heartbeat mtime 이 stale 되지 않도록 한다. 2026-04-09 회귀
+        (_scheduler_loop 첫 write 이후 L416/L454 의 3600s sleep 에 갇혀
+        heartbeat stale → smoke C4 fail) 의 근본 수정.
+
+        루프는 `self._running` 이 True 인 동안 `_HEARTBEAT_INTERVAL_SEC`
+        주기로 `write_heartbeat()` 를 호출한다. IO 실패는 내부에서 무시되고
+        (scheduler_heartbeat.write_heartbeat 가 OSError 삼킴) 태스크가
+        멈추지 않는다. stop() 이 호출되면 cancel 되어 즉시 종료된다.
+        """
+        from core.scheduler_heartbeat import write_heartbeat
+
+        try:
+            while self._running:
+                try:
+                    write_heartbeat()
+                except Exception as exc:
+                    # write_heartbeat 자체가 OSError 를 삼키므로 여기까지는
+                    # 오지 않지만, 방어적으로 한 번 더 격리한다.
+                    logger.warning(f"[heartbeat] write 실패 (무시): {exc}")
+                await asyncio.sleep(self._HEARTBEAT_INTERVAL_SEC)
+        except asyncio.CancelledError:
+            # stop() 경로의 정상 종료.
+            raise
 
     async def _heartbeat_sleep(self, seconds: float, chunk: float = 30.0) -> None:
         """heartbeat 를 chunk 단위로 갱신하면서 seconds 만큼 대기한다.

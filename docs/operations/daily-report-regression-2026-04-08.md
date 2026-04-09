@@ -484,6 +484,37 @@ C1(Running), C2(digest match), C3(heartbeat-based healthcheck), C5(/api/system/h
 
 긴 `await asyncio.sleep(...)` 블로킹 전후에 heartbeat, metric, 기타 liveness 신호를 갱신하지 않으면 동일 패턴이 다시 발생한다. 루프 내부에서 60초 이상 블로킹이 생길 수 있는 분기는 **항상 chunked-sleep helper 를 거치도록** 한다. 이 원칙은 `CLAUDE.md::상태 전이 로직 검증 규칙` 의 연장선상이다 — "긴 대기 중에도 liveness 신호가 유지되는가" 를 엣지 케이스로 명시.
 
+### 4.6 재회귀 (2026-04-09): chunked-sleep 만으로는 부족 → 백그라운드 태스크로 분리
+
+2026-04-09 CD (`6500bcb`) 에서 동일한 smoke C4 실패가 재현되었다. `heartbeat stale: age=1990s > 120s`. 관찰:
+
+1. 실제 실행 중인 스케줄러 이미지는 `sha-70eee29` (이전 커밋 롤백 결과) 로, `_heartbeat_sleep` 이 아예 배포되어 있지 않았다. `docker inspect` 의 `org.opencontainers.image.revision` 라벨로 확인.
+2. smoke `scripts/post_deploy_smoke.sh` 의 `Deployed commit` 출력이 서버 `git rev-parse HEAD` 를 읽고 있어 롤백된 컨테이너와의 drift 를 가리고 있었다.
+3. `docker export aqts-scheduler | tar -tv | grep tmp/scheduler` — 이미지 레이어에 heartbeat 파일은 없었고, 컨테이너 내 Birth/Modify 는 `10:02:59` 로 고정 — 기동 직후 1회만 write 된 뒤 freeze.
+
+근본 원인 분석: chunked-sleep 방식은 `_scheduler_loop` 의 `await asyncio.sleep` 경로만 커버한다. `_execute_event` 본체, DB 블로킹, KIS API 타임아웃, 예상치 못한 장시간 await 은 여전히 heartbeat 을 starve 시킬 수 있다. "루프 iteration 주기" 에 heartbeat 을 묶는 구조 자체가 문제.
+
+**Fix (2026-04-09, backend/core/trading_scheduler.py)**: heartbeat 갱신을 `_scheduler_loop` 와 완전히 분리해 독립 백그라운드 태스크 `_heartbeat_loop` 로 뺐다.
+
+- `TradingScheduler.__init__` 에 `self._heartbeat_task: Optional[asyncio.Task] = None` 필드 추가.
+- `TradingScheduler.start()` 가 `_scheduler_loop` 태스크 생성 직전에 (a) 동기 `write_heartbeat()` 1회 — smoke/healthcheck 가 기동 직후에도 fresh mtime 을 관측하게 하는 race 제거 — (b) `self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())` 를 수행.
+- `TradingScheduler.stop()` 이 `_scheduler_loop` cancel 전에 `_heartbeat_task.cancel()` + await 으로 정상 종료.
+- 신규 `_heartbeat_loop()` 는 `while self._running: write_heartbeat(); await asyncio.sleep(_HEARTBEAT_INTERVAL_SEC)` 의 최소 구조이고, `_HEARTBEAT_INTERVAL_SEC = 15.0` 으로 smoke 임계(120s) 와 compose healthcheck 임계(180s) 양쪽에 8배 이상의 마진을 둔다.
+
+기존 `_heartbeat_sleep` 및 `_scheduler_loop` 의 호출부는 belt-and-suspenders 로 유지한다. 회귀 정적 패턴 테스트 `TestHeartbeatSleepHelper::test_long_sleep_branches_use_heartbeat_sleep` 가 이미 존재하므로 유지 비용은 없다.
+
+신규 회귀 테스트 5건 (`tests/test_scheduler_heartbeat.py::TestHeartbeatBackgroundLoop`):
+
+1. `test_heartbeat_loop_writes_periodically` — `_HEARTBEAT_INTERVAL_SEC=0.1` 로 override 후 0.55초 동안 최소 5회 write 확인.
+2. `test_heartbeat_loop_cancels_quickly` — interval 10초 상태에서 cancel 시 0.5초 이내 종료.
+3. `test_heartbeat_loop_swallows_write_errors` — write 가 `RuntimeError` 를 던져도 루프가 이어지며 여러 번 재호출.
+4. `test_start_creates_heartbeat_task_and_writes_sync` — `TradingScheduler.start` 소스에서 동기 `write_heartbeat()` 와 `create_task(self._heartbeat_loop())` 가 모두 존재하는지 AST 로 검증.
+5. `test_stop_cancels_heartbeat_task` — `TradingScheduler.stop` 소스에 `_heartbeat_task.cancel()` 존재 확인.
+
+### 재발 방지 원칙 (최종형)
+
+liveness 신호는 **작업 루프와 수명이 완전히 분리된 독립 태스크**에서 갱신한다. 작업 루프 iteration 주기에 liveness 갱신을 묶으면, 루프 내부의 임의의 블로킹 경로가 liveness 를 starve 시킬 수 있다. heartbeat, metric export, watchdog reset 등 모든 liveness 신호는 별도 태스크로 분리되어야 한다.
+
 ## 6. 후속 조치 (체크리스트)
 
 - [x] Redis 실측값 §1.3 에 채워 넣기 (2026-04-09 관찰 완료)

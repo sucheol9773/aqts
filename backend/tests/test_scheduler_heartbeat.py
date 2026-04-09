@@ -271,3 +271,157 @@ class TestHeartbeatSleepHelper:
         assert (
             "asyncio.sleep(min(wait_seconds, 3600))" not in src
         ), "raw asyncio.sleep(min(wait_seconds, 3600)) 이 남아있음 — 회귀"
+
+
+class TestHeartbeatBackgroundLoop:
+    """_heartbeat_loop 백그라운드 태스크 회귀 검증.
+
+    2026-04-09 회귀:
+        _scheduler_loop 안에 heartbeat 갱신을 묶어두면 `_execute_event`,
+        DB 블로킹, 비동기 대기 구간 등 임의의 블로킹 경로에서 mtime 이
+        starve 된다. 독립 백그라운드 태스크로 분리하여 `_scheduler_loop`
+        이 무엇을 하든 고정 주기로 heartbeat 가 갱신되는지 검증한다.
+
+    Fix:
+        TradingScheduler.start() 가 동기 write_heartbeat() 1회 + 백그라운드
+        _heartbeat_loop 태스크 생성을 수행하고, stop() 이 태스크를 취소한다.
+    """
+
+    def _make_scheduler(self):
+        from core.trading_scheduler import TradingScheduler
+
+        scheduler = TradingScheduler.__new__(TradingScheduler)
+        scheduler._running = True
+        return scheduler
+
+    def test_heartbeat_loop_writes_periodically(self, tmp_path, monkeypatch):
+        """_heartbeat_loop 이 interval 주기로 write_heartbeat 을 호출한다."""
+        import asyncio
+
+        target = tmp_path / "heartbeat"
+        monkeypatch.setattr("core.scheduler_heartbeat.HEARTBEAT_PATH", target)
+
+        scheduler = self._make_scheduler()
+        # 테스트 속도를 위해 클래스 속성을 override (인스턴스에 shadow).
+        scheduler._HEARTBEAT_INTERVAL_SEC = 0.1
+
+        call_count = {"n": 0}
+        import core.scheduler_heartbeat as hb_mod
+
+        original_write = hb_mod.write_heartbeat
+
+        def tracking_write(path=None):
+            original_write(path)
+            call_count["n"] += 1
+
+        monkeypatch.setattr(hb_mod, "write_heartbeat", tracking_write)
+
+        async def runner():
+            task = asyncio.create_task(scheduler._heartbeat_loop())
+            await asyncio.sleep(0.55)
+            scheduler._running = False
+            try:
+                await asyncio.wait_for(task, timeout=1.0)
+            except asyncio.CancelledError:
+                pass
+
+        asyncio.get_event_loop_policy().new_event_loop().run_until_complete(runner())
+
+        # 0.55s / 0.1s ≈ 5회 이상 갱신.
+        assert call_count["n"] >= 5, f"heartbeat 갱신 횟수 부족: {call_count['n']}"
+        assert target.exists()
+
+    def test_heartbeat_loop_cancels_quickly(self, tmp_path, monkeypatch):
+        """stop() 이 태스크를 cancel 하면 즉시 종료된다."""
+        import asyncio
+
+        target = tmp_path / "heartbeat"
+        monkeypatch.setattr("core.scheduler_heartbeat.HEARTBEAT_PATH", target)
+
+        scheduler = self._make_scheduler()
+        scheduler._HEARTBEAT_INTERVAL_SEC = 10.0  # 긴 sleep 이지만 cancel 되어야 함
+
+        async def runner():
+            task = asyncio.create_task(scheduler._heartbeat_loop())
+            await asyncio.sleep(0.1)
+            task.cancel()
+            start = time.time()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            return time.time() - start
+
+        elapsed = asyncio.get_event_loop_policy().new_event_loop().run_until_complete(runner())
+        assert elapsed < 0.5, f"_heartbeat_loop cancel 지연: {elapsed:.2f}s"
+
+    def test_heartbeat_loop_swallows_write_errors(self, tmp_path, monkeypatch):
+        """write 경로에서 예외가 발생해도 루프가 멈추지 않는다."""
+        import asyncio
+
+        target = tmp_path / "heartbeat"
+        monkeypatch.setattr("core.scheduler_heartbeat.HEARTBEAT_PATH", target)
+
+        scheduler = self._make_scheduler()
+        scheduler._HEARTBEAT_INTERVAL_SEC = 0.05
+
+        import core.scheduler_heartbeat as hb_mod
+
+        call_count = {"n": 0}
+
+        def raising_write(path=None):
+            call_count["n"] += 1
+            raise RuntimeError("simulated write error")
+
+        monkeypatch.setattr(hb_mod, "write_heartbeat", raising_write)
+
+        async def runner():
+            task = asyncio.create_task(scheduler._heartbeat_loop())
+            await asyncio.sleep(0.25)
+            scheduler._running = False
+            try:
+                await asyncio.wait_for(task, timeout=1.0)
+            except asyncio.CancelledError:
+                pass
+
+        asyncio.get_event_loop_policy().new_event_loop().run_until_complete(runner())
+
+        # 예외가 발생했어도 루프가 계속 돌아 여러 번 호출됐어야 한다.
+        assert call_count["n"] >= 3, f"예외 경로에서 루프가 멈춤: {call_count['n']}"
+
+    def test_start_creates_heartbeat_task_and_writes_sync(self):
+        """start() 가 동기 write_heartbeat() 후 _heartbeat_task 를 생성한다 (소스 검증)."""
+        import ast
+        import inspect
+        import textwrap
+
+        from core.trading_scheduler import TradingScheduler
+
+        src = textwrap.dedent(inspect.getsource(TradingScheduler.start))
+        tree = ast.parse(src)
+
+        # write_heartbeat() 호출과 create_task(self._heartbeat_loop()) 호출을 모두 찾는다.
+        has_sync_write = False
+        has_task_create = False
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "write_heartbeat":
+                has_sync_write = True
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "create_task":
+                # 인자가 self._heartbeat_loop() 인지 확인
+                if node.args and isinstance(node.args[0], ast.Call):
+                    inner = node.args[0].func
+                    if isinstance(inner, ast.Attribute) and inner.attr == "_heartbeat_loop":
+                        has_task_create = True
+
+        assert has_sync_write, "start() 에 동기 write_heartbeat() 호출이 없다"
+        assert has_task_create, "start() 가 _heartbeat_loop 태스크를 생성하지 않는다"
+
+    def test_stop_cancels_heartbeat_task(self):
+        """stop() 이 _heartbeat_task 를 cancel 한다 (소스 검증)."""
+        import inspect
+
+        from core.trading_scheduler import TradingScheduler
+
+        src = inspect.getsource(TradingScheduler.stop)
+        assert "_heartbeat_task" in src, "stop() 에 _heartbeat_task 처리 없음"
+        assert "_heartbeat_task.cancel()" in src, "stop() 이 _heartbeat_task.cancel() 을 호출하지 않음"
