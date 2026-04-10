@@ -524,9 +524,58 @@ Commit 2 와 동일 릴리스 게이트로 묶여 한 번의 CD 로 배포된다
   `feature/alert-notification-wiring` 에 두 커밋을 순차로 쌓아 단일 CD 로
   main 에 머지한다.
 
+### 6.4 Commit 4 — 문서 정리 + 4 커밋 시리즈 클로즈 (2026-04-10)
+
+**목표**: Commit 1~3 으로 완성된 알림 파이프라인의 아키텍처 문서, Wiring Rule
+확장, 운영 runbook 을 작성하여 문서 부채를 해소한다. 코드 변경 zero.
+
+**산출물**:
+
+- `docs/architecture/notification-pipeline.md` 신규 — 전체 데이터 플로우
+  (ASCII 다이어그램), 상태 머신 전이표, 재시도 정책 (고정 dict backoff),
+  NotificationRouter 캐스케이드, 재시도 루프 알고리즘, Prometheus 지표
+  카탈로그, 메타알림 규칙, 환경변수 토글, Wiring Rule 5 레이어 체크리스트,
+  테스트 매트릭스 (11 섹션).
+- `CLAUDE.md` — "알림 파이프라인 Wiring Rule" 섹션 추가. RBAC / 공급망 /
+  SSH heredoc Wiring Rule 과 동일한 "정의 ≠ 적용" 원칙을 alerting 도메인으로
+  확장. 5 개 레이어(상태 머신, Router 인스턴스, 재시도 루프, 메트릭 훅,
+  메타알림 규칙) 의 검증 방법, 배포 후 수동 확인 3 가지, 회고 기록 포함.
+- `docs/operations/alert-pipeline-runbook.md` 신규 — 정상 상태 기준선, 메타알림
+  발화 시 대응 (AlertPipelineFailureRate / AlertPipelineDeadTransitions),
+  DEAD 알림 수동 재처리 mongo 쿼리, 재시도 루프 무력화/복원 절차,
+  NotificationRouter wiring 결손 진단표, Grafana PromQL 참고 쿼리.
+
+**4 커밋 시리즈 완료 타임라인**:
+
+| 순서 | 범위 | 머지 시점 | 배포 상태 |
+|---|---|---|---|
+| Commit 1 | 상태 머신 + retry API | 2026-04-09 | main 배포 완료 |
+| Commit 2 | Router wiring + immediate dispatch | 2026-04-10 | Commit 3 과 번들 배포 |
+| Commit 3 | 재시도 루프 + 메트릭 + 메타알림 | 2026-04-10 | 운영 배포 완료, wiring 검증 통과 |
+| Commit 4 | 문서 정리 (코드 zero-diff) | 2026-04-10 | — |
+
+**운영 배포 검증 (Commit 2+3, 2026-04-10 02:29 UTC)**:
+
+- `NotificationRouter wired: telegram → file → console cascade` ✓
+- `AlertRetryLoop started (interval=60s)` ✓
+- `/metrics` 에서 `aqts_alert_dispatch_*` 4 계열 노출 ✓
+- backend / scheduler 동일 digest `sha256:bec6a248...` ✓
+- KIS 토큰 degraded 모드 진입 — 기존 동작, 본 배포와 무관
+
+**시리즈 클로즈 — 남은 부채**:
+
+- `TelegramTransport` SSOT 추출 (`TelegramChannelAdapter` 와 `TelegramNotifier`
+  의 `send_message` 중복 제거) → Phase 2 별도 세션
+- `telegram_notifier.dispatch_alert` 내부의 `save_alert` 이중 호출 정리 →
+  Phase 2 별도 세션
+- Grafana 대시보드에 §6 PromQL 쿼리 패널 추가 → 운영 팀 별도 진행
+
 ## 7. 관련 문서
 
+- 파이프라인 아키텍처: [`docs/architecture/notification-pipeline.md`](../architecture/notification-pipeline.md)
+- 운영 runbook: [`docs/operations/alert-pipeline-runbook.md`](./alert-pipeline-runbook.md)
 - 템플릿 렌더링 및 운영 절차: [`docs/operations/alerting.md`](./alerting.md)
+- Wiring Rule (alerting 도메인): [`CLAUDE.md`](../../CLAUDE.md) §"알림 파이프라인 Wiring Rule"
 - alertmanager 회귀 회고(§9 진행 기록): [`docs/security/security-integrity-roadmap.md`](../security/security-integrity-roadmap.md)
 - 커밋 이력:
   - `5a22faf` — alertmanager 템플릿 렌더링 + entrypoint sed wiring + amtool CI 게이트
