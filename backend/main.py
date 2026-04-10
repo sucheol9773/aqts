@@ -81,6 +81,17 @@ trading_scheduler: TradingScheduler | None = None
 kis_client: KISClient | None = None
 kis_recovery_state: KISRecoveryState | None = None
 
+# 알림 재시도 루프 태스크 (Commit 3).
+# Router 주입 성공 시 startup 에서 create_task 로 붙이고, shutdown 에서
+# cancel 한다. TradingScheduler 의 긴 sleep 과 독립적으로 동작하도록
+# `asyncio.create_task` 로 직접 관리한다 (2026-04-09 heartbeat 회귀 교훈).
+_alert_retry_task: asyncio.Task | None = None
+
+# 알림 재시도 루프 주기(초). 환경변수로 override 가능.
+# 기본값 60s 는 RETRY_BACKOFF_SECONDS[1] 의 해상도와 일치 — 첫 번째
+# 백오프(60s) 만기 직후 다음 iteration 에서 픽업되도록 설계.
+ALERT_RETRY_LOOP_INTERVAL_SECONDS = 60
+
 
 def _signal_handler(sig, frame):
     """SIGTERM/SIGINT 시그널 핸들러"""
@@ -94,6 +105,7 @@ def _signal_handler(sig, frame):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan 이벤트 핸들러"""
+    global _alert_retry_task
     setup_logging()
     settings = get_settings()
 
@@ -140,6 +152,43 @@ async def lifespan(app: FastAPI):
             notification_router.add_channel(ConsoleNotifier())
             _am_for_router.set_router(notification_router)
             logger.info("NotificationRouter wired: telegram → file → console cascade")
+
+            # Commit 3: 주기 재시도 루프 등록.
+            # Router 주입 성공 경로에서만 루프를 시작한다 — Router 가
+            # 없으면 dispatch_retriable_alerts 가 noop 이므로 태스크를
+            # 붙여봤자 빈 루프가 된다. 환경변수 ALERT_RETRY_LOOP_ENABLED
+            # 로 강제 비활성화 가능 (테스트/운영 셧다운 시 사용).
+            from core.utils.env import env_bool
+
+            retry_loop_enabled = env_bool("ALERT_RETRY_LOOP_ENABLED", default=True)
+            if retry_loop_enabled:
+
+                async def _alert_retry_loop() -> None:
+                    """FAILED 알림 주기 재픽업 루프 (Commit 3).
+
+                    ALERT_RETRY_LOOP_INTERVAL_SECONDS 마다 한 번씩
+                    dispatch_retriable_alerts 를 호출한다. 개별 alert
+                    처리의 예외는 이미 _dispatch_via_router 에서 swallow
+                    되지만, 루프 전체의 방어적 try/except 도 둔다 — DB
+                    조회 실패 등 루프 레벨 예외가 다음 iteration 을
+                    막아서는 안 된다.
+                    """
+                    logger.info("AlertRetryLoop started " f"(interval={ALERT_RETRY_LOOP_INTERVAL_SECONDS}s)")
+                    while True:
+                        try:
+                            await asyncio.sleep(ALERT_RETRY_LOOP_INTERVAL_SECONDS)
+                            stats = await _am_for_router.dispatch_retriable_alerts()
+                            if stats.get("dispatched", 0) > 0 or stats.get("dead", 0) > 0:
+                                logger.info(f"AlertRetryLoop iteration: {stats}")
+                        except asyncio.CancelledError:
+                            logger.info("AlertRetryLoop cancelled")
+                            raise
+                        except Exception as exc:  # noqa: BLE001 — 루프 보호
+                            logger.warning(f"AlertRetryLoop iteration error (continuing): {exc}")
+
+                _alert_retry_task = asyncio.create_task(_alert_retry_loop())
+            else:
+                logger.info("AlertRetryLoop disabled via ALERT_RETRY_LOOP_ENABLED=false")
         except Exception as e:
             logger.warning(f"NotificationRouter wiring 실패 (즉시 디스패치 비활성): {e}")
 
@@ -280,6 +329,20 @@ async def lifespan(app: FastAPI):
             logger.info("TradingScheduler stopped")
         except Exception as e:
             logger.error(f"TradingScheduler stop failed: {e}")
+
+    # 알림 재시도 루프 중지 (Commit 3).
+    # shutdown_manager 의 cleanup 체인보다 먼저 cancel 하여, DB 정리
+    # 시점에 retry loop 가 Mongo 쿼리를 계속 발사하는 상황을 방지한다.
+    if _alert_retry_task is not None and not _alert_retry_task.done():
+        _alert_retry_task.cancel()
+        try:
+            await _alert_retry_task
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.warning(f"AlertRetryLoop cancel 중 예외 무시: {e}")
+        _alert_retry_task = None
+        logger.info("AlertRetryLoop stopped")
 
     # DB 정리 콜백 등록
     shutdown_manager.register_cleanup(MongoDBManager.disconnect)

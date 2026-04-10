@@ -11,6 +11,7 @@ Gate C: 1차 채널(Telegram) 장애 시 대체 알림 동작
 """
 
 import json
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -18,6 +19,10 @@ from pathlib import Path
 from typing import Optional, Protocol
 
 from config.logging import logger
+from core.monitoring.metrics import (
+    ALERT_DISPATCH_LATENCY_SECONDS,
+    ALERT_DISPATCH_TOTAL,
+)
 from core.notification.alert_manager import Alert, AlertLevel
 
 
@@ -284,12 +289,24 @@ class NotificationRouter:
                     health.record_failure()
                 continue
 
-            # 발송 시도
+            # 발송 시도 (Commit 3: Prometheus 관측 — Decision 2-A).
+            # perf_counter 는 단조(monotonic)이므로 시스템 시계 조정의
+            # 영향을 받지 않는다. 레이턴시 관측은 try/finally 로 감싸서
+            # 예외 경로에서도 누락 없이 기록한다.
+            _start = time.perf_counter()
             try:
                 success = await channel.send(alert)
             except Exception as e:
                 logger.error(f"Channel '{ch_name}' raised exception: {e}")
                 success = False
+            finally:
+                _elapsed = time.perf_counter() - _start
+                ALERT_DISPATCH_LATENCY_SECONDS.labels(channel=ch_name).observe(_elapsed)
+
+            ALERT_DISPATCH_TOTAL.labels(
+                channel=ch_name,
+                result="success" if success else "failure",
+            ).inc()
 
             health = self._health.get(ch_name)
             if health:

@@ -30,6 +30,9 @@ BOOL_ENV_KEYS = {
     "DEBUG",
     "AQTS_STRICT_BOOL",
     "COLLECTOR_OTLP_ENABLED",
+    # Commit 3: 알림 재시도 루프 비활성화 플래그 (기본 true).
+    # docs/operations/alerting-audit-2026-04.md §6.3 참조.
+    "ALERT_RETRY_LOOP_ENABLED",
 }
 
 # Python 코드에서 차단할 ad-hoc 파싱 패턴

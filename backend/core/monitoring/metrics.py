@@ -308,6 +308,48 @@ DATA_COLLECTION_ERRORS = Counter(
     labelnames=["source"],
 )
 
+# ══════════════════════════════════════
+# 6. 알림 파이프라인 (Commit 3)
+# ══════════════════════════════════════
+# NotificationRouter.dispatch 에서 채널 단위로 관측된다 (Decision 2-A).
+# 메트릭 훅을 Router 내부에 두는 이유: 알림 이벤트가 실제로 외부
+# 채널로 나가는 물리 지점이 단일 진실원천이기 때문이다. AlertManager
+# 의 즉시 디스패치 경로와 Commit 3 의 주기 재시도 루프가 모두 동일
+# 카운터에 집계되어, 실패율/레이턴시 계산 시 합산 연산이 필요 없다.
+#
+# 라벨 cardinality:
+#   - channel: {"telegram", "file", "console"} (3 종, 고정)
+#   - result:  {"success", "failure"}          (2 종, 고정)
+#   → 총 시리즈 6 개. Prometheus 관점에서 안전한 수준.
+#
+# meta-alert `AlertPipelineFailureRate` (Decision 3-A) 가 이 counter 의
+# rate 로 실패율을 계산하므로, 라벨명/값 문자열은 Prometheus rule 파일과
+# 동기화되어야 한다 (monitoring/prometheus/rules/aqts_alerts.yml).
+ALERT_DISPATCH_TOTAL = Counter(
+    "aqts_alert_dispatch_total",
+    "NotificationRouter 가 채널별로 수행한 발송 시도 총 건수",
+    labelnames=["channel", "result"],
+)
+
+# 채널별 발송 레이턴시. cascade 구조상 primary 실패 후 fallback 을
+# 순차 시도하므로, 개별 채널 히스토그램이 있어야 "telegram 이 느려
+# 지는 것인지 file fallback 까지 내려가서 느려지는 것인지" 를
+# 구분할 수 있다.
+ALERT_DISPATCH_LATENCY_SECONDS = Histogram(
+    "aqts_alert_dispatch_latency_seconds",
+    "알림 발송 시도의 채널별 레이턴시 (초)",
+    labelnames=["channel"],
+    buckets=[0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0],
+)
+
+# DEAD 전이 발생 시 증가. AlertManager.dispatch_retriable_alerts 가
+# mark_failed_with_retry 의 반환값이 DEAD 일 때 이 카운터를 증가시킨다.
+# 운영자 수동 개입 필요 신호이므로 meta-alert 의 2차 타겟이다.
+ALERT_RETRY_DEAD_TOTAL = Counter(
+    "aqts_alert_retry_dead_total",
+    "재시도 한도 초과로 DEAD 상태로 전이된 알림 누적 수",
+)
+
 
 # ══════════════════════════════════════
 # 메트릭 미들웨어

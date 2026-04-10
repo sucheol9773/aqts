@@ -633,6 +633,251 @@ class AlertManager:
         logger.warning(f"mark_failed_with_retry: alert not found in memory id={alert_id}")
         return AlertStatus.FAILED
 
+    # ── 재시도 픽업 루프 (Commit 3 신규) ──
+    async def find_retriable_alerts(
+        self,
+        now: Optional[datetime] = None,
+        max_attempts: int = 3,
+        limit: int = 100,
+    ) -> list[dict]:
+        """백오프 만기된 FAILED 알림을 조회한다 (Commit 3).
+
+        Commit 1 의 상태 머신 docstring 에서 예약한 `FAILED → PENDING`
+        재픽업 경로의 첫 단계. 본 메서드는 조회만 수행하며 상태를
+        변경하지 않는다. 호출자(`dispatch_retriable_alerts`)가 각
+        document 에 대해 개별 원자 전이(`requeue_failed_to_pending`)
+        를 수행한다.
+
+        조회 조건:
+          1. status == FAILED
+          2. send_attempts < max_attempts
+             (send_attempts >= max_attempts 는 이미 DEAD 이거나 곧
+              DEAD 로 전이될 상태이므로 재시도 대상이 아님)
+          3. last_send_attempt_at + RETRY_BACKOFF_SECONDS[send_attempts]
+             <= now
+             (백오프 미만의 알림은 아직 재시도 금지)
+
+        백오프 필터는 MongoDB 서버 사이드 `$expr` 대신 파이썬에서
+        2차 필터링한다. 근거:
+          - FAILED 알림의 정상 cardinality 는 분당 수 건 수준.
+          - `$expr` + 날짜 문자열 파싱은 Mongo 드라이버 호환성
+            이슈가 있고, 감사 시 쿼리를 재현하기 어렵다.
+          - 파이썬측 필터는 `RETRY_BACKOFF_SECONDS` 상수와 직결되어
+            운영 이해가 쉬움.
+
+        Args:
+            now: 기준 시각 (기본값 현재 UTC). 테스트에서 주입 가능.
+            max_attempts: DEAD 경계. retry_policy.MAX_SEND_ATTEMPTS 와
+                동일해야 한다 (기본 3).
+            limit: 1회 픽업 최대 건수. MongoDB cursor 부하 제한.
+
+        Returns:
+            재시도 대상 Alert document (dict) 리스트. 빈 리스트 가능.
+        """
+        from core.notification.retry_policy import RETRY_BACKOFF_SECONDS
+
+        current = now or datetime.now(timezone.utc)
+
+        def _is_ready(doc: dict) -> bool:
+            attempts = int(doc.get("send_attempts", 0))
+            # attempts==0 이면 아직 한 번도 시도되지 않은 FAILED
+            # (논리적으로는 불가능하지만, 잘못된 데이터 방어).
+            # attempts>=max 이면 이미 DEAD 경계이므로 재시도 대상 아님.
+            if not (0 < attempts < max_attempts):
+                return False
+            last_iso = doc.get("last_send_attempt_at")
+            if not last_iso:
+                # 기록이 없는 FAILED 는 즉시 재시도 허용 (보수적).
+                return True
+            try:
+                last_dt = datetime.fromisoformat(last_iso)
+            except (TypeError, ValueError):
+                return True
+            wait_s = RETRY_BACKOFF_SECONDS.get(attempts)
+            if wait_s is None:
+                # 범위 밖 — retry_policy.backoff_seconds_for 와 동일
+                # clamp 정책.
+                wait_s = RETRY_BACKOFF_SECONDS[max(RETRY_BACKOFF_SECONDS.keys())]
+            return (current - last_dt).total_seconds() >= wait_s
+
+        if self._collection is not None:
+            cursor = (
+                self._collection.find(
+                    {
+                        "status": AlertStatus.FAILED.value,
+                        "send_attempts": {"$lt": max_attempts, "$gt": 0},
+                    }
+                )
+                .sort("last_send_attempt_at", 1)
+                .limit(limit)
+            )
+            docs = [doc async for doc in cursor]
+            return [d for d in docs if _is_ready(d)]
+
+        # 메모리 모드
+        candidates = [
+            a for a in self._in_memory_alerts if a.status == AlertStatus.FAILED and 0 < a.send_attempts < max_attempts
+        ]
+        candidates.sort(key=lambda a: a.last_send_attempt_at or datetime.min.replace(tzinfo=timezone.utc))
+        result = []
+        for a in candidates[:limit]:
+            if _is_ready(a.to_dict()):
+                result.append(a.to_dict())
+        return result
+
+    async def requeue_failed_to_pending(self, alert_id: str) -> bool:
+        """FAILED → PENDING 원자 전이 (Commit 3).
+
+        `find_retriable_alerts` 가 반환한 document 에 대해 호출한다.
+        조건(`status == FAILED`) 을 update filter 에 포함하여 다른
+        워커가 이미 재큐잉했거나 DEAD 로 전이된 경우 False 를
+        반환한다 (이중 재시도 방지).
+
+        전이 성공 후에는 `claim_for_sending` 이 PENDING → SENDING
+        으로 한 번 더 원자 전이하므로, 두 단계 합산 최종 상태는
+        항상 정확히 한 워커에게만 SENDING 을 부여한다.
+
+        주의: 이 메서드는 `send_attempts` 를 변경하지 않는다. 증가는
+        `claim_for_sending` 의 `$inc` 에서 일어난다. 즉 재시도 1 회당
+        attempts 는 정확히 1 만큼 증가한다.
+        """
+        if self._collection is not None:
+            result = await self._collection.update_one(
+                {"id": alert_id, "status": AlertStatus.FAILED.value},
+                {"$set": {"status": AlertStatus.PENDING.value}},
+            )
+            return result.modified_count == 1
+
+        for alert in self._in_memory_alerts:
+            if alert.id == alert_id and alert.status == AlertStatus.FAILED:
+                alert.status = AlertStatus.PENDING
+                return True
+        return False
+
+    async def dispatch_retriable_alerts(self, max_attempts: int = 3, limit: int = 100) -> dict:
+        """백오프 만기된 FAILED 알림을 재픽업하여 재발송한다 (Commit 3).
+
+        본 메서드가 Commit 3 의 at-least-once 전달 보장의 엔트리포인트다.
+        `main.py` lifespan 의 주기 태스크에서 호출된다.
+
+        흐름:
+          1. find_retriable_alerts — FAILED + 백오프 만기 조회
+          2. requeue_failed_to_pending — 원자 전이 (실패 시 skip)
+          3. Alert 재구성 — dict → Alert (metadata 유지)
+          4. _dispatch_via_router — Commit 2 의 디스패치 경로 재사용
+             (claim_for_sending → router.dispatch → mark_sent/failed)
+          5. mark_failed_with_retry 의 반환값이 DEAD 이면 카운트
+             (호출자는 get_alerts 로 확인 가능)
+
+        설계 — Path A 원칙 연장:
+          `_dispatch_via_router` 를 재사용하므로 Commit 2 의 경로와
+          100% 동형이다. 즉시 디스패치(create_and_persist_alert)와
+          재시도 디스패치가 서로 다른 코드 경로를 타지 않는다. 이는
+          메트릭 관측과 버그 탐지 시 일관된 경로 분석을 가능하게 한다.
+
+          DEAD 전이 카운터(`ALERT_RETRY_DEAD_TOTAL`)는 이 메서드 내부
+          에서 직접 증가시키지 않고, `_dispatch_via_router` 내부의
+          `mark_failed_with_retry` 반환값을 관찰하는 것이 이상적이나,
+          현재 구조상 반환값이 소실되므로 본 메서드에서 상태를 재조회
+          하여 DEAD 로 전이된 건만 카운트한다.
+
+        예외 정책:
+          루프 전체를 try/except 로 감싸지 않는다 — 개별 alert 처리의
+          예외는 `_dispatch_via_router` 에서 이미 swallow 되므로 본
+          루프까지 전파되지 않는다. 본 메서드가 raise 하는 경우는
+          find_retriable_alerts 의 DB 조회 실패뿐이며, 그 경우는
+          상위(lifespan 루프)에서 다음 iteration 까지 대기하는 것이
+          올바른 동작이다.
+
+        Args:
+            max_attempts: retry_policy.MAX_SEND_ATTEMPTS 와 동일 (기본 3).
+            limit: 1회 호출당 최대 처리 건수.
+
+        Returns:
+            {"dispatched": n, "skipped": m, "dead": k}
+              - dispatched: _dispatch_via_router 가 호출된 건수
+              - skipped: requeue_failed_to_pending 이 False 반환 (경합)
+              - dead: 이번 호출에서 DEAD 로 전이된 건수
+        """
+        from core.monitoring.metrics import ALERT_RETRY_DEAD_TOTAL
+
+        if self._router is None:
+            # Router 미주입 시 noop — Commit 2 의 "주입 = 활성" 원칙.
+            return {"dispatched": 0, "skipped": 0, "dead": 0}
+
+        candidates = await self.find_retriable_alerts(max_attempts=max_attempts, limit=limit)
+        stats = {"dispatched": 0, "skipped": 0, "dead": 0}
+
+        for doc in candidates:
+            alert_id = doc.get("id")
+            if not alert_id:
+                stats["skipped"] += 1
+                continue
+
+            requeued = await self.requeue_failed_to_pending(alert_id)
+            if not requeued:
+                stats["skipped"] += 1
+                continue
+
+            alert_obj = self._alert_from_doc(doc)
+            if alert_obj is None:
+                stats["skipped"] += 1
+                continue
+
+            await self._dispatch_via_router(alert_obj)
+            stats["dispatched"] += 1
+
+            # 디스패치 후 DEAD 전이 여부 재확인 — Prometheus 카운터 갱신.
+            post = await self.get_alert_by_id(alert_id)
+            if post and post.get("status") == AlertStatus.DEAD.value:
+                stats["dead"] += 1
+                ALERT_RETRY_DEAD_TOTAL.inc()
+
+        return stats
+
+    def _alert_from_doc(self, doc: dict) -> Optional[Alert]:
+        """Mongo document → Alert 재구성 (Commit 3 헬퍼).
+
+        Router 는 Alert 인스턴스를 받으므로 dict 를 다시 dataclass 로
+        복원해야 한다. 실패 시 None 반환 — 호출자는 skip 처리.
+
+        `send_attempts` 등 재시도 필드도 보존하여, DEAD 경계 판정이
+        정확히 수행되도록 한다.
+        """
+        try:
+            alert_type = AlertType(doc["alert_type"])
+            level = AlertLevel(doc.get("level", "INFO"))
+        except (KeyError, ValueError) as exc:
+            logger.warning(f"_alert_from_doc: invalid type/level in doc id={doc.get('id')}: {exc}")
+            return None
+
+        try:
+            created_at_iso = doc.get("created_at")
+            created_at = datetime.fromisoformat(created_at_iso) if created_at_iso else datetime.now(timezone.utc)
+        except (TypeError, ValueError):
+            created_at = datetime.now(timezone.utc)
+
+        last_attempt_iso = doc.get("last_send_attempt_at")
+        try:
+            last_attempt = datetime.fromisoformat(last_attempt_iso) if last_attempt_iso else None
+        except (TypeError, ValueError):
+            last_attempt = None
+
+        return Alert(
+            alert_type=alert_type,
+            level=level,
+            title=doc.get("title", ""),
+            message=doc.get("message", ""),
+            id=doc.get("id", str(uuid4())),
+            status=AlertStatus(doc.get("status", AlertStatus.PENDING.value)),
+            created_at=created_at,
+            metadata=doc.get("metadata", {}) or {},
+            send_attempts=int(doc.get("send_attempts", 0)),
+            last_send_error=doc.get("last_send_error"),
+            last_send_attempt_at=last_attempt,
+            last_send_status_code=doc.get("last_send_status_code"),
+        )
+
     async def get_alert_stats(self) -> dict:
         """알림 통계"""
         if self._collection is not None:
