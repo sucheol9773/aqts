@@ -233,12 +233,12 @@ class DailyReporter:
     async def send_telegram_report(self, report: DailyReport) -> bool:
         """Telegram으로 일일 리포트 발송"""
         try:
-            from core.notification.telegram_notifier import TelegramNotifier
+            from core.notification.telegram_transport import create_transport
 
-            notifier = TelegramNotifier()
+            transport = create_transport()
             message = self._format_telegram_message(report)
 
-            success = await notifier.send_message(message)
+            success = await transport.send_text(message)
             if success:
                 logger.info(f"일일 리포트 Telegram 발송 성공: {report.report_date}")
             else:

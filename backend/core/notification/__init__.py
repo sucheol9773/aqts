@@ -11,6 +11,7 @@ from core.notification.alert_manager import (
     AlertStatus,
 )
 from core.notification.telegram_notifier import TelegramNotifier
+from core.notification.telegram_transport import TelegramTransport, create_transport
 
 __all__ = [
     "Alert",
@@ -18,4 +19,6 @@ __all__ = [
     "AlertManager",
     "AlertStatus",
     "TelegramNotifier",
+    "TelegramTransport",
+    "create_transport",
 ]

@@ -33,7 +33,7 @@ from config.constants import (
 )
 from config.logging import logger
 from config.settings import get_settings
-from core.notification.telegram_notifier import TelegramNotifier
+from core.notification.telegram_transport import TelegramTransport
 from core.order_executor.executor import OrderExecutor, OrderRequest
 from core.portfolio_manager.construction import (
     PortfolioConstructionEngine,
@@ -133,7 +133,7 @@ class RebalancingEngine:
         self,
         profile: InvestorProfile,
         construction_engine: PortfolioConstructionEngine,
-        telegram_notifier: Optional["TelegramNotifier"] = None,
+        telegram_notifier: Optional["TelegramTransport"] = None,
         order_executor: Optional["OrderExecutor"] = None,
     ):
         """
@@ -142,7 +142,7 @@ class RebalancingEngine:
         Args:
             profile: 사용자 투자 프로필
             construction_engine: 포트폴리오 구성 엔진
-            telegram_notifier: 텔레그램 알림 발송기
+            telegram_notifier: 텔레그램 Transport (HTTP 전송 레이어)
             order_executor: 주문 실행기
         """
         self.profile = profile
@@ -604,7 +604,7 @@ class RebalancingEngine:
         try:
             message = self._format_rebalancing_message(result)
             if self._telegram:
-                await self._telegram.send_message(message, parse_mode="HTML")
+                await self._telegram.send_text(message, parse_mode="HTML")
                 logger.info(f"Rebalancing recommendation sent to user {self.profile.user_id}")
             else:
                 logger.info(f"Rebalancing recommendation (no Telegram): {message}")
@@ -621,7 +621,7 @@ class RebalancingEngine:
                 f"시간: {result.executed_at.strftime('%Y-%m-%d %H:%M UTC')}"
             )
             if self._telegram:
-                await self._telegram.send_message(message, parse_mode="HTML")
+                await self._telegram.send_text(message, parse_mode="HTML")
         except Exception as e:
             logger.error(f"Failed to send completion notification: {e}")
 
@@ -636,7 +636,7 @@ class RebalancingEngine:
                 f"<i>{result.executed_at.strftime('%Y-%m-%d %H:%M:%S UTC')}</i>"
             )
             if self._telegram:
-                await self._telegram.send_message(message, parse_mode="HTML")
+                await self._telegram.send_text(message, parse_mode="HTML")
                 logger.warning(f"Emergency notification sent: {len(result.orders)} orders")
             else:
                 logger.warning(f"Emergency notification (no Telegram): {message}")
