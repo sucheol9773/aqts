@@ -85,7 +85,7 @@ docker exec aqts-mongodb mongosh -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INI
 # 특정 알림 1건을 PENDING 으로 강제 리셋
 docker exec aqts-mongodb mongosh -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --quiet --eval '
   db.alerts.updateOne(
-    { _id: ObjectId("<ALERT_ID>"), status: "dead" },
+    { _id: ObjectId("<ALERT_ID>"), status: "DEAD" },
     { $set: { status: "PENDING", send_attempts: 0, last_send_error: null } }
   )
 '
