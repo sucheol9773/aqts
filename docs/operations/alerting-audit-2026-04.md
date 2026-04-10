@@ -217,14 +217,15 @@ except Exception as e:
 
 본 감사는 관찰에 집중하며 코드/설정을 수정하지 않는다. 아래 항목은 **별도 커밋으로 분리**하여 진행해야 한다 — 한 커밋에 하나의 원인 (one-cause-one-commit 원칙).
 
-1. **[우선순위 상] AlertManager → Telegram wiring 또는 명시적 분리**
-   - 옵션 A: `AlertManager` 클래스에 `TelegramNotifier` 를 주입하고 `create_and_persist_alert` 내부에서 `level >= ERROR` 인 경우 자동 발송하도록 확장. `_kis_alert_callback` 등 기존 호출 경로가 자동으로 Telegram 에 도달하게 된다.
-   - 옵션 B: `AlertManager` 는 "저장 전용" 으로 명시하고, Telegram 이 필요한 호출자는 `TelegramNotifier` 를 직접 호출하도록 `_kis_alert_callback` 을 수정. 대신 `aqts_alerts.yml` §6 주석의 "이중화" 표현을 수정.
-   - 둘 중 어느 쪽이든 "`AlertManager` 호출 = Telegram 발송" 가정이 코드와 일치해야 한다.
+1. **[완료] AlertManager → Telegram wiring**
+   - 옵션 A 채택: `AlertManager` → `NotificationRouter` → `TelegramChannelAdapter` → `TelegramTransport` 경로로 wiring 완료.
+   - Commit 2 (NotificationRouter wiring), Commit 5 (TelegramTransport SSOT 추출), Commit 6 (legacy caller 마이그레이션)으로 구현.
+   - PR #3 (2026-04-10), PR #4 (2026-04-10) 머지 완료.
 
-2. **[우선순위 상] Telegram 엔드-투-엔드 스모크 테스트**
-   - `docs/operations/alerting.md` §6 (수동 검증) 에 이미 "짧은 테스트 rule 발화 → Telegram 수신 확인" 절차가 있지만, 마지막 실행 기록이 없다. 실제로 한 번 실행하여 Prometheus rule → alertmanager → Telegram 경로 전체가 종단 간 작동하는지 확인한다.
-   - 추가로 `daily_reporter.send_telegram_report` / `emergency_monitor._send_emergency_alert` 의 "dry-run Telegram 호출" 스모크를 CI 통합 테스트 레벨에 한 번 추가한다.
+2. **[완료] Telegram 엔드-투-엔드 스모크 테스트**
+   - `test_pipeline_wiring.py` (13개 테스트): AlertManager → Router → Adapter → Transport 전체 경로 E2E 검증, fallback 캐스케이드, 상태 전이 검증 완료.
+   - `test_telegram_transport.py` (27개 테스트): Transport 단위 테스트 완료.
+   - Prometheus rule → alertmanager → Telegram 인프라 경로의 수동 스모크는 서버 배포 후 별도 실행 필요.
 
 3. **[우선순위 중] 사일런트 기간 회고 감사**
    - 회귀 기간(`888db64` ~ `5a22faf`) 동안 로그/메트릭 기반으로 32 건의 사일런트 룰 중 실제로 발화했어야 했던 이벤트를 재구성한다.
@@ -232,7 +233,7 @@ except Exception as e:
    - 결과는 본 문서 §6 (부록) 에 추가하거나 별도 감사 문서로 분리한다.
 
 4. **[우선순위 낮] `aqts_alerts.yml` 주석 정정 및 룰 수 표기 정합성**
-   - §6 kis_recovery 그룹의 "이중화" 주석을 정정한다 (옵션 A/B 선택에 따라 문구가 달라짐).
+   - §6 kis_recovery 그룹의 "이중화" 주석을 정정한다 (옵션 A 채택에 따라 "AlertManager → NotificationRouter 경로로 이중화" 로 수정).
    - 문서 내 "총 N건" 표기를 단일 소스에서 자동 계산하도록 변경 (예: `check_doc_sync.py` 확장).
 
 ## 6. 부록 — 관찰 명령
@@ -276,7 +277,7 @@ sed -n '178,200p' backend/config/constants.py
     상태. 다중 워커/스케줄러 환경에서 동일 Alert 중복 발송을 방지하기 위한
     race 방어.
   - `DEAD`: 최대 재시도 초과 terminal 상태. 메타알림
-    (`AlertPipelineFailureRate`, Commit 3 예정)의 1차 타겟이며 운영자
+    (`AlertPipelineFailureRate`, Commit 3 구현 완료)의 1차 타겟이며 운영자
     수동 개입이 필요하다는 신호.
 - `Alert` dataclass 에 재시도 추적 필드 4종 추가:
   `send_attempts` / `last_send_error` / `last_send_attempt_at` /
@@ -360,7 +361,7 @@ sed -n '178,200p' backend/config/constants.py
 **경로 A 축소 결정**:
 
 Commit 2 초안에서는 `telegram_notifier.dispatch_alert` 내부 리팩터와
-`dispatch_pending_alerts` 의 `mark_alert_read` 버그 수정을 포함할 예정이었으나,
+`dispatch_pending_alerts` 의 `mark_alert_read` 버그 수정을 포함할 계획이었으나,
 기존 테스트 표면(7곳, `test_notification.py` / `test_gate_c_notification.py`)
 을 건드려야 하여 "wiring 부재 해결" + "기존 API 리팩터" 로 이중화되는 문제가
 있었다. CLAUDE.md 의 "bug fix 커밋에 무관한 변경 끼워넣기 금지" 원칙과

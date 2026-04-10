@@ -488,10 +488,10 @@ docker compose -f docker-compose.yml logs backend --tail=100 | grep -i alertretr
 
 - 감사 및 커밋 시리즈: [`docs/operations/alerting-audit-2026-04.md`](../operations/alerting-audit-2026-04.md)
 - 운영 절차 및 템플릿: [`docs/operations/alerting.md`](../operations/alerting.md)
-- 런북 (Commit 4 예정): `docs/operations/alert-pipeline-runbook.md`
+- 런북: [`docs/operations/alert-pipeline-runbook.md`](../operations/alert-pipeline-runbook.md)
 - Wiring Rule 원칙: [`CLAUDE.md`](../../CLAUDE.md) §"인증(authn) ≠ 인가(authz) 분리 원칙" 및 "공급망 보안 검증 규칙"
 
 ---
 
-**문서 상태**: 초안 (Commit 4 브랜치에서 최종 확정 예정)
+**문서 상태**: 확정 (Commit 1–7 시리즈 완료, PR #3 + PR #4 머지)
 **마지막 검토**: 2026-04-10
