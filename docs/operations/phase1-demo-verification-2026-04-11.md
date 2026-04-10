@@ -28,12 +28,18 @@
 - 데이터 범위: 2000-01-03 ~ 2026-04-09 (최신 거래일까지)
 - 종목당 평균 ~5,500행 (일봉 기준 26년치)
 
-### 2-2. 뉴스/DART — ⚠️ 미수집
+### 2-2. 뉴스/DART — ✅ 수동 수집 성공
 
-- MongoDB `aqts` 데이터베이스 미생성 (데이터 0건)
-- **원인**: `NewsCollectorService.collect_and_store()`가 스케줄러(`scheduler_handlers.py`)에 wiring 되지 않음
-- `InvestmentDecisionPipeline.run_news_collection()`과 API 엔드포인트(`POST /api/system/pipeline`)에서만 호출 가능
-- **후속 조치**: 수동 API 테스트로 MongoDB 저장 기능 검증 예정
+- 수동 실행으로 MongoDB `news_articles` 컬렉션에 데이터 저장 완료
+- RSS 수집: 657건 (10개 피드, 한경 stock 피드 1개 404 제외)
+  - NAVER_FINANCE: 200건 (주식/증시 키워드)
+  - HANKYUNG: 83건 (economy/finance)
+  - MAEKYUNG: 79건 (시장/종합)
+  - REUTERS: 295건 (markets/economy/Asia)
+- DART 공시: 385건 (20260409~20260410)
+- MongoDB 저장: **907건 신규**, 135건 중복 스킵, 총 1,042건 처리
+- **참고**: `NewsCollectorService`가 스케줄러(`scheduler_handlers.py`)에 wiring 되지 않아 자동 수집 불가. 수동 스크립트 또는 API 호출 필요
+- **실행 방법**: `docker exec aqts-backend python -c "await MongoDBManager.connect(); await NewsCollectorService().collect_and_store()"`
 
 ### 2-3. 경제지표 (FRED/ECOS) — ⚠️ 미수집
 
@@ -54,6 +60,32 @@
 ---
 
 ## 3. Phase 1-2 파이프라인 E2E 검증 결과
+
+### 3-0. 파이프라인 E2E 수동 테스트 — ✅ 전 구간 성공
+
+`POST /api/system/pipeline?tickers=005930` 최종 실행 결과 (2026-04-10 16:19 UTC):
+
+```json
+{
+    "005930": {
+        "status": "completed",
+        "ensemble_signal": 0.0567,
+        "action": "HOLD",
+        "confidence": 0.09
+    }
+}
+```
+
+전체 파이프라인 흐름 확인:
+- **DataGate: PASS** — 뉴스 데이터 존재 확인
+- **Sentiment 분석: SUCCESS** — Anthropic API (Haiku 4.5) 호출 성공
+- **Opinion 생성: SUCCESS** — Anthropic API (Sonnet 4) 호출 성공
+- **Ensemble: 0.0567** — 약간 매수 방향, BUY 임계값 미달
+- **SignalGate: PASS** — 유의미한 시그널 생성 (HOLD이지만 conviction > 0)
+
+발견 및 해결한 이슈:
+1. API 크레딧 부족 → $25 충전으로 해결
+2. `EnsembleSignal.confidence` 속성명 불일치 → `final_confidence`로 수정 (§6 참조)
 
 ### 3-1. 앙상블 시그널 — ✅ 실행됨 (단, SQL 버그 발견)
 
@@ -159,10 +191,51 @@ INITIAL_CAPITAL_KRW=10000000
 
 ---
 
-## 6. 다음 단계
+## 6. BUG: EnsembleSignal 속성명 불일치 (confidence → final_confidence)
 
-1. **SQL 버그 수정 배포**: 이번 커밋 이후 CD를 통해 서버에 반영
-2. **INITIAL_CAPITAL_KRW 설정**: 서버 `.env` 수정
-3. **수동 뉴스 수집 테스트**: `POST /api/system/pipeline` API 호출로 MongoDB 저장 검증
-4. **텔레그램 발송 검증**: 다음 거래일(04-13 월) MARKET_CLOSE 이후 확인
-5. **환율 수집 경로 확인**: `ExchangeRateService` 코드 분석 필요
+### 증상
+
+`POST /api/system/pipeline?tickers=005930` 호출 시:
+
+```
+'EnsembleSignal' object has no attribute 'confidence'
+```
+
+### 원인
+
+`api/routes/system.py:263` — `ensemble.confidence`로 접근하지만, `EnsembleSignal` dataclass(`core/strategy_ensemble/engine.py:63`)의 실제 속성명은 `final_confidence`.
+
+### 수정
+
+```python
+# Before (system.py:263)
+"confidence": float(ensemble.confidence) if ensemble else None,
+
+# After
+"confidence": float(ensemble.final_confidence) if ensemble else None,
+```
+
+테스트 mock도 동일하게 수정 (`tests/test_system_routes.py:282, 346`).
+
+---
+
+## 7. 완료된 조치
+
+| 항목 | 상태 | 비고 |
+|------|------|------|
+| SQL 버그 수정 배포 | ✅ 완료 | commit f755ad1, `= ANY(:markets)` |
+| INITIAL_CAPITAL_KRW 설정 | ✅ 완료 | 서버 `.env` → 10,000,000원 |
+| 수동 뉴스 수집 테스트 | ✅ 완료 | 907건 MongoDB 저장 성공 |
+| 관리자 계정 생성 | ✅ 완료 | admin 계정, operator 권한 |
+| 파이프라인 API 호출 | ✅ 완료 | E2E 전 구간 성공 (005930: signal=0.0567, HOLD) |
+| EnsembleSignal 속성 버그 수정 | ✅ 완료 | confidence → final_confidence |
+| Anthropic API 크레딧 충전 | ✅ 완료 | $25 충전 |
+
+## 8. 미해결 항목
+
+| 항목 | 우선순위 | 비고 |
+|------|----------|------|
+| 텔레그램 발송 검증 | P1 | 다음 거래일(04-13 월) MARKET_CLOSE 이후 확인 |
+| 환율 수집 경로 확인 | P2 | `exchange_rates` 테이블 0건 |
+| NewsCollector 스케줄러 wiring | P2 | 자동 수집을 위해 scheduler_handlers.py 연결 필요 |
+| 경제지표 수집 (FRED/ECOS) | P3 | API 키 설정 후 수집 가능 |

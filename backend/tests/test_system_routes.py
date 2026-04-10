@@ -279,7 +279,7 @@ class TestSystemRoutes:
             mock_ensemble_signal = MagicMock()
             mock_ensemble_signal.final_signal = 0.75
             mock_ensemble_signal.action = "BUY"
-            mock_ensemble_signal.confidence = 0.85
+            mock_ensemble_signal.final_confidence = 0.85
 
             mock_pipeline_instance.run_batch_analysis.return_value = {
                 "005930": MagicMock(
@@ -343,7 +343,7 @@ class TestSystemRoutes:
             mock_ensemble_signal = MagicMock()
             mock_ensemble_signal.final_signal = 0.50
             mock_ensemble_signal.action = "HOLD"
-            mock_ensemble_signal.confidence = 0.60
+            mock_ensemble_signal.final_confidence = 0.60
 
             mock_pipeline_instance.run_batch_analysis.return_value = {
                 "005930": MagicMock(

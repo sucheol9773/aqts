@@ -260,7 +260,7 @@ async def run_analysis_pipeline(
                     "status": "completed",
                     "ensemble_signal": float(ensemble.final_signal) if ensemble else None,
                     "action": ensemble.action if ensemble else None,
-                    "confidence": float(ensemble.confidence) if ensemble else None,
+                    "confidence": float(ensemble.final_confidence) if ensemble else None,
                 }
 
         # 감사 로그 기록
