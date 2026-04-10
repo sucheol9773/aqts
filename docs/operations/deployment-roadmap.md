@@ -12,12 +12,13 @@
 
 | 항목 | 상태 |
 |------|------|
-| 코드 구현 | 135개 기능 전체 구현 완료 (100%) |
-| 테스트 | 3,088건 전체 통과 (커버리지 90%) |
+| 코드 구현 | 151개 기능 전체 구현 + 테스트 완료 (100%) |
+| 테스트 | 3,942건 전체 통과 (커버리지 89%) |
 | 릴리즈 게이트 | Gate A~E 전체 PASS (ASC 서명 완료, 2026-04-05) |
 | 부하 테스트 | 28건 스트레스 테스트 통과 (동시성/메모리/스케일링) |
-| 미해결 CVE | torch 2.6.0+ 업그레이드 필요 (배포 환경에서 수행) |
-| 배포 인프라 | Docker Compose 구성 완료 (OPS-007 참조) |
+| 미해결 CVE | ✅ torch 2.11.0+cpu 설치 완료 (CVE 해소) |
+| 배포 인프라 | Docker Compose 구성 완료, GCP 서버 가동 중 (OPS-007 참조) |
+| SSL/TLS | 자체 서명 인증서 + nginx 리버스 프록시 (443 → 8000) |
 | 카나리 배포 | nginx 리버스 프록시 + docker-compose.canary.yml 구성 완료 |
 | 배포 스크립트 | pre_deploy_check.sh (7단계 검증) + canary_deploy.sh (5개 명령) |
 
@@ -43,18 +44,18 @@
 
 ### 0-2. 클라우드 인프라 프로비저닝
 
-- [ ] 클라우드 서버 선택 (AWS EC2 / GCP Compute / NCP 등)
-- [ ] 서버 사양: 최소 4코어 / 8GB RAM / 50GB SSD
-- [ ] Docker 및 Docker Compose 설치
-- [ ] 방화벽 설정: 8000(API), 22(SSH)만 개방, DB 포트(5432/27017/6379) 외부 차단
-- [ ] SSL/TLS 인증서 설정 (Let's Encrypt 또는 클라우드 제공 인증서)
+- [x] 클라우드 서버 선택: GCP Compute Engine (aqts-server, 34.64.216.144)
+- [x] 서버 사양: 최소 4코어 / 8GB RAM / 50GB SSD
+- [x] Docker 및 Docker Compose 설치
+- [x] 방화벽 설정: 443(HTTPS), 22(SSH)만 개방, 8000(API 직접)/DB 포트(5432/27017/6379) 외부 차단 (GCP VPC 방화벽)
+- [x] SSL/TLS 인증서 설정: 자체 서명 인증서 + nginx 리버스 프록시 (Phase 2 LIVE 전환 시 도메인 + Let's Encrypt로 교체 예정)
 
 ### 0-3. 환경 구성
 
-- [ ] `.env` 파일 생성 (OPS-007 3절 참조)
-- [ ] KIS 모의투자 API 키 발급 및 설정 (`KIS_TRADING_MODE=DEMO`)
-- [ ] Anthropic API 키 설정
-- [ ] 텔레그램 봇 생성 및 알림 채널 설정
+- [x] `.env` 파일 생성 (OPS-007 3절 참조)
+- [x] KIS 모의투자 + 실전 API 키 발급 및 설정
+- [x] Anthropic API 키 설정
+- [x] 텔레그램 봇 생성 및 알림 채널 설정
 - [ ] DART/FRED/ECOS API 키 설정 (선택)
 
 ### 0-4. 최초 배포
