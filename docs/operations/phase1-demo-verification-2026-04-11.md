@@ -47,10 +47,13 @@
 - **원인**: FRED/ECOS API 키 미설정 (Phase 0에서 선택사항으로 분류)
 - `EconomicCollectorService.collect_and_store()` 스케줄러 미연결
 
-### 2-4. 환율 — ⚠️ 미수집
+### 2-4. 환율 — ✅ DB 영속화 구현 완료
 
-- `exchange_rates` 테이블 0건
-- 수집 경로 확인 필요
+- `ExchangeRateManager._store_rate_to_db()` 메서드 추가 (TimescaleDB UPSERT)
+- `get_current_rate(persist=True)` 파라미터로 DB 저장 제어
+- `scheduler_main.py`에 1시간 간격 백그라운드 수집 루프 추가 (`_exchange_rate_loop`)
+- Redis 캐시 + TimescaleDB 이중 영속화 구조
+- 배포 후 `exchange_rates` 테이블에 데이터 적재 시작 예정
 
 ### 2-5. Circuit Breaker — ✅ 정상 대기
 
@@ -232,12 +235,13 @@ INITIAL_CAPITAL_KRW=10000000
 | Anthropic API 크레딧 충전 | ✅ 완료 | $25 충전 |
 | p95 레이턴시 heavy endpoint 분리 | ✅ 완료 | pipeline/backtest/oos/batch/sweep → 별도 히스토그램 |
 | Docker 포트 보안 강화 | ✅ 완료 | 전 서비스 127.0.0.1 바인딩 (defense in depth) |
+| 환율 DB 영속화 + 스케줄러 | ✅ 완료 | `_store_rate_to_db()` + 1시간 간격 `_exchange_rate_loop` |
 
 ## 8. 미해결 항목
 
 | 항목 | 우선순위 | 비고 |
 |------|----------|------|
 | 텔레그램 발송 검증 | P1 | 다음 거래일(04-13 월) MARKET_CLOSE 이후 확인 |
-| 환율 수집 경로 확인 | P2 | `exchange_rates` 테이블 0건 |
+| 환율 수집 배포 검증 | P2 | DB 영속화 코드 완료, 배포 후 `exchange_rates` 테이블 데이터 확인 필요 |
 | NewsCollector 스케줄러 wiring | P2 | 자동 수집을 위해 scheduler_handlers.py 연결 필요 |
 | 경제지표 수집 (FRED/ECOS) | P3 | API 키 설정 후 수집 가능 |

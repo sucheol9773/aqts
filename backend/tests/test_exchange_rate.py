@@ -10,6 +10,7 @@ Tests cover:
 - Error handling and edge cases
 """
 
+import asyncio
 from datetime import datetime, time
 from unittest.mock import AsyncMock, MagicMock, patch
 from zoneinfo import ZoneInfo
@@ -734,3 +735,200 @@ class TestExchangeRateManagerIntegration:
 
         # 1M + 100*1350 + 500K + 200*1350 = 1M + 135K + 500K + 270K = 1.905M
         assert result == 1_905_000.0
+
+
+# ============================================================================
+# TestExchangeRateManager - DB Persistence Tests
+# ============================================================================
+
+
+class TestExchangeRateManagerDBPersistence:
+    """Tests for TimescaleDB persistence (_store_rate_to_db)."""
+
+    @pytest.mark.asyncio
+    async def test_store_rate_to_db_success(self, exchange_rate_manager):
+        """Test that _store_rate_to_db executes INSERT with correct parameters."""
+        rate = ExchangeRate(
+            pair="USD/KRW",
+            rate=1350.50,
+            source="KIS",
+            fetched_at=datetime(2026, 4, 11, 12, 0, 0, tzinfo=ZoneInfo("UTC")),
+        )
+
+        mock_session = AsyncMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
+
+        with patch(
+            "core.portfolio_manager.exchange_rate.async_session_factory",
+            return_value=mock_session_ctx,
+        ):
+            await exchange_rate_manager._store_rate_to_db(rate)
+
+        mock_session.execute.assert_called_once()
+        call_args = mock_session.execute.call_args
+        params = call_args[0][1]
+        assert params["currency_pair"] == "USD/KRW"
+        assert params["rate"] == 1350.50
+        assert params["source"] == "KIS"
+        assert params["time"] == rate.fetched_at
+        mock_session.commit.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_store_rate_to_db_failure_does_not_raise(self, exchange_rate_manager):
+        """Test that DB failure is logged but does not propagate exception."""
+        rate = ExchangeRate(
+            pair="USD/KRW",
+            rate=1350.0,
+            source="KIS",
+            fetched_at=datetime(2026, 4, 11, 12, 0, 0, tzinfo=ZoneInfo("UTC")),
+        )
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(side_effect=Exception("DB connection failed"))
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
+
+        with patch(
+            "core.portfolio_manager.exchange_rate.async_session_factory",
+            return_value=mock_session_ctx,
+        ):
+            # Should not raise — failure is logged and swallowed
+            await exchange_rate_manager._store_rate_to_db(rate)
+
+    @pytest.mark.asyncio
+    async def test_get_current_rate_persist_true_calls_store(self, exchange_rate_manager):
+        """Test that persist=True triggers _store_rate_to_db on fresh fetch."""
+        exchange_rate_manager._get_cached_rate = AsyncMock(return_value=None)
+        exchange_rate_manager.fetch_from_kis = AsyncMock(return_value=1350.0)
+        exchange_rate_manager._cache_rate = AsyncMock()
+        exchange_rate_manager._store_rate_to_db = AsyncMock()
+
+        result = await exchange_rate_manager.get_current_rate("USD/KRW", persist=True)
+
+        assert result.source == "KIS"
+        exchange_rate_manager._store_rate_to_db.assert_called_once()
+        stored_rate = exchange_rate_manager._store_rate_to_db.call_args[0][0]
+        assert stored_rate.rate == 1350.0
+        assert stored_rate.source == "KIS"
+
+    @pytest.mark.asyncio
+    async def test_get_current_rate_persist_false_skips_store(self, exchange_rate_manager):
+        """Test that persist=False (default) does not call _store_rate_to_db."""
+        exchange_rate_manager._get_cached_rate = AsyncMock(return_value=None)
+        exchange_rate_manager.fetch_from_kis = AsyncMock(return_value=1350.0)
+        exchange_rate_manager._cache_rate = AsyncMock()
+        exchange_rate_manager._store_rate_to_db = AsyncMock()
+
+        await exchange_rate_manager.get_current_rate("USD/KRW")
+
+        exchange_rate_manager._store_rate_to_db.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_get_current_rate_persist_on_fred_fallback(self, exchange_rate_manager):
+        """Test that persist=True works when falling back to FRED."""
+        exchange_rate_manager._get_cached_rate = AsyncMock(return_value=None)
+        exchange_rate_manager.fetch_from_kis = AsyncMock(side_effect=Exception("KIS error"))
+        exchange_rate_manager.fetch_from_fred = AsyncMock(return_value=1345.0)
+        exchange_rate_manager._cache_rate = AsyncMock()
+        exchange_rate_manager._store_rate_to_db = AsyncMock()
+
+        result = await exchange_rate_manager.get_current_rate("USD/KRW", persist=True)
+
+        assert result.source == "FRED"
+        exchange_rate_manager._store_rate_to_db.assert_called_once()
+        stored_rate = exchange_rate_manager._store_rate_to_db.call_args[0][0]
+        assert stored_rate.source == "FRED"
+
+    @pytest.mark.asyncio
+    async def test_get_current_rate_cache_hit_skips_store(self, exchange_rate_manager):
+        """Test that cache hit skips DB persistence even with persist=True."""
+        cached_rate = ExchangeRate(
+            pair="USD/KRW",
+            rate=1350.0,
+            source="CACHE",
+            fetched_at=datetime.now(ZoneInfo("UTC")),
+        )
+        exchange_rate_manager._get_cached_rate = AsyncMock(return_value=cached_rate)
+        exchange_rate_manager._store_rate_to_db = AsyncMock()
+
+        result = await exchange_rate_manager.get_current_rate("USD/KRW", persist=True)
+
+        assert result.source == "CACHE"
+        exchange_rate_manager._store_rate_to_db.assert_not_called()
+
+
+# ============================================================================
+# TestExchangeRateLoop - Scheduler Background Loop Tests
+# ============================================================================
+
+
+class TestExchangeRateLoop:
+    """Tests for _exchange_rate_loop in scheduler_main."""
+
+    @pytest.mark.asyncio
+    async def test_exchange_rate_loop_single_iteration(self):
+        """Test that _exchange_rate_loop calls get_current_rate with persist=True."""
+        from scheduler_main import _exchange_rate_loop
+
+        stop_event = asyncio.Event()
+
+        mock_rate = ExchangeRate(
+            pair="USD/KRW",
+            rate=1350.0,
+            source="KIS",
+            fetched_at=datetime.now(ZoneInfo("UTC")),
+        )
+
+        with patch("scheduler_main.ExchangeRateManager") as mock_manager_cls:
+            mock_manager = MagicMock()
+            mock_manager.get_current_rate = AsyncMock(return_value=mock_rate)
+            mock_manager_cls.return_value = mock_manager
+
+            # stop_event을 즉시 set하여 1회 실행 후 종료
+            async def set_stop_after_call(*args, **kwargs):
+                stop_event.set()
+                return mock_rate
+
+            mock_manager.get_current_rate = AsyncMock(side_effect=set_stop_after_call)
+
+            await _exchange_rate_loop(stop_event)
+
+            mock_manager.get_current_rate.assert_called_once_with("USD/KRW", persist=True)
+
+    @pytest.mark.asyncio
+    async def test_exchange_rate_loop_handles_error(self):
+        """Test that _exchange_rate_loop continues after an error."""
+        from scheduler_main import _exchange_rate_loop
+
+        stop_event = asyncio.Event()
+        call_count = 0
+
+        with (
+            patch("scheduler_main.ExchangeRateManager") as mock_manager_cls,
+            patch("scheduler_main.EXCHANGE_RATE_INTERVAL_SEC", 0.01),
+        ):
+            mock_manager = MagicMock()
+
+            async def side_effect(*args, **kwargs):
+                nonlocal call_count
+                call_count += 1
+                if call_count == 1:
+                    raise Exception("Temporary API error")
+                stop_event.set()
+                return ExchangeRate(
+                    pair="USD/KRW",
+                    rate=1350.0,
+                    source="KIS",
+                    fetched_at=datetime.now(ZoneInfo("UTC")),
+                )
+
+            mock_manager.get_current_rate = AsyncMock(side_effect=side_effect)
+            mock_manager_cls.return_value = mock_manager
+
+            await _exchange_rate_loop(stop_event)
+
+            # 에러 후에도 2번째 호출 성공
+            assert mock_manager.get_current_rate.call_count == 2

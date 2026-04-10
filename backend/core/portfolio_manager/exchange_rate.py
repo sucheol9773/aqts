@@ -23,11 +23,12 @@ from datetime import datetime, time, timedelta, timezone
 from typing import Any, Optional
 
 import httpx
+from sqlalchemy import text as sa_text
 
 from config.logging import logger
 from config.settings import get_settings
 from core.data_collector.kis_client import KISClient
-from db.database import RedisManager
+from db.database import RedisManager, async_session_factory
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -97,7 +98,7 @@ class ExchangeRateManager:
         self._kis_client = KISClient()
         logger.info("ExchangeRateManager 초기화 완료")
 
-    async def get_current_rate(self, pair: str = "USD/KRW") -> ExchangeRate:
+    async def get_current_rate(self, pair: str = "USD/KRW", *, persist: bool = False) -> ExchangeRate:
         """
         현재 환율 조회
 
@@ -106,6 +107,7 @@ class ExchangeRateManager:
 
         Args:
             pair: 통화 쌍 (기본값: "USD/KRW")
+            persist: True이면 신규 조회 시 TimescaleDB에도 영속화
 
         Returns:
             ExchangeRate: 환율 데이터
@@ -133,6 +135,8 @@ class ExchangeRateManager:
                     fetched_at=datetime.now(timezone.utc),
                 )
                 await self._cache_rate(rate_data)
+                if persist:
+                    await self._store_rate_to_db(rate_data)
                 logger.info(f"KIS 환율 조회 완료: {rate}")
                 return rate_data
             except Exception as e:
@@ -147,6 +151,8 @@ class ExchangeRateManager:
                 fetched_at=datetime.now(timezone.utc),
             )
             await self._cache_rate(rate_data)
+            if persist:
+                await self._store_rate_to_db(rate_data)
             logger.info(f"FRED 환율 조회 완료: {rate}")
             return rate_data
 
@@ -344,6 +350,41 @@ class ExchangeRateManager:
         except Exception as e:
             logger.error(f"포트폴리오 KRW 가치 계산 실패: {e}")
             raise
+
+    async def _store_rate_to_db(self, rate: ExchangeRate) -> None:
+        """
+        환율을 TimescaleDB exchange_rates 테이블에 영속화
+
+        ON CONFLICT 로 동일 (time, currency_pair) 중복 시 최신값으로 갱신합니다.
+
+        Args:
+            rate: 환율 데이터
+        """
+        try:
+            async with async_session_factory() as session:
+                query = sa_text(
+                    """
+                    INSERT INTO exchange_rates (time, currency_pair, rate, source)
+                    VALUES (:time, :currency_pair, :rate, :source)
+                    ON CONFLICT (time, currency_pair)
+                    DO UPDATE SET
+                        rate = EXCLUDED.rate,
+                        source = EXCLUDED.source
+                    """
+                )
+                await session.execute(
+                    query,
+                    {
+                        "time": rate.fetched_at,
+                        "currency_pair": rate.pair,
+                        "rate": rate.rate,
+                        "source": rate.source,
+                    },
+                )
+                await session.commit()
+            logger.info(f"환율 DB 저장: {rate.pair}={rate.rate} (source={rate.source})")
+        except Exception as e:
+            logger.warning(f"환율 DB 저장 실패 (서비스 영향 없음): {e}")
 
     def _is_market_hours(self) -> bool:
         """

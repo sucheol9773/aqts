@@ -18,6 +18,7 @@ from config.logging import logger, setup_logging
 from config.settings import get_settings
 from core.data_collector.kis_client import KISClient
 from core.portfolio_ledger import configure_portfolio_ledger
+from core.portfolio_manager.exchange_rate import ExchangeRateManager
 from core.reconciliation import ReconciliationEngine
 from core.reconciliation_providers import (
     KISBrokerPositionProvider,
@@ -28,6 +29,35 @@ from core.scheduler_handlers import register_pipeline_handlers
 from core.trading_scheduler import TradingScheduler
 from db.database import MongoDBManager, RedisManager, async_session_factory, engine
 from db.repositories.portfolio_positions import SqlPortfolioLedgerRepository
+
+# 환율 수집 주기 (초)
+EXCHANGE_RATE_INTERVAL_SEC = 3600  # 1시간
+
+
+async def _exchange_rate_loop(stop_event: asyncio.Event) -> None:
+    """
+    환율 수집 백그라운드 루프
+
+    1시간 간격으로 USD/KRW 환율을 조회하여 TimescaleDB에 영속화합니다.
+    Redis 캐시가 유효한 경우 API 호출 없이 캐시 갱신 시점까지 대기합니다.
+    persist=True로 호출하여 캐시 미스 시 DB 저장을 보장합니다.
+    """
+    manager = ExchangeRateManager()
+    logger.info(f"ExchangeRateCollectionLoop started (interval={EXCHANGE_RATE_INTERVAL_SEC}s)")
+
+    while not stop_event.is_set():
+        try:
+            rate_data = await manager.get_current_rate("USD/KRW", persist=True)
+            logger.info(f"[ExchangeRate] 수집 완료: {rate_data.rate} " f"(source={rate_data.source})")
+        except Exception as e:
+            logger.error(f"[ExchangeRate] 수집 실패: {e}")
+
+        # 종료 시그널과 함께 대기 (stop_event.wait에 타임아웃 적용)
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=EXCHANGE_RATE_INTERVAL_SEC)
+            break  # stop_event가 set되면 루프 종료
+        except asyncio.TimeoutError:
+            pass  # 타임아웃 = 다음 수집 주기
 
 
 async def main():
@@ -119,6 +149,10 @@ async def main():
     await scheduler.start()
     logger.info("TradingScheduler started successfully")
 
+    # 환율 수집 백그라운드 루프 시작
+    exchange_rate_task = asyncio.create_task(_exchange_rate_loop(stop_event))
+    logger.info("ExchangeRateCollectionLoop task created")
+
     # 종료 시그널 대기
     await stop_event.wait()
 
@@ -126,6 +160,14 @@ async def main():
     logger.info("Scheduler shutting down...")
     await scheduler.stop()
     logger.info("TradingScheduler stopped")
+
+    # 환율 수집 루프 종료 대기
+    exchange_rate_task.cancel()
+    try:
+        await exchange_rate_task
+    except asyncio.CancelledError:
+        pass
+    logger.info("ExchangeRateCollectionLoop stopped")
 
     await MongoDBManager.disconnect()
     await RedisManager.disconnect()
