@@ -155,6 +155,22 @@ jobs:
             export IMAGE_NAMESPACE IMAGE_TAG
             docker compose -f docker-compose.yml up -d postgres
 
+            # postgres 컨테이너 recreate 후 pg_isready 대기 (최대 60초).
+            # 포트 바인딩 변경 등 compose 설정이 바뀌면 컨테이너가 재생성되고,
+            # 기동 완료 전 psql 호출 시 소켓 부재로 실패한다 (회귀: 678e995).
+            echo "Waiting for postgres readiness..."
+            for i in $(seq 1 30); do
+              if docker exec aqts-postgres pg_isready -U "${DB_USER:-aqts_user}" </dev/null >/dev/null 2>&1; then
+                echo "postgres ready after ${i}×2s"
+                break
+              fi
+              if [ "$i" = "30" ]; then
+                echo "❌ postgres not ready after 60s"
+                exit 1
+              fi
+              sleep 2
+            done
+
             echo "═══ Step 5b: Detect alembic baseline (init_db.sql 호환) ═══"
             # init_db.sql 로 부트스트랩된 DB 는 alembic_version 이 비어 있다.
             # 그 상태에서 곧바로 upgrade head 를 돌리면 001 이 market_ohlcv 를
