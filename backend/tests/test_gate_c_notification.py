@@ -545,28 +545,28 @@ class TestTelegramChannelAdapter:
 
     def test_channel_name(self):
         """채널 이름"""
-        with patch("core.notification.telegram_notifier.get_settings") as ms:
+        with patch("config.settings.get_settings") as ms:
             ms.return_value = MagicMock(telegram=MagicMock(bot_token="tok", chat_id="cid", alert_level="ALL"))
             adapter = TelegramChannelAdapter(bot_token="tok", chat_id="cid")
         assert adapter.channel_name == "telegram"
 
     def test_is_available_with_token(self):
         """토큰+채팅ID 설정 시 사용 가능"""
-        with patch("core.notification.telegram_notifier.get_settings") as ms:
+        with patch("config.settings.get_settings") as ms:
             ms.return_value = MagicMock(telegram=MagicMock(bot_token="tok", chat_id="cid", alert_level="ALL"))
             adapter = TelegramChannelAdapter(bot_token="tok", chat_id="cid")
         assert adapter.is_available() is True
 
     def test_is_unavailable_without_token(self):
         """토큰 미설정 시 사용 불가"""
-        with patch("core.notification.telegram_notifier.get_settings") as ms:
+        with patch("config.settings.get_settings") as ms:
             ms.return_value = MagicMock(telegram=MagicMock(bot_token="", chat_id="cid", alert_level="ALL"))
             adapter = TelegramChannelAdapter(bot_token="", chat_id="cid")
         assert adapter.is_available() is False
 
-    async def test_send_delegates_to_notifier(self):
-        """send() → TelegramNotifier.send_message() 위임"""
-        with patch("core.notification.telegram_notifier.get_settings") as ms:
+    async def test_send_delegates_to_transport(self):
+        """send() → TelegramTransport.send_text() 위임"""
+        with patch("config.settings.get_settings") as ms:
             ms.return_value = MagicMock(telegram=MagicMock(bot_token="tok", chat_id="cid", alert_level="ALL"))
             adapter = TelegramChannelAdapter(bot_token="tok", chat_id="cid")
 
@@ -582,7 +582,7 @@ class TestTelegramChannelAdapter:
 
     async def test_filtered_alert_returns_true(self):
         """필터링된 알림은 True 반환"""
-        with patch("core.notification.telegram_notifier.get_settings") as ms:
+        with patch("config.settings.get_settings") as ms:
             ms.return_value = MagicMock(telegram=MagicMock(bot_token="tok", chat_id="cid", alert_level="ERROR"))
             adapter = TelegramChannelAdapter(bot_token="tok", chat_id="cid", alert_level="ERROR")
 

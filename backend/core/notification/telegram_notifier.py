@@ -6,14 +6,13 @@ Phase 5: 텔레그램 봇을 통한 실시간 알림 전달
 기능:
   - AlertManager에서 생성된 알림을 텔레그램으로 전달
   - 알림 레벨별 필터링 (ALL/IMPORTANT/ERROR)
-  - 발송 실패 시 재시도 (최대 3회)
-  - 메시지 길이 제한 (4096자) 자동 분할
+  - 메시지 포맷팅 (Alert → HTML)
+  - 상태 관리 (dispatch_alert → save_alert)
+
+HTTP 전송은 TelegramTransport 에 위임한다 (SSOT).
 """
 
-import asyncio
 from typing import Optional
-
-import httpx
 
 from config.logging import logger
 from config.settings import get_settings
@@ -23,9 +22,10 @@ from core.notification.alert_manager import (
     AlertManager,
     AlertStatus,
 )
-
-# 텔레그램 메시지 최대 길이
-TELEGRAM_MAX_LENGTH = 4096
+from core.notification.telegram_transport import (
+    TelegramTransport,
+    create_transport,
+)
 
 # 알림 레벨 우선순위 매핑
 ALERT_LEVEL_PRIORITY = {
@@ -42,6 +42,9 @@ FILTER_LEVEL_MAP = {
     "ERROR": 2,  # ERROR 이상
 }
 
+# 하위호환: 기존 import 경로 유지 (from telegram_notifier import TELEGRAM_MAX_LENGTH)
+from core.notification.telegram_transport import TELEGRAM_MAX_LENGTH  # noqa: E402, F401
+
 
 class TelegramNotifier:
     """
@@ -49,9 +52,9 @@ class TelegramNotifier:
 
     AlertManager와 연동하여 알림 생성 → 텔레그램 전달 → 상태 업데이트
     전체 흐름을 처리합니다.
-    """
 
-    TELEGRAM_API_BASE = "https://api.telegram.org/bot{token}"
+    HTTP 전송은 TelegramTransport 에 위임합니다.
+    """
 
     def __init__(
         self,
@@ -59,17 +62,27 @@ class TelegramNotifier:
         bot_token: Optional[str] = None,
         chat_id: Optional[str] = None,
         alert_level: Optional[str] = None,
+        transport: Optional[TelegramTransport] = None,
     ):
         settings = get_settings()
         self._alert_manager = alert_manager or AlertManager()
-        self._bot_token = bot_token or settings.telegram.bot_token
-        self._chat_id = chat_id or settings.telegram.chat_id
         self._alert_level = alert_level or settings.telegram.alert_level
-        self._base_url = self.TELEGRAM_API_BASE.format(token=self._bot_token)
-        self._max_retries = 3
+
+        # Transport 주입 또는 자동 생성
+        if transport is not None:
+            self._transport = transport
+        else:
+            self._transport = create_transport(
+                bot_token=bot_token,
+                chat_id=chat_id,
+            )
+
+        # 하위호환 프로퍼티 (기존 코드에서 직접 참조하는 곳 대응)
+        self._bot_token = self._transport.bot_token
+        self._chat_id = self._transport.chat_id
 
     # ══════════════════════════════════════
-    # 메시지 발송
+    # 메시지 발송 (Transport 위임)
     # ══════════════════════════════════════
     async def send_message(self, text: str, parse_mode: str = "HTML") -> bool:
         """
@@ -82,47 +95,7 @@ class TelegramNotifier:
         Returns:
             발송 성공 여부
         """
-        # 메시지 길이 초과 시 분할
-        messages = self._split_message(text)
-
-        for msg in messages:
-            success = await self._send_single_message(msg, parse_mode)
-            if not success:
-                return False
-            # 연속 발송 시 딜레이
-            if len(messages) > 1:
-                await asyncio.sleep(0.5)
-
-        return True
-
-    async def _send_single_message(self, text: str, parse_mode: str = "HTML") -> bool:
-        """단일 메시지 발송 (재시도 포함)"""
-        url = f"{self._base_url}/sendMessage"
-        payload = {
-            "chat_id": self._chat_id,
-            "text": text,
-            "parse_mode": parse_mode,
-        }
-
-        for attempt in range(1, self._max_retries + 1):
-            try:
-                async with httpx.AsyncClient(timeout=10) as client:
-                    response = await client.post(url, json=payload)
-                    if response.status_code == 200:
-                        return True
-
-                    logger.warning(
-                        f"Telegram send failed (attempt {attempt}): "
-                        f"status={response.status_code}, body={response.text}"
-                    )
-            except Exception as e:
-                logger.warning(f"Telegram send error (attempt {attempt}): {e}")
-
-            if attempt < self._max_retries:
-                await asyncio.sleep(1.0 * attempt)
-
-        logger.error("Telegram message send failed after max retries")
-        return False
+        return await self._transport.send_text(text, parse_mode=parse_mode)
 
     # ══════════════════════════════════════
     # 알림 발송 (AlertManager 연동)
@@ -272,22 +245,10 @@ class TelegramNotifier:
 
     @staticmethod
     def _split_message(text: str) -> list[str]:
-        """긴 메시지를 텔레그램 최대 길이에 맞게 분할"""
-        if len(text) <= TELEGRAM_MAX_LENGTH:
-            return [text]
+        """긴 메시지를 텔레그램 최대 길이에 맞게 분할
 
-        messages = []
-        while text:
-            if len(text) <= TELEGRAM_MAX_LENGTH:
-                messages.append(text)
-                break
+        하위호환용. 신규 코드는 telegram_transport.split_message() 를 사용한다.
+        """
+        from core.notification.telegram_transport import split_message
 
-            # 줄바꿈 기준으로 분할
-            split_idx = text.rfind("\n", 0, TELEGRAM_MAX_LENGTH)
-            if split_idx == -1:
-                split_idx = TELEGRAM_MAX_LENGTH
-
-            messages.append(text[:split_idx])
-            text = text[split_idx:].lstrip("\n")
-
-        return messages
+        return split_message(text)

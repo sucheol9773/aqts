@@ -147,7 +147,7 @@ async def lifespan(app: FastAPI):
             from core.notification.telegram_adapter import TelegramChannelAdapter
 
             notification_router = NotificationRouter()
-            notification_router.add_channel(TelegramChannelAdapter(_am_for_router))
+            notification_router.add_channel(TelegramChannelAdapter())
             notification_router.add_channel(FileNotifier())
             notification_router.add_channel(ConsoleNotifier())
             _am_for_router.set_router(notification_router)
