@@ -130,6 +130,83 @@ class TestDynamicEnsembleRunner:
 
         assert result.ensemble.vol_scalar <= 1.0
 
+    @pytest.mark.asyncio
+    async def test_fetch_ohlcv_sql_uses_any_not_in(self):
+        """
+        _fetch_ohlcv SQL 쿼리가 asyncpg 호환 문법(= ANY)을 사용하는지 검증.
+
+        회귀 방지: market IN :markets → asyncpg에서 syntax error 발생 (2026-04-11 발견).
+        수정: market = ANY(:markets) + list 바인딩.
+        """
+        from unittest.mock import AsyncMock, MagicMock
+
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        mock_session = AsyncMock(spec=AsyncSession)
+        mock_result = MagicMock()
+        mock_result.fetchall.return_value = [
+            (
+                pd.Timestamp("2025-01-02"),
+                50000.0,
+                51000.0,
+                49000.0,
+                50500.0,
+                1000000.0,
+            ),
+        ] * 200
+
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        runner = DynamicEnsembleRunner(db_session=mock_session)
+
+        # _fetch_ohlcv 호출 — SQL 구문이 asyncpg 호환인지 확인
+        await runner._fetch_ohlcv("005930", "KR", 300)
+
+        # execute에 전달된 SQL 확인
+        call_args = mock_session.execute.call_args
+        sql_text = str(call_args[0][0])
+        params = call_args[0][1]
+
+        # IN :markets 가 아니라 = ANY(:markets) 여야 함
+        assert "IN :markets" not in sql_text, (
+            "asyncpg 비호환: 'IN :markets' 는 tuple 바인딩 불가. " "'= ANY(:markets)' 를 사용해야 합니다."
+        )
+        assert "= ANY(:markets)" in sql_text
+
+        # markets 파라미터가 list 타입이어야 asyncpg에서 ARRAY로 변환됨
+        assert isinstance(
+            params["markets"], list
+        ), f"markets 파라미터는 list여야 합니다 (실제: {type(params['markets']).__name__})"
+        assert params["markets"] == ["KRX"]
+
+    @pytest.mark.asyncio
+    async def test_fetch_ohlcv_us_market_filter(self):
+        """US 종목의 market 필터가 NASDAQ/NYSE/AMEX를 포함하는지 확인"""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        mock_session = AsyncMock(spec=AsyncSession)
+        mock_result = MagicMock()
+        mock_result.fetchall.return_value = [
+            (
+                pd.Timestamp("2025-01-02"),
+                150.0,
+                155.0,
+                148.0,
+                152.0,
+                5000000.0,
+            ),
+        ] * 200
+
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        runner = DynamicEnsembleRunner(db_session=mock_session)
+        await runner._fetch_ohlcv("AAPL", "US", 300)
+
+        params = mock_session.execute.call_args[0][1]
+        assert params["markets"] == ["NASDAQ", "NYSE", "AMEX"]
+
     def test_end_to_end_consistency_with_backtest(self, sample_ohlcv):
         """
         Runner의 전체 파이프라인이 backtest와 근사한 결과를 내는지

@@ -193,7 +193,7 @@ class DynamicEnsembleRunner:
             SELECT time, open, high, low, close, volume
             FROM market_ohlcv
             WHERE ticker = :ticker
-              AND market IN :markets
+              AND market = ANY(:markets)
               AND interval = '1d'
             ORDER BY time DESC
             LIMIT :limit
@@ -204,7 +204,7 @@ class DynamicEnsembleRunner:
             query,
             {
                 "ticker": ticker,
-                "markets": tuple(market_filter),
+                "markets": list(market_filter),
                 "limit": lookback_days,
             },
         )

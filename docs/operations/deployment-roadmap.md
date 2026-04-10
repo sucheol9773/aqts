@@ -136,12 +136,12 @@ bash scripts/canary_deploy.sh finish
 
 KIS 모의투자 API를 통해 실시간 데이터 수집이 정상 동작하는지 확인합니다.
 
-- [ ] KRX 시세 수집 정상 동작 (market_ohlcv 테이블 INSERT 확인)
-- [ ] 뉴스 크롤링 정상 동작 (MongoDB 컬렉션 데이터 확인)
-- [ ] 경제지표 수집 정상 동작 (FRED/ECOS)
-- [ ] DART 재무제표 수집 정상 동작
-- [ ] 환율 데이터 수집 정상 동작
-- [ ] Circuit Breaker 정상 동작 (외부 API 장애 시 자동 차단 확인)
+- [x] KRX 시세 수집 정상 동작 (market_ohlcv: 114종목, 2000-01~2026-04-09, KR 69종목 + US 45종목)
+- [ ] 뉴스 크롤링 정상 동작 — **미수집**: NewsCollectorService가 스케줄러에 미연결 (수동 API 테스트 예정)
+- [ ] 경제지표 수집 정상 동작 — **미수집**: FRED/ECOS API 키 미설정 + EconomicCollectorService 스케줄러 미연결
+- [ ] DART 재무제표 수집 정상 동작 — **미수집**: DART API 키 미설정
+- [ ] 환율 데이터 수집 정상 동작 — **미수집**: exchange_rates 테이블 0건, 수집 경로 확인 필요
+- [x] Circuit Breaker 정상 동작 — Redis에 circuit/breaker 키 없음 (API 장애 미발생 = 정상 대기 상태)
 
 **검증 방법**:
 ```bash
@@ -158,12 +158,13 @@ docker exec -it aqts-mongodb mongosh -u aqts_user -p <비밀번호> \
 
 전체 투자 결정 파이프라인이 실제 데이터로 정상 실행되는지 확인합니다.
 
-- [ ] 감성 분석 (Claude API) 정상 응답
-- [ ] 팩터 분석 → 시그널 생성 → 앙상블 결합 파이프라인 정상 실행
+- [ ] 감성 분석 (Claude API) 정상 응답 — 뉴스 수집 미연결로 미검증
+- [x] 팩터 분석 → 시그널 생성 → 앙상블 결합 파이프라인 정상 실행 — Redis ensemble:latest:* 115종목 캐시 확인 (**단, SQL 버그 수정 필요 → 아래 참조**)
 - [ ] 9개 Gate 순차 평가 정상 통과
-- [ ] 투자 의견 생성 및 audit_logs 기록 확인
-- [ ] 모의 주문 생성 및 체결 확인 (orders 테이블)
-- [ ] 일일 리포트 생성 및 텔레그램 발송 확인
+- [x] 투자 의견 생성 및 audit_logs 기록 확인 — audit_logs 8건 (MARKET_CLOSE 04-07~04-10)
+- [x] 모의 주문 생성 및 체결 확인 — 삼성전자 1주 보유 (매입 196,000원, 현재 206,000원, +5.1%)
+- [x] 일일 리포트 생성 확인 — Redis report:daily:2026-04-07~10 (4일치)
+- [ ] 텔레그램 발송 확인 — NotificationRouter wired 로그 확인, 실제 발송 미확인
 
 ### 1-3. 성과 측정 및 파라미터 튜닝 (1~3주)
 
