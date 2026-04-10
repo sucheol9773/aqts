@@ -440,6 +440,90 @@ zero-diff 로 축소하였다. Commit 1 블록의 non-scope 에 "Commit 2 범위
   묶어 feature 브랜치(`feature/alert-notification-wiring`) 에서 순차 쌓은
   뒤 main 으로 한 번에 머지한다.
 
+### 6.3 Commit 3 — 재시도 루프 + 관측 + 메타알림 (2026-04-10)
+
+**목표**: Commit 1 의 상태머신과 Commit 2 의 Router wiring 위에, FAILED 알림을
+지수 아닌 **고정 dict backoff** 로 재픽업하는 비동기 루프와, 채널별 Prometheus
+관측 지표, 그리고 파이프라인 자체의 실패를 탐지하는 메타알림 규칙을 얹는다.
+Commit 2 와 동일 릴리스 게이트로 묶여 한 번의 CD 로 배포된다.
+
+**확정된 설계 결정 (모두 Option A)**:
+
+- **Decision 1-A — 고정 dict backoff**: `RETRY_BACKOFF_SECONDS = {1: 60, 2: 300,
+  3: 900}` 로 `backend/core/notification/retry_policy.py` 에 상수화.
+  지수 backoff 대비 **감사성(auditability)** 과 테스트 결정성을 우선. 시도 범위
+  밖 입력은 clamp 하여 경계 에러를 제거한다.
+- **Decision 2-A — Router 내부 관측 훅**: `NotificationRouter.dispatch` 의 채널
+  루프 내부에서 `perf_counter` 기반 try/finally 로
+  `ALERT_DISPATCH_LATENCY_SECONDS{channel}` 를 기록하고,
+  `ALERT_DISPATCH_TOTAL{channel,result}` 를 success/failure 로 증가시킨다.
+  외부 데코레이터 방식 대비 예외 경로 누락 위험이 없고, 라벨 카디널리티는
+  채널 3 × 결과 2 = 6 계열로 상한이 고정된다.
+- **Decision 3-A — 기존 Alertmanager 재사용**: B-1 관측에서 Prometheus
+  Alertmanager 가 Telegram receiver 와 함께 이미 동작 중임을 확인.
+  신규 meta-alert 인프라를 세우는 대신 `monitoring/prometheus/rules/
+  aqts_alerts.yml` 에 `aqts_alert_pipeline` 그룹만 추가. 이 결정은 Commit 1/2
+  의 코드 경로와 완전히 독립적이다 (produce/observe/route 레이어 분리).
+- **Decision 4-A — AlertManager 메서드로 재시도 루프 노출**:
+  `find_retriable_alerts`, `requeue_failed_to_pending`,
+  `dispatch_retriable_alerts` 세 메서드를 AlertManager 에 추가.
+  별도 `RetryDispatcher` 클래스를 만들지 않음으로써 상태 전이와 디스패치가
+  동일 수집 SSOT 안에 머물도록 한다.
+
+**구현 변경 요약**:
+
+- `backend/core/notification/retry_policy.py` 신규 — `MAX_SEND_ATTEMPTS=3`,
+  고정 backoff dict, `backoff_seconds_for(attempts)` clamp 유틸.
+- `backend/core/monitoring/metrics.py` — `ALERT_DISPATCH_TOTAL`,
+  `ALERT_DISPATCH_LATENCY_SECONDS`, `ALERT_RETRY_DEAD_TOTAL` 3 지표 추가.
+  histogram 버킷 50ms~30s 로 Telegram API p95 대역 포함.
+- `backend/core/notification/fallback_notifier.py` —
+  `NotificationRouter.dispatch` 채널 루프에 perf_counter 계측 + counter 증가
+  (try/finally 로 예외 경로 누락 방지).
+- `backend/core/notification/alert_manager.py` — `find_retriable_alerts`,
+  `requeue_failed_to_pending`, `dispatch_retriable_alerts`, `_alert_from_doc`
+  추가. 디스패치 후 상태 재조회로 DEAD 전이 탐지, `ALERT_RETRY_DEAD_TOTAL`
+  증가. router 미주입 시 noop.
+- `backend/main.py` — lifespan 에 `_alert_retry_loop()` 코루틴을
+  `asyncio.create_task` 로 기동. 주기 `ALERT_RETRY_LOOP_INTERVAL_SECONDS=60`,
+  `ALERT_RETRY_LOOP_ENABLED` 환경변수 (기본 `true`). shutdown 에서
+  task.cancel + await. heartbeat 블로킹 회귀 패턴을 피하려 반드시 독립 task.
+- `scripts/check_bool_literals.py` — `BOOL_ENV_KEYS` 에
+  `ALERT_RETRY_LOOP_ENABLED` 등록.
+- `monitoring/prometheus/rules/aqts_alerts.yml` — `aqts_alert_pipeline` 그룹
+  append. `AlertPipelineFailureRate` (failure/total > 0.5 for 5m, critical,
+  `clamp_min` 로 zero-division 방지), `AlertPipelineDeadTransitions`
+  (`increase(aqts_alert_retry_dead_total[30m]) > 0` for 5m, warning).
+
+**검증 결과**:
+
+- 신규 테스트 `backend/tests/test_alert_retry_loop.py` — 25 케이스 전 통과.
+  7 클래스 (`TestRetryPolicy`, `TestFindRetriableAlerts`,
+  `TestRequeueFailedToPending`, `TestDispatchRetriableAlerts`,
+  `TestRouterMetricsHook`, `TestDeadCounter`, `TestLifespanLoopImports`).
+  주요 커버: backoff 경계 clamp, Mongo prefilter + Python backoff 필터,
+  `gte 3` DEAD 전이, router 예외 swallow, counter 증가 (success / failure /
+  exception 3 경로), DEAD counter, lifespan import smoke.
+- `cd backend && python -m ruff check . --config pyproject.toml` — 0 errors
+- `cd backend && python -m black --check . --config pyproject.toml` — 0 diffs
+- `cd backend && python -m pytest tests/ -q` — 목표 3810 passed, 0 failed
+  (`gen_status.py --update` 로 문서 drift 재동기화 후)
+- `python scripts/check_doc_sync.py --verbose` — 0 errors, 0 warnings
+- `python scripts/check_bool_literals.py` — PASSED (신규 키 등록 포함)
+
+**회귀 영향 요약**:
+
+- Commit 1/2 의 상태 전이와 wiring 은 zero-diff. 본 커밋은 **새 메서드 추가**
+  와 **lifespan 에 독립 task 추가** 만으로 구성되어 기존 경로에 영향이 없다.
+- `ALERT_RETRY_LOOP_ENABLED=false` 로 런타임 우회 가능 — 문제가 발생해도
+  runbook 으로 즉시 무력화, 재배포 없이 관측 가능.
+- `aqts_alert_pipeline` 그룹은 기존 Alertmanager 경로를 재사용 — infra
+  변경 zero.
+- **Commit 2 + 3 번들 배포 강제**: Commit 2 만 단독 머지되면 FAILED 알림이
+  영속만 되고 재픽업되지 않는 공백이 생긴다. feature 브랜치
+  `feature/alert-notification-wiring` 에 두 커밋을 순차로 쌓아 단일 CD 로
+  main 에 머지한다.
+
 ## 7. 관련 문서
 
 - 템플릿 렌더링 및 운영 절차: [`docs/operations/alerting.md`](./alerting.md)
