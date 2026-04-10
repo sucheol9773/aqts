@@ -7,7 +7,7 @@ Phase 5: 텔레그램 봇을 통한 실시간 알림 전달
   - AlertManager에서 생성된 알림을 텔레그램으로 전달
   - 알림 레벨별 필터링 (ALL/IMPORTANT/ERROR)
   - 메시지 포맷팅 (Alert → HTML)
-  - 상태 관리 (dispatch_alert → save_alert)
+  - 상태 관리 (dispatch_alert → mark_sent_by_id / mark_failed_with_retry)
 
 HTTP 전송은 TelegramTransport 에 위임한다 (SSOT).
 """
@@ -105,6 +105,9 @@ class TelegramNotifier:
         Alert 객체를 텔레그램으로 발송
 
         알림 레벨 필터를 통과한 경우에만 실제 발송합니다.
+        상태 전이는 AlertManager 의 원자적 메서드(mark_sent_by_id,
+        mark_failed_with_retry)를 사용하여 _dispatch_via_router 경로와
+        일관성을 유지한다.
 
         Args:
             alert: 발송할 Alert 객체
@@ -112,10 +115,13 @@ class TelegramNotifier:
         Returns:
             발송 성공 여부
         """
+        # PENDING → SENDING 원자 전이 (Router 경로와 동일한 상태 머신 사용)
+        await self._alert_manager.claim_for_sending(alert.id)
+
         # 레벨 필터 체크
         if not self._should_send(alert.level):
             logger.debug(f"Alert filtered out: [{alert.level.value}] " f"filter={self._alert_level}")
-            alert.mark_sent()  # 필터링된 경우에도 SENT 처리
+            await self._alert_manager.mark_sent_by_id(alert.id)
             return True
 
         # 텔레그램 메시지 포맷팅
@@ -124,14 +130,16 @@ class TelegramNotifier:
         # 발송
         success = await self.send_message(formatted)
 
-        # 상태 업데이트
+        # 상태 업데이트 — 원자적 전이 메서드 사용 (save_alert 이중 호출 제거)
         if success:
-            alert.mark_sent()
-            await self._alert_manager.save_alert(alert)
+            await self._alert_manager.mark_sent_by_id(alert.id)
             logger.info(f"Alert dispatched: {alert.id} [{alert.alert_type.value}]")
         else:
-            alert.mark_failed()
-            await self._alert_manager.save_alert(alert)
+            await self._alert_manager.mark_failed_with_retry(
+                alert.id,
+                error="Telegram send_message failed",
+                status_code=None,
+            )
             logger.error(f"Alert dispatch failed: {alert.id}")
 
         return success
@@ -159,6 +167,12 @@ class TelegramNotifier:
                 result["filtered"] += 1
                 continue
 
+            # PENDING → SENDING 원자 전이
+            alert_id = alert_data.get("id", "")
+            claimed = await self._alert_manager.claim_for_sending(alert_id)
+            if not claimed:
+                continue
+
             # 발송
             message = alert_data.get("message", "")
             title = alert_data.get("title", "")
@@ -166,10 +180,14 @@ class TelegramNotifier:
 
             success = await self.send_message(formatted)
             if success:
-                alert_id = alert_data.get("id", "")
-                await self._alert_manager.mark_alert_read(alert_id)
+                await self._alert_manager.mark_sent_by_id(alert_id)
                 result["sent"] += 1
             else:
+                await self._alert_manager.mark_failed_with_retry(
+                    alert_id,
+                    error="Telegram batch send_message failed",
+                    status_code=None,
+                )
                 result["failed"] += 1
 
         logger.info(

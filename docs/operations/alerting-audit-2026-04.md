@@ -565,10 +565,13 @@ Commit 2 와 동일 릴리스 게이트로 묶여 한 번의 CD 로 배포된다
 
 **시리즈 클로즈 — 남은 부채**:
 
-- `TelegramTransport` SSOT 추출 (`TelegramChannelAdapter` 와 `TelegramNotifier`
-  의 `send_message` 중복 제거) → Phase 2 별도 세션
-- `telegram_notifier.dispatch_alert` 내부의 `save_alert` 이중 호출 정리 →
-  Phase 2 별도 세션
+- `TelegramTransport` SSOT 추출 — **Commit 5~6 으로 완료** (PR #4, 2026-04-10 머지)
+- `telegram_notifier.dispatch_alert` 내부의 `save_alert` 이중 호출 정리 +
+  `dispatch_pending_alerts` 의 `mark_alert_read` → `mark_sent_by_id` 시맨틱 버그 수정
+  — **Commit 8 으로 완료** (2026-04-10). `dispatch_alert` 은 이제 Router 경로와
+  동일한 상태 머신(`claim_for_sending` → `mark_sent_by_id` / `mark_failed_with_retry`)을
+  사용한다. 테스트 3곳(`test_gate_c_notification`, `test_integration`,
+  `test_notification`) 입력 조정 완료.
 - Grafana 대시보드에 §6 PromQL 쿼리 패널 추가 → 운영 팀 별도 진행
 
 ## 7. 관련 문서

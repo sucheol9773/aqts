@@ -618,12 +618,13 @@ class TestNotificationIntegration:
         mock_settings.return_value = demo_settings
 
         from config.constants import AlertType
-        from core.notification.alert_manager import Alert, AlertLevel
+        from core.notification.alert_manager import AlertLevel
         from core.notification.telegram_notifier import TelegramNotifier
 
         notifier = TelegramNotifier()
 
-        alert = Alert(
+        # AlertManager 에 등록하여 claim_for_sending / mark_sent_by_id 경로 활성화
+        alert = notifier._alert_manager.create_alert(
             alert_type=AlertType.SYSTEM_ERROR,
             title="테스트 알림",
             message="통합 테스트",

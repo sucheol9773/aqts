@@ -144,7 +144,8 @@ class TestTelegramDispatch:
 
     async def test_dispatch_alert_success(self, notifier):
         """Alert 객체 발송 성공 시 SENT 마킹"""
-        alert = _make_alert()
+        am = notifier._alert_manager
+        alert = am.create_alert(AlertType.SYSTEM_ERROR, AlertLevel.WARNING, "Test Alert", "Test message")
         mock_response = MagicMock(status_code=200)
         with patch("httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
@@ -159,7 +160,8 @@ class TestTelegramDispatch:
 
     async def test_dispatch_alert_failure_marks_failed(self, notifier):
         """Alert 발송 실패 시 FAILED 마킹"""
-        alert = _make_alert()
+        am = notifier._alert_manager
+        alert = am.create_alert(AlertType.SYSTEM_ERROR, AlertLevel.WARNING, "Test Alert", "Test message")
         mock_response = MagicMock(status_code=500, text="Error")
         with patch("httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
@@ -179,7 +181,8 @@ class TestTelegramDispatch:
             )
             notifier = TelegramNotifier()
 
-        alert = _make_alert(level=AlertLevel.INFO)
+        am = notifier._alert_manager
+        alert = am.create_alert(AlertType.SYSTEM_ERROR, AlertLevel.INFO, "Test Alert", "Test message")
         result = await notifier.dispatch_alert(alert)
         # 필터링된 알림은 True (발송 불필요), SENT 처리
         assert result is True
