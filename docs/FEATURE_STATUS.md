@@ -162,8 +162,8 @@
 | Module | Feature | Status | Code Path | Tests | Notes |
 |--------|---------|--------|-----------|-------|-------|
 | monitoring_dashboard | 모니터링 대시보드 (핵심 지표 실시간 확인) | Tested | core/monitoring/dashboard.py | test_gate_e_monitoring.py (53) | 서비스 상태/메트릭/알림 통합, 임계값 자동 알림 |
-| prometheus_metrics | Prometheus 메트릭 수집 + Grafana 시각화 | Tested | core/monitoring/metrics.py | test_prometheus_metrics.py (26) | HTTP latency/count, 컴포넌트 상태, 비즈니스 메트릭, 서킷브레이커 |
-| json_structured_logging | JSON 구조화 로그 (운영 환경) | Tested | config/logging.py | test_prometheus_metrics.py (26) | 운영: JSON stdout + 파일 로테이션, 개발: 컬러 콘솔 (로깅 테스트 2건 포함) |
+| prometheus_metrics | Prometheus 메트릭 수집 + Grafana 시각화 | Tested | core/monitoring/metrics.py | test_prometheus_metrics.py (30) | HTTP latency/count, 컴포넌트 상태, 비즈니스 메트릭, 서킷브레이커 |
+| json_structured_logging | JSON 구조화 로그 (운영 환경) | Tested | config/logging.py | test_prometheus_metrics.py (30) | 운영: JSON stdout + 파일 로테이션, 개발: 컬러 콘솔 (로깅 테스트 2건 포함) |
 | canary_deployment | 카나리 배포 인프라 | Tested | nginx/nginx-canary.conf | test_canary_deployment.py (19) | nginx split_clients 트래픽 분할 (10→30→50→100%), docker-compose.canary.yml, canary_deploy.sh 5개 명령 |
 | pre_deploy_check | 배포 전 자동 검증 스크립트 | Tested | scripts/pre_deploy_check.sh | test_pre_deploy_check.py (10) | 7단계 검증 (Git/린트/테스트/문서/Docker/환경변수/릴리즈게이트) |
 | prometheus_alerting | Prometheus 알림 규칙 + Alertmanager | Tested | monitoring/prometheus/rules/aqts_alerts.yml | test_prometheus_alerting.py (17), test_alert_rules.py (10) | 7그룹 34규칙 (가용성/API성능/서킷브레이커/데이터수집/트레이딩/KIS복원/보안정합성/파이프라인), Alertmanager 텔레그램 연동, 심각도별 라우팅 |
@@ -347,7 +347,7 @@
 ## Test Coverage Summary
 
 ```
-Total Tests: 3,847 tests (413 smoke-marked) — ALL PASS, Coverage 90%
+Total Tests: 3,851 tests (413 smoke-marked) — ALL PASS, Coverage 90%
 ├── Core Features: 40+ modules with passing tests
 ├── Data Contracts: 154 tests (9 contracts) [smoke]
 ├── Pipeline Gates: 59 tests (12 components)

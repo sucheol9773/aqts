@@ -230,6 +230,7 @@ INITIAL_CAPITAL_KRW=10000000
 | 파이프라인 API 호출 | ✅ 완료 | E2E 전 구간 성공 (005930: signal=0.0567, HOLD) |
 | EnsembleSignal 속성 버그 수정 | ✅ 완료 | confidence → final_confidence |
 | Anthropic API 크레딧 충전 | ✅ 완료 | $25 충전 |
+| p95 레이턴시 heavy endpoint 분리 | ✅ 완료 | pipeline/backtest/oos/batch/sweep → 별도 히스토그램 |
 
 ## 8. 미해결 항목
 

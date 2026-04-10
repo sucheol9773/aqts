@@ -30,9 +30,16 @@ from starlette.responses import Response
 # ══════════════════════════════════════
 HTTP_REQUEST_DURATION = Histogram(
     "aqts_http_request_duration_seconds",
-    "HTTP request latency in seconds",
+    "HTTP request latency in seconds (light endpoints only)",
     labelnames=["method", "endpoint", "status_code"],
     buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
+)
+
+HTTP_HEAVY_REQUEST_DURATION = Histogram(
+    "aqts_http_heavy_request_duration_seconds",
+    "HTTP request latency for heavy endpoints (AI/backtest/batch)",
+    labelnames=["method", "endpoint", "status_code"],
+    buckets=[0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0],
 )
 
 HTTP_REQUEST_TOTAL = Counter(
@@ -360,6 +367,18 @@ class PrometheusMiddleware(BaseHTTPMiddleware):
     # 메트릭 수집에서 제외할 경로
     SKIP_PATHS = {"/metrics", "/api/system/health", "/healthz", "/ready"}
 
+    # p95 레이턴시 측정에서 분리할 heavy endpoint 접두사 목록
+    # 외부 AI API 호출 또는 무거운 연산(백테스트/배치)을 수반하는 경로.
+    # 이 경로들은 별도 히스토그램(HTTP_HEAVY_REQUEST_DURATION)에만 기록되어
+    # 일반 API의 p95 지표를 왜곡하지 않는다.
+    HEAVY_PATH_PREFIXES = (
+        "/api/system/pipeline",
+        "/api/system/backtest",
+        "/api/system/oos/run",
+        "/api/ensemble/batch",
+        "/param_sensitivity/run",
+    )
+
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         if request.url.path in self.SKIP_PATHS:
             return await call_next(request)
@@ -377,8 +396,14 @@ class PrometheusMiddleware(BaseHTTPMiddleware):
         finally:
             duration = time.perf_counter() - start
             endpoint = self._normalize_path(request.url.path)
+            is_heavy = request.url.path.startswith(self.HEAVY_PATH_PREFIXES)
 
-            HTTP_REQUEST_DURATION.labels(method=method, endpoint=endpoint, status_code=status).observe(duration)
+            if is_heavy:
+                HTTP_HEAVY_REQUEST_DURATION.labels(method=method, endpoint=endpoint, status_code=status).observe(
+                    duration
+                )
+            else:
+                HTTP_REQUEST_DURATION.labels(method=method, endpoint=endpoint, status_code=status).observe(duration)
             HTTP_REQUEST_TOTAL.labels(method=method, endpoint=endpoint, status_code=status).inc()
             HTTP_REQUESTS_IN_PROGRESS.labels(method=method).dec()
 

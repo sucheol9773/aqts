@@ -21,6 +21,7 @@ from core.monitoring.metrics import (
     DATA_COLLECTION_DURATION,
     DATA_COLLECTION_ERRORS,
     ENSEMBLE_CONFIDENCE,
+    HTTP_HEAVY_REQUEST_DURATION,
     HTTP_REQUEST_DURATION,
     HTTP_REQUEST_TOTAL,
     HTTP_REQUESTS_IN_PROGRESS,
@@ -61,6 +62,55 @@ class TestPrometheusMiddleware:
         """메트릭 수집 제외 경로 목록 확인"""
         assert "/metrics" in PrometheusMiddleware.SKIP_PATHS
         assert "/api/system/health" in PrometheusMiddleware.SKIP_PATHS
+
+    def test_heavy_path_prefixes(self):
+        """heavy endpoint 접두사 목록 확인"""
+        prefixes = PrometheusMiddleware.HEAVY_PATH_PREFIXES
+        assert "/api/system/pipeline" in prefixes
+        assert "/api/system/backtest" in prefixes
+        assert "/api/system/oos/run" in prefixes
+        assert "/api/ensemble/batch" in prefixes
+        assert "/param_sensitivity/run" in prefixes
+
+    @pytest.mark.asyncio
+    async def test_dispatch_heavy_endpoint_uses_separate_histogram(self):
+        """heavy endpoint는 HTTP_HEAVY_REQUEST_DURATION에 기록"""
+        middleware = PrometheusMiddleware(app=MagicMock())
+        request = MagicMock()
+        request.url.path = "/api/system/pipeline"
+        request.method = "POST"
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        call_next = AsyncMock(return_value=mock_response)
+
+        with (
+            patch("core.monitoring.metrics.HTTP_HEAVY_REQUEST_DURATION") as mock_heavy,
+            patch("core.monitoring.metrics.HTTP_REQUEST_DURATION") as mock_light,
+        ):
+            await middleware.dispatch(request, call_next)
+            mock_heavy.labels.assert_called_once()
+            mock_light.labels.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_dispatch_light_endpoint_uses_standard_histogram(self):
+        """일반 endpoint는 HTTP_REQUEST_DURATION에 기록"""
+        middleware = PrometheusMiddleware(app=MagicMock())
+        request = MagicMock()
+        request.url.path = "/api/portfolio"
+        request.method = "GET"
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        call_next = AsyncMock(return_value=mock_response)
+
+        with (
+            patch("core.monitoring.metrics.HTTP_HEAVY_REQUEST_DURATION") as mock_heavy,
+            patch("core.monitoring.metrics.HTTP_REQUEST_DURATION") as mock_light,
+        ):
+            await middleware.dispatch(request, call_next)
+            mock_light.labels.assert_called_once()
+            mock_heavy.labels.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_dispatch_skips_metrics_path(self):
@@ -182,6 +232,12 @@ class TestMetricObjects:
     def test_data_collection_errors(self):
         """DATA_COLLECTION_ERRORS 카운터"""
         DATA_COLLECTION_ERRORS.labels(source="fred").inc()
+
+    def test_http_heavy_request_duration(self):
+        """HTTP_HEAVY_REQUEST_DURATION 히스토그램"""
+        HTTP_HEAVY_REQUEST_DURATION.labels(method="POST", endpoint="/api/system/pipeline", status_code="200").observe(
+            5.2
+        )
 
     def test_http_request_duration(self):
         """HTTP_REQUEST_DURATION 히스토그램"""
