@@ -738,25 +738,31 @@ class TestDailyReporterTelegramSend:
 
     @pytest.mark.asyncio
     async def test_send_telegram_report_success(self, mock_settings, sample_daily_report):
-        """send_telegram_report returns True on success"""
-        mock_notifier = AsyncMock()
-        mock_notifier.send_message.return_value = True
+        """send_telegram_report returns True on success (Transport 위임)"""
+        mock_transport = AsyncMock()
+        mock_transport.send_text.return_value = True
 
         with patch("core.daily_reporter.get_settings", return_value=mock_settings):
-            with patch("core.notification.telegram_notifier.TelegramNotifier", return_value=mock_notifier):
+            with patch(
+                "core.notification.telegram_transport.create_transport",
+                return_value=mock_transport,
+            ):
                 reporter = DailyReporter()
                 result = await reporter.send_telegram_report(sample_daily_report)
                 assert result is True
-                mock_notifier.send_message.assert_called_once()
+                mock_transport.send_text.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_send_telegram_report_failure(self, mock_settings, sample_daily_report):
         """send_telegram_report returns False on failure"""
-        mock_notifier = AsyncMock()
-        mock_notifier.send_message.return_value = False
+        mock_transport = AsyncMock()
+        mock_transport.send_text.return_value = False
 
         with patch("core.daily_reporter.get_settings", return_value=mock_settings):
-            with patch("core.notification.telegram_notifier.TelegramNotifier", return_value=mock_notifier):
+            with patch(
+                "core.notification.telegram_transport.create_transport",
+                return_value=mock_transport,
+            ):
                 reporter = DailyReporter()
                 result = await reporter.send_telegram_report(sample_daily_report)
                 assert result is False
@@ -764,11 +770,14 @@ class TestDailyReporterTelegramSend:
     @pytest.mark.asyncio
     async def test_send_telegram_report_exception(self, mock_settings, sample_daily_report):
         """send_telegram_report handles exceptions"""
-        mock_notifier = AsyncMock()
-        mock_notifier.send_message.side_effect = Exception("Network error")
+        mock_transport = AsyncMock()
+        mock_transport.send_text.side_effect = Exception("Network error")
 
         with patch("core.daily_reporter.get_settings", return_value=mock_settings):
-            with patch("core.notification.telegram_notifier.TelegramNotifier", return_value=mock_notifier):
+            with patch(
+                "core.notification.telegram_transport.create_transport",
+                return_value=mock_transport,
+            ):
                 reporter = DailyReporter()
                 result = await reporter.send_telegram_report(sample_daily_report)
                 assert result is False
@@ -776,16 +785,19 @@ class TestDailyReporterTelegramSend:
     @pytest.mark.asyncio
     async def test_send_telegram_report_calls_formatter(self, mock_settings, sample_daily_report):
         """send_telegram_report formats message before sending"""
-        mock_notifier = AsyncMock()
-        mock_notifier.send_message.return_value = True
+        mock_transport = AsyncMock()
+        mock_transport.send_text.return_value = True
 
         with patch("core.daily_reporter.get_settings", return_value=mock_settings):
-            with patch("core.notification.telegram_notifier.TelegramNotifier", return_value=mock_notifier):
+            with patch(
+                "core.notification.telegram_transport.create_transport",
+                return_value=mock_transport,
+            ):
                 reporter = DailyReporter()
                 await reporter.send_telegram_report(sample_daily_report)
-                # Verify send_message was called with a formatted string
-                call_args = mock_notifier.send_message.call_args
-                message = call_args[0][0] if call_args[0] else call_args.kwargs.get("message", "")
+                # Verify send_text was called with a formatted string
+                call_args = mock_transport.send_text.call_args
+                message = call_args[0][0] if call_args[0] else call_args.kwargs.get("text", "")
                 assert "AQTS 일일 리포트" in message
 
 
