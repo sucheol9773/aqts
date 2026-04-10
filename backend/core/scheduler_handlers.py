@@ -5,7 +5,7 @@ TradingScheduler에 등록할 이벤트 핸들러 모음.
 각 핸들러는 장 전/장 시작/중간점검/장 마감/마감 후 이벤트에 대응합니다.
 
 핸들러 흐름:
-  08:30 PRE_MARKET   → OHLCV 수집 (DailyOHLCVCollector)
+  08:30 PRE_MARKET   → OHLCV 수집 + 뉴스/공시 수집 (DailyOHLCVCollector, NewsCollectorService)
   09:00 MARKET_OPEN  → 동적 앙상블 배치 실행 (DynamicEnsembleRunner)
   11:30 MIDDAY_CHECK → 포지션 모니터링 + 손실 경보 + DD 추적
   15:30 MARKET_CLOSE → 일일 성과 기록 + 포트폴리오 스냅샷 + 감사 로그
@@ -24,6 +24,7 @@ from config.logging import logger
 from core.data_collector.daily_collector import (
     DailyOHLCVCollector,
 )
+from core.data_collector.news_collector import NewsCollectorService
 from core.strategy_ensemble.runner import DynamicEnsembleRunner
 from db.database import RedisManager, async_session_factory
 
@@ -33,8 +34,9 @@ async def handle_pre_market() -> dict:
     장 전 준비 핸들러 (08:30 KST)
 
     1. 유니버스 전 종목 OHLCV 일봉 수집 (KIS API)
-    2. 건전성 검사 (기존 로직 유지)
-    3. TradingGuard 일일 리셋 (기존 로직 유지)
+    2. 뉴스/공시 수집 (RSS + DART → MongoDB)
+    3. 건전성 검사
+    4. TradingGuard 일일 리셋
     """
     result = {}
 
@@ -52,7 +54,21 @@ async def handle_pre_market() -> dict:
         logger.error(f"[PreMarket] OHLCV 수집 실패: {e}")
         result["ohlcv_collection_error"] = str(e)
 
-    # ── 2. 건전성 검사 ──
+    # ── 2. 뉴스/공시 수집 ──
+    try:
+        news_service = NewsCollectorService()
+        news_result = await news_service.collect_and_store()
+        result["news_collection"] = news_result
+        logger.info(
+            f"[PreMarket] 뉴스 수집 완료: "
+            f"신규 {news_result['new_stored']}건, "
+            f"중복 {news_result['duplicates_skipped']}건"
+        )
+    except Exception as e:
+        logger.error(f"[PreMarket] 뉴스 수집 실패: {e}")
+        result["news_collection_error"] = str(e)
+
+    # ── 3. 건전성 검사 ──
     try:
         from core.health_checker import HealthChecker
 
@@ -63,7 +79,7 @@ async def handle_pre_market() -> dict:
     except Exception as e:
         result["health_check_error"] = str(e)
 
-    # ── 3. TradingGuard 일일 리셋 ──
+    # ── 4. TradingGuard 일일 리셋 ──
     try:
         from core.trading_guard import TradingGuard
 

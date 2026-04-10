@@ -38,8 +38,10 @@
   - REUTERS: 295건 (markets/economy/Asia)
 - DART 공시: 385건 (20260409~20260410)
 - MongoDB 저장: **907건 신규**, 135건 중복 스킵, 총 1,042건 처리
-- **참고**: `NewsCollectorService`가 스케줄러(`scheduler_handlers.py`)에 wiring 되지 않아 자동 수집 불가. 수동 스크립트 또는 API 호출 필요
-- **실행 방법**: `docker exec aqts-backend python -c "await MongoDBManager.connect(); await NewsCollectorService().collect_and_store()"`
+- **스케줄러 wiring**: ✅ `handle_pre_market()` 스텝 2에 `NewsCollectorService.collect_and_store()` 연결 완료
+  - OHLCV 수집 직후, 건전성 검사 이전에 실행
+  - 뉴스 수집 실패 시 다른 단계 차단하지 않음 (독립 try/except)
+  - 다음 거래일(04-13 월) 08:30 KST handle_pre_market 자동 실행 시 검증 예정
 
 ### 2-3. 경제지표 (FRED/ECOS) — ⚠️ 미수집
 
@@ -236,6 +238,7 @@ INITIAL_CAPITAL_KRW=10000000
 | p95 레이턴시 heavy endpoint 분리 | ✅ 완료 | pipeline/backtest/oos/batch/sweep → 별도 히스토그램 |
 | Docker 포트 보안 강화 | ✅ 완료 | 전 서비스 127.0.0.1 바인딩 (defense in depth) |
 | 환율 DB 영속화 + 스케줄러 | ✅ 완료 | `_store_rate_to_db()` + 1시간 간격 `_exchange_rate_loop` |
+| NewsCollector 스케줄러 wiring | ✅ 완료 | `handle_pre_market()` 스텝 2에 연결, 실패 시 비차단 |
 
 ## 8. 미해결 항목
 
@@ -243,5 +246,5 @@ INITIAL_CAPITAL_KRW=10000000
 |------|----------|------|
 | 텔레그램 발송 검증 | P1 | 다음 거래일(04-13 월) MARKET_CLOSE 이후 확인 |
 | 환율 수집 배포 검증 | P2 | DB 영속화 코드 완료, 배포 후 `exchange_rates` 테이블 데이터 확인 필요 |
-| NewsCollector 스케줄러 wiring | P2 | 자동 수집을 위해 scheduler_handlers.py 연결 필요 |
+| NewsCollector 자동 수집 검증 | P2 | 04-13(월) 08:30 KST handle_pre_market 실행 시 검증 |
 | 경제지표 수집 (FRED/ECOS) | P3 | API 키 설정 후 수집 가능 |

@@ -5,7 +5,7 @@ TradingScheduler에 등록되는 파이프라인 핸들러 검증.
 
 테스트 범위:
 - register_pipeline_handlers: 5개 핸들러 정상 등록
-- handle_pre_market: OHLCV 수집 호출 검증
+- handle_pre_market: OHLCV 수집 + 뉴스/공시 수집 호출 검증
 - handle_market_open: 동적 앙상블 배치 실행 검증
 - _cache_ensemble_results: Redis 캐시 검증
 """
@@ -16,6 +16,7 @@ import pytest
 
 from core.scheduler_handlers import (
     _cache_ensemble_results,
+    handle_pre_market,
     register_pipeline_handlers,
 )
 
@@ -50,6 +51,109 @@ class TestRegisterPipelineHandlers:
         for call in mock_scheduler.register_handler.call_args_list:
             handler = call.args[1]
             assert callable(handler)
+
+
+class TestHandlePreMarketNewsCollection:
+    """handle_pre_market 뉴스 수집 wiring 검증"""
+
+    @pytest.mark.asyncio
+    async def test_pre_market_calls_news_collector(self):
+        """handle_pre_market이 NewsCollectorService.collect_and_store를 호출하는지"""
+        mock_news_result = {
+            "total_collected": 50,
+            "new_stored": 30,
+            "duplicates_skipped": 20,
+        }
+
+        with (
+            patch("core.scheduler_handlers.async_session_factory") as mock_session_factory,
+            patch("core.scheduler_handlers.DailyOHLCVCollector") as mock_ohlcv_cls,
+            patch("core.scheduler_handlers.NewsCollectorService") as mock_news_cls,
+            patch("core.health_checker.HealthChecker") as mock_health_cls,
+            patch("core.trading_guard.TradingGuard") as mock_guard_cls,
+        ):
+            # OHLCV mock
+            mock_session = AsyncMock()
+            mock_session_ctx = AsyncMock()
+            mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
+            mock_session_factory.return_value = mock_session_ctx
+            mock_collector = AsyncMock()
+            mock_report = MagicMock()
+            mock_report.errors = []
+            mock_report.to_dict.return_value = {}
+            mock_collector.collect_all.return_value = mock_report
+            mock_ohlcv_cls.return_value = mock_collector
+
+            # News mock
+            mock_news = AsyncMock()
+            mock_news.collect_and_store.return_value = mock_news_result
+            mock_news_cls.return_value = mock_news
+
+            # Health mock
+            mock_health = AsyncMock()
+            mock_health_result = MagicMock()
+            mock_health_result.overall_status.value = "healthy"
+            mock_health_result.ready_for_trading = True
+            mock_health.run_full_check.return_value = mock_health_result
+            mock_health_cls.return_value = mock_health
+
+            # Guard mock
+            mock_guard = MagicMock()
+            mock_guard_cls.return_value = mock_guard
+
+            result = await handle_pre_market()
+
+        mock_news.collect_and_store.assert_called_once()
+        assert result["news_collection"] == mock_news_result
+
+    @pytest.mark.asyncio
+    async def test_pre_market_news_failure_does_not_block(self):
+        """뉴스 수집 실패가 다른 단계를 차단하지 않는지"""
+        with (
+            patch("core.scheduler_handlers.async_session_factory") as mock_session_factory,
+            patch("core.scheduler_handlers.DailyOHLCVCollector") as mock_ohlcv_cls,
+            patch("core.scheduler_handlers.NewsCollectorService") as mock_news_cls,
+            patch("core.health_checker.HealthChecker") as mock_health_cls,
+            patch("core.trading_guard.TradingGuard") as mock_guard_cls,
+        ):
+            # OHLCV mock
+            mock_session = AsyncMock()
+            mock_session_ctx = AsyncMock()
+            mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
+            mock_session_factory.return_value = mock_session_ctx
+            mock_collector = AsyncMock()
+            mock_report = MagicMock()
+            mock_report.errors = []
+            mock_report.to_dict.return_value = {}
+            mock_collector.collect_all.return_value = mock_report
+            mock_ohlcv_cls.return_value = mock_collector
+
+            # News mock — 실패
+            mock_news = AsyncMock()
+            mock_news.collect_and_store.side_effect = Exception("RSS timeout")
+            mock_news_cls.return_value = mock_news
+
+            # Health mock
+            mock_health = AsyncMock()
+            mock_health_result = MagicMock()
+            mock_health_result.overall_status.value = "healthy"
+            mock_health_result.ready_for_trading = True
+            mock_health.run_full_check.return_value = mock_health_result
+            mock_health_cls.return_value = mock_health
+
+            # Guard mock
+            mock_guard = MagicMock()
+            mock_guard_cls.return_value = mock_guard
+
+            result = await handle_pre_market()
+
+        # 뉴스 실패 에러가 기록되지만
+        assert "news_collection_error" in result
+        # 건전성 검사와 TradingGuard 리셋은 정상 실행
+        assert result["health_status"] == "healthy"
+        assert result["daily_reset"] is True
 
 
 class TestCacheEnsembleResults:
