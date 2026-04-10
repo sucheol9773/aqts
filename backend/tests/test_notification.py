@@ -799,25 +799,25 @@ class TestTelegramNotifier:
             if part != result[0]:  # 첫 부분 제외
                 assert not part.startswith("\n")
 
-    # ── 메시지 발송 테스트 ──
+    # ── 메시지 발송 테스트 (Transport 위임) ──
     @pytest.mark.asyncio
     async def test_send_message_success(self, telegram_notifier):
-        """메시지 발송 성공"""
+        """메시지 발송 성공 (Transport.send_text 위임)"""
         text = "Test message"
 
-        with patch.object(telegram_notifier, "_send_single_message", new_callable=AsyncMock) as mock_send:
+        with patch.object(telegram_notifier._transport, "send_text", new_callable=AsyncMock) as mock_send:
             mock_send.return_value = True
             result = await telegram_notifier.send_message(text)
 
         assert result is True
-        mock_send.assert_called_once()
+        mock_send.assert_called_once_with(text, parse_mode="HTML")
 
     @pytest.mark.asyncio
     async def test_send_message_failure(self, telegram_notifier):
-        """메시지 발송 실패"""
+        """메시지 발송 실패 (Transport.send_text 위임)"""
         text = "Test message"
 
-        with patch.object(telegram_notifier, "_send_single_message", new_callable=AsyncMock) as mock_send:
+        with patch.object(telegram_notifier._transport, "send_text", new_callable=AsyncMock) as mock_send:
             mock_send.return_value = False
             result = await telegram_notifier.send_message(text)
 
@@ -825,72 +825,77 @@ class TestTelegramNotifier:
 
     @pytest.mark.asyncio
     async def test_send_message_split_and_send(self, telegram_notifier):
-        """긴 메시지 분할 발송"""
+        """긴 메시지 분할 발송 (Transport 내부에서 분할)"""
         text = "x" * (TELEGRAM_MAX_LENGTH + 1000)
 
-        with patch.object(telegram_notifier, "_send_single_message", new_callable=AsyncMock) as mock_send:
-            mock_send.return_value = True
-            result = await telegram_notifier.send_message(text)
+        mock_response = MagicMock(status_code=200)
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.post.return_value = mock_response
+            mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client_class.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        # 여러 번 발송
-        assert mock_send.call_count > 1
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                result = await telegram_notifier.send_message(text)
+
+        # Transport 내부에서 분할하여 여러 번 발송
+        assert mock_client.post.call_count > 1
         assert result is True
 
     @pytest.mark.asyncio
-    async def test_send_single_message_success(self, telegram_notifier):
-        """단일 메시지 발송 성공"""
+    async def test_transport_send_single_success(self, telegram_notifier):
+        """Transport._send_single 성공 (httpx 모킹)"""
         text = "Test message"
 
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_response = MagicMock()
             mock_response.status_code = 200
-            mock_client = MagicMock()
-            mock_client.__aenter__.return_value = mock_client
-            mock_client.__aexit__.return_value = None
-            mock_client.post = AsyncMock(return_value=mock_response)
-            mock_client_class.return_value = mock_client
+            mock_client = AsyncMock()
+            mock_client.post.return_value = mock_response
+            mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client_class.return_value.__aexit__ = AsyncMock(return_value=False)
 
-            result = await telegram_notifier._send_single_message(text)
+            result = await telegram_notifier._transport._send_single(text, "HTML")
 
         assert result is True
         mock_client.post.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_send_single_message_failure_retry(self, telegram_notifier):
-        """단일 메시지 발송 실패 후 재시도"""
+    async def test_transport_send_single_failure_retry(self, telegram_notifier):
+        """Transport._send_single 실패 후 재시도"""
         text = "Test message"
-        telegram_notifier._max_retries = 3
+        telegram_notifier._transport._max_retries = 3
 
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_response = MagicMock()
             mock_response.status_code = 500
             mock_response.text = "Server error"
-            mock_client = MagicMock()
-            mock_client.__aenter__.return_value = mock_client
-            mock_client.__aexit__.return_value = None
-            mock_client.post = AsyncMock(return_value=mock_response)
-            mock_client_class.return_value = mock_client
+            mock_client = AsyncMock()
+            mock_client.post.return_value = mock_response
+            mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client_class.return_value.__aexit__ = AsyncMock(return_value=False)
 
-            result = await telegram_notifier._send_single_message(text)
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                result = await telegram_notifier._transport._send_single(text, "HTML")
 
         assert result is False
         # 최대 재시도 횟수만큼 호출
         assert mock_client.post.call_count == 3
 
     @pytest.mark.asyncio
-    async def test_send_single_message_network_error(self, telegram_notifier):
-        """네트워크 오류 발생"""
+    async def test_transport_send_single_network_error(self, telegram_notifier):
+        """Transport._send_single 네트워크 오류"""
         text = "Test message"
-        telegram_notifier._max_retries = 2
+        telegram_notifier._transport._max_retries = 2
 
         with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = MagicMock()
-            mock_client.__aenter__.return_value = mock_client
-            mock_client.__aexit__.return_value = None
-            mock_client.post = AsyncMock(side_effect=Exception("Network error"))
-            mock_client_class.return_value = mock_client
+            mock_client = AsyncMock()
+            mock_client.post.side_effect = Exception("Network error")
+            mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client_class.return_value.__aexit__ = AsyncMock(return_value=False)
 
-            result = await telegram_notifier._send_single_message(text)
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                result = await telegram_notifier._transport._send_single(text, "HTML")
 
         assert result is False
         assert mock_client.post.call_count == 2

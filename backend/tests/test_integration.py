@@ -630,8 +630,8 @@ class TestNotificationIntegration:
             level=AlertLevel.WARNING,
         )
 
-        # httpx.AsyncClient mock
-        with patch("core.notification.telegram_notifier.httpx.AsyncClient") as MockClient:
+        # httpx.AsyncClient mock (Transport 모듈에서 import)
+        with patch("httpx.AsyncClient") as MockClient:
             mock_client = AsyncMock()
             mock_response = MagicMock()
             mock_response.status_code = 200
