@@ -224,7 +224,7 @@ class ExchangeRateManager:
                 raise ValueError("FRED API 키가 설정되지 않았습니다")
 
             # FRED API 호출
-            url = "https://api.stlouisfed.org/fred/series/data"
+            url = "https://api.stlouisfed.org/fred/series/observations"
             params = {
                 "series_id": "DEXKOUS",  # KRW/USD (역수 계산 필요)
                 "api_key": fred_key,
