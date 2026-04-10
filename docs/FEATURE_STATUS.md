@@ -164,12 +164,12 @@
 | monitoring_dashboard | 모니터링 대시보드 (핵심 지표 실시간 확인) | Tested | core/monitoring/dashboard.py | test_gate_e_monitoring.py (53) | 서비스 상태/메트릭/알림 통합, 임계값 자동 알림 |
 | prometheus_metrics | Prometheus 메트릭 수집 + Grafana 시각화 | Tested | core/monitoring/metrics.py | test_prometheus_metrics.py (26) | HTTP latency/count, 컴포넌트 상태, 비즈니스 메트릭, 서킷브레이커 |
 | json_structured_logging | JSON 구조화 로그 (운영 환경) | Tested | config/logging.py | test_prometheus_metrics.py (26) | 운영: JSON stdout + 파일 로테이션, 개발: 컬러 콘솔 (로깅 테스트 2건 포함) |
-| canary_deployment | 카나리 배포 인프라 | Implemented | nginx/nginx-canary.conf | N/A | nginx split_clients 트래픽 분할 (10→30→50→100%), docker-compose.canary.yml, canary_deploy.sh 5개 명령 |
-| pre_deploy_check | 배포 전 자동 검증 스크립트 | Implemented | scripts/pre_deploy_check.sh | N/A | 7단계 검증 (Git/린트/테스트/문서/Docker/환경변수/릴리즈게이트) |
-| prometheus_alerting | Prometheus 알림 규칙 + Alertmanager | Implemented | monitoring/prometheus/rules/aqts_alerts.yml | N/A | 5그룹 15규칙 (가용성/API성능/서킷브레이커/데이터수집/트레이딩), Alertmanager 텔레그램 연동, 심각도별 라우팅 |
-| alembic_migrations | DB 스키마 마이그레이션 (Alembic) | Implemented | alembic/env.py | N/A | init_db.sql 베이스라인 마이그레이션, settings.py sync_url 연동, black post-write hook |
+| canary_deployment | 카나리 배포 인프라 | Tested | nginx/nginx-canary.conf | test_canary_deployment.py (19) | nginx split_clients 트래픽 분할 (10→30→50→100%), docker-compose.canary.yml, canary_deploy.sh 5개 명령 |
+| pre_deploy_check | 배포 전 자동 검증 스크립트 | Tested | scripts/pre_deploy_check.sh | test_pre_deploy_check.py (10) | 7단계 검증 (Git/린트/테스트/문서/Docker/환경변수/릴리즈게이트) |
+| prometheus_alerting | Prometheus 알림 규칙 + Alertmanager | Tested | monitoring/prometheus/rules/aqts_alerts.yml | test_prometheus_alerting.py (17), test_alert_rules.py (10) | 7그룹 34규칙 (가용성/API성능/서킷브레이커/데이터수집/트레이딩/KIS복원/보안정합성/파이프라인), Alertmanager 텔레그램 연동, 심각도별 라우팅 |
+| alembic_migrations | DB 스키마 마이그레이션 (Alembic) | Tested | alembic/env.py | test_alembic_migrations.py (11) | init_db.sql 베이스라인 마이그레이션, settings.py sync_url 연동, black post-write hook |
 | jwt_security | JWT 보안 강화 (Key Rotation + Revocation) | Tested | api/middleware/auth.py | test_jwt_security.py (17) | kid 헤더 기반 key rotation, jti UUID4 + TokenRevocationStore, bcrypt 전용 인증, 로그아웃 엔드포인트 |
-| ssh_hardening | CD 파이프라인 SSH 하드닝 | Implemented | .github/workflows/cd.yml | N/A | StrictHostKeyChecking no 제거, GCP_HOST_KEY 시크릿 기반 known_hosts 검증 (MITM 방지) |
+| ssh_hardening | CD 파이프라인 SSH 하드닝 | Tested | .github/workflows/cd.yml | test_ssh_hardening.py (7) | StrictHostKeyChecking no 제거, GCP_HOST_KEY 시크릿 기반 known_hosts 검증 (MITM 방지) |
 | db_backup | DB 백업 자동화 (pg_dump + mongodump + GCS) | Tested | scripts/backup_db.sh | test_scheduler_separation.py (33) | 24시간 주기 cron 컨테이너, GCS 업로드, 로컬 보관 정리, 복원 스크립트 |
 | pitr_wal_archive | PostgreSQL PITR (WAL 아카이빙) | Tested | docker-compose.yml | test_scheduler_separation.py (33) | wal_level=replica, archive_mode=on, 5분 archive_timeout, WAL 전용 볼륨 |
 | scheduler_separation | 스케줄러 컨테이너 분리 (장애 격리) | Tested | scheduler_main.py | test_scheduler_separation.py (33) | SCHEDULER_ENABLED 환경변수, 헬스체크 external 상태, API/스케줄러 독립 장애 격리 |
@@ -203,7 +203,7 @@
 | contracts | Order Contract | Tested | contracts/order.py | test_contracts/test_order.py (19) | LIMIT requires limit_price |
 | contracts | Execution Contract | Tested | contracts/execution.py | test_contracts/test_execution.py (18) | filled ≤ requested, FILLED requires price |
 | contracts | RiskCheck Contract | Tested | contracts/risk_check.py | test_contracts/test_risk_check.py (18) | BLOCK 일관성 검증 |
-| config | operational_thresholds.yaml | Implemented | config/operational_thresholds.yaml | N/A | 전 스테이지 임계값 중앙관리 |
+| config | operational_thresholds.yaml | Tested | config/operational_thresholds.yaml | test_operational_thresholds.py (9) | 전 스테이지 임계값 중앙관리 |
 
 ### Stage 2-B: Pipeline Gates ✅
 
@@ -347,7 +347,7 @@
 ## Test Coverage Summary
 
 ```
-Total Tests: 3,772 tests (413 smoke-marked) — ALL PASS, Coverage 90%
+Total Tests: 3,845 tests (413 smoke-marked) — ALL PASS, Coverage 90%
 ├── Core Features: 40+ modules with passing tests
 ├── Data Contracts: 154 tests (9 contracts) [smoke]
 ├── Pipeline Gates: 59 tests (12 components)
@@ -392,7 +392,7 @@ Total Tests: 3,772 tests (413 smoke-marked) — ALL PASS, Coverage 90%
 ├── Smoke Tests: 413 tests (< 13초, CI 필수)
 └── Remaining Uncovered:
     └── 0 Not Started items (ALL FEATURES IMPLEMENTED)
-    └── 1 Implemented item (operational_thresholds.yaml — N/A, 설정 파일)
+    └── 0 Implemented items (ALL FEATURES TESTED)
 ```
 
 ---
