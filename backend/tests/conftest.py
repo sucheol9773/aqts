@@ -41,6 +41,8 @@ def pytest_configure(config):
         "DASHBOARD_SECRET_KEY": "test-secret-key",
         "ADMIN_BOOTSTRAP_USERNAME": "admin",
         "ADMIN_BOOTSTRAP_PASSWORD": "test-admin-password",
+        # Token Revocation (memory 명시 — 운영은 redis 필수)
+        "AQTS_REVOCATION_BACKEND": "memory",
     }
     for key, value in test_env_vars.items():
         os.environ.setdefault(key, value)

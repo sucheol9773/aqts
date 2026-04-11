@@ -121,10 +121,11 @@ class TestFactory:
     def teardown_method(self, method) -> None:
         reset_revocation_store_for_tests()
 
-    def test_default_backend_is_memory(self, monkeypatch) -> None:
+    def test_missing_env_raises_valueerror(self, monkeypatch) -> None:
+        """AQTS_REVOCATION_BACKEND 미설정 시 ValueError 발생."""
         monkeypatch.delenv("AQTS_REVOCATION_BACKEND", raising=False)
-        store = _build_store()
-        assert isinstance(store, InMemoryTokenRevocationStore)
+        with pytest.raises(ValueError, match="환경변수가 설정되지 않았습니다"):
+            _build_store()
 
     def test_explicit_memory(self, monkeypatch) -> None:
         monkeypatch.setenv("AQTS_REVOCATION_BACKEND", "memory")

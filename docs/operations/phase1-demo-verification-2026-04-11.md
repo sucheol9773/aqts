@@ -242,6 +242,9 @@ INITIAL_CAPITAL_KRW=10000000
 | 환율 DB 영속화 + 스케줄러 | ✅ 완료 | `_store_rate_to_db()` + 1시간 간격 `_exchange_rate_loop` |
 | NewsCollector 스케줄러 wiring | ✅ 완료 | `handle_pre_market()` 스텝 2에 연결, 실패 시 비차단 |
 | 경제지표 스케줄러 wiring | ✅ 완료 | `handle_pre_market()` 스텝 3, `_store_to_db()` 활성화, FRED 9개 지표 |
+| 보안: Revocation 백엔드 강제 | ✅ 완료 | `AQTS_REVOCATION_BACKEND` 미설정 시 부팅 실패 (memory 기본값 제거) |
+| 보안: Grafana 비밀번호 fallback 제거 | ✅ 완료 | `docker-compose.yml` `:-aqts2026` fallback 삭제, `GRAFANA_PASSWORD` 필수 |
+| 보안: CORS 변수명 정정 | ✅ 완료 | `.env.example` `CORS_ORIGINS` → `CORS_ALLOWED_ORIGINS` |
 
 ## 8. 미해결 항목
 
@@ -252,3 +255,5 @@ INITIAL_CAPITAL_KRW=10000000
 | NewsCollector 자동 수집 검증 | P2 | 04-13(월) 08:30 KST handle_pre_market 실행 시 검증 |
 | 경제지표 자동 수집 검증 | P2 | 04-13(월) 08:30 KST FRED 9개 지표 → economic_indicators 테이블 확인 |
 | ECOS API 키 설정 | P3 | 한국은행 API 키 발급 후 서버 .env에 추가하면 자동 동작 |
+| 서버 .env CORS 변수명 변경 | P2 | 서버 `.env`의 `CORS_ORIGINS` → `CORS_ALLOWED_ORIGINS` 변경 + 재시작 필요 |
+| 서버 .env AQTS_REVOCATION_BACKEND 추가 | P1 | 배포 전 서버 `.env`에 `AQTS_REVOCATION_BACKEND=redis` 추가 필수 |

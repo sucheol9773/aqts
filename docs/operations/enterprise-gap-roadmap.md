@@ -93,7 +93,7 @@
 - 영향: 외부 규제기관/감사법인 요구수준 충족 불확실.
 
 ### 3.12 문서 정합성/운영 실행가능성
-- 관찰: PRD/FEATURE_STATUS/release-gates 수치 시점별 혼재, `CORS_ORIGINS` vs `CORS_ALLOWED_ORIGINS` 같은 키 명칭 불일치 정황.
+- 관찰: PRD/FEATURE_STATUS/release-gates 수치 시점별 혼재. ~~`CORS_ORIGINS` vs `CORS_ALLOWED_ORIGINS` 키 명칭 불일치~~ → `.env.example` 정정 완료 (2026-04-11).
 - 부족: SSOT 지표 체계 약함, 문서 간 버전 동기화 엄격성 부족.
 - 영향: 장애/배포 시 커뮤니케이션 비용 증가, 의사결정 지연.
 

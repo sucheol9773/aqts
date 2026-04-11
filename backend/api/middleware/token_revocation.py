@@ -159,7 +159,15 @@ _singleton_lock = threading.Lock()
 
 
 def _build_store() -> TokenRevocationStore:
-    backend = os.environ.get(_BACKEND_ENV, "memory").strip().lower()
+    backend_raw = os.environ.get(_BACKEND_ENV)
+    if backend_raw is None:
+        raise ValueError(
+            f"{_BACKEND_ENV} 환경변수가 설정되지 않았습니다. "
+            f"운영 환경에서는 반드시 'redis'로 설정하세요. "
+            f"테스트 환경에서는 'memory'를 명시적으로 설정할 수 있습니다. "
+            f"유효한 값: {_VALID_BACKENDS}"
+        )
+    backend = backend_raw.strip().lower()
     if backend not in _VALID_BACKENDS:
         raise ValueError(f"Invalid {_BACKEND_ENV}={backend!r}; must be one of {_VALID_BACKENDS}")
     if backend == "memory":
