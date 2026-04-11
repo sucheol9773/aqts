@@ -236,6 +236,13 @@ class DailyReporter:
             from core.notification.telegram_transport import create_transport
 
             transport = create_transport()
+
+            if not transport.is_configured():
+                logger.warning(
+                    "Telegram 미설정 (TELEGRAM_BOT_TOKEN 또는 TELEGRAM_CHAT_ID 누락) " "— 리포트 발송을 건너뜁니다"
+                )
+                return False
+
             message = self._format_telegram_message(report)
 
             success = await transport.send_text(message)

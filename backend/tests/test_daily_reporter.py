@@ -740,6 +740,7 @@ class TestDailyReporterTelegramSend:
     async def test_send_telegram_report_success(self, mock_settings, sample_daily_report):
         """send_telegram_report returns True on success (Transport 위임)"""
         mock_transport = AsyncMock()
+        mock_transport.is_configured = MagicMock(return_value=True)
         mock_transport.send_text.return_value = True
 
         with patch("core.daily_reporter.get_settings", return_value=mock_settings):
@@ -756,6 +757,7 @@ class TestDailyReporterTelegramSend:
     async def test_send_telegram_report_failure(self, mock_settings, sample_daily_report):
         """send_telegram_report returns False on failure"""
         mock_transport = AsyncMock()
+        mock_transport.is_configured = MagicMock(return_value=True)
         mock_transport.send_text.return_value = False
 
         with patch("core.daily_reporter.get_settings", return_value=mock_settings):
@@ -771,6 +773,7 @@ class TestDailyReporterTelegramSend:
     async def test_send_telegram_report_exception(self, mock_settings, sample_daily_report):
         """send_telegram_report handles exceptions"""
         mock_transport = AsyncMock()
+        mock_transport.is_configured = MagicMock(return_value=True)
         mock_transport.send_text.side_effect = Exception("Network error")
 
         with patch("core.daily_reporter.get_settings", return_value=mock_settings):
@@ -783,9 +786,26 @@ class TestDailyReporterTelegramSend:
                 assert result is False
 
     @pytest.mark.asyncio
+    async def test_send_telegram_report_not_configured(self, mock_settings, sample_daily_report):
+        """is_configured() False면 발송을 건너뛰고 False 반환"""
+        mock_transport = AsyncMock()
+        mock_transport.is_configured = MagicMock(return_value=False)
+
+        with patch("core.daily_reporter.get_settings", return_value=mock_settings):
+            with patch(
+                "core.notification.telegram_transport.create_transport",
+                return_value=mock_transport,
+            ):
+                reporter = DailyReporter()
+                result = await reporter.send_telegram_report(sample_daily_report)
+                assert result is False
+                mock_transport.send_text.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_send_telegram_report_calls_formatter(self, mock_settings, sample_daily_report):
         """send_telegram_report formats message before sending"""
         mock_transport = AsyncMock()
+        mock_transport.is_configured = MagicMock(return_value=True)
         mock_transport.send_text.return_value = True
 
         with patch("core.daily_reporter.get_settings", return_value=mock_settings):

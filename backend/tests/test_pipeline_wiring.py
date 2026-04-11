@@ -302,6 +302,7 @@ class TestDailyReporterTransportPath:
     async def test_daily_reporter_uses_transport(self, mock_settings):
         """DailyReporter.send_telegram_report → create_transport → send_text"""
         mock_transport = AsyncMock()
+        mock_transport.is_configured = MagicMock(return_value=True)
         mock_transport.send_text.return_value = True
 
         with patch("core.daily_reporter.get_settings", return_value=mock_settings):
