@@ -883,3 +883,537 @@ class TestHandlePostMarket:
         assert trades[0].side == "BUY"
         assert trades[1].ticker == "035720"
         assert trades[1].side == "SELL"
+
+
+# ══════════════════════════════════════
+# handle_market_close 보강 테스트
+# ══════════════════════════════════════
+
+
+class TestHandleMarketCloseEdgeCases:
+    """handle_market_close 미커버 경로 보강"""
+
+    @pytest.mark.asyncio
+    async def test_position_with_zero_qty_filtered(self):
+        """보유 수량 0인 포지션은 필터링돼야 한다"""
+        positions = [
+            {
+                "pdno": "005930",
+                "prdt_name": "삼성전자",
+                "hldg_qty": "100",
+                "pchs_avg_pric": "65000",
+                "prpr": "68000",
+                "evlu_amt": "6800000",
+                "evlu_pfls_amt": "300000",
+                "evlu_pfls_rt": "4.62",
+            },
+            {
+                "pdno": "035720",
+                "prdt_name": "카카오",
+                "hldg_qty": "0",
+                "pchs_avg_pric": "50000",
+                "prpr": "45000",
+                "evlu_amt": "0",
+                "evlu_pfls_amt": "0",
+                "evlu_pfls_rt": "0.00",
+            },
+        ]
+        mock_kis = AsyncMock()
+        mock_kis.get_kr_balance.return_value = _make_kis_balance(positions=positions)
+
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = MagicMock(fetchall=lambda: [])
+        mock_session.commit = AsyncMock()
+
+        mock_audit = AsyncMock()
+        mock_audit.log = AsyncMock()
+
+        mock_redis = MagicMock()
+        mock_redis.set = AsyncMock()
+
+        with (
+            patch(_KIS, return_value=mock_kis),
+            patch(_SESSION, return_value=_mock_session_ctx(mock_session)),
+            patch(_REDIS, return_value=mock_redis),
+            patch(_AUDIT, return_value=mock_audit),
+        ):
+            result = await handle_market_close()
+
+        # qty=0인 카카오는 필터링, 삼성전자만 포함
+        assert result["positions_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_trade_stats_db_exception(self):
+        """거래 통계 DB 조회 실패 시 trade_stats_error 설정"""
+        mock_kis = AsyncMock()
+        mock_kis.get_kr_balance.return_value = _make_kis_balance()
+
+        # 첫 번째 session 호출(trade stats)은 예외, 두 번째(audit)는 정상
+        call_count = 0
+
+        def _session_side_effect():
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # trade stats query — 예외 발생
+                raise RuntimeError("DB connection lost")
+            # audit — 정상
+            mock_s = AsyncMock()
+            mock_s.commit = AsyncMock()
+            mock_audit_inner = AsyncMock()
+            mock_audit_inner.log = AsyncMock()
+            return _mock_session_ctx(mock_s)
+
+        mock_redis = MagicMock()
+        mock_redis.set = AsyncMock()
+
+        mock_audit = AsyncMock()
+        mock_audit.log = AsyncMock()
+
+        with (
+            patch(_KIS, return_value=mock_kis),
+            patch(_SESSION, side_effect=_session_side_effect),
+            patch(_REDIS, return_value=mock_redis),
+            patch(_AUDIT, return_value=mock_audit),
+        ):
+            result = await handle_market_close()
+
+        assert "trade_stats_error" in result
+        # KIS는 성공했으므로 portfolio_value는 존재
+        assert result["portfolio_value"] == 50_000_000.0
+
+    @pytest.mark.asyncio
+    async def test_redis_snapshot_save_exception(self):
+        """Redis 스냅샷 저장 실패 시 snapshot_error 설정"""
+        mock_kis = AsyncMock()
+        mock_kis.get_kr_balance.return_value = _make_kis_balance()
+
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = MagicMock(fetchall=lambda: [])
+        mock_session.commit = AsyncMock()
+
+        mock_audit = AsyncMock()
+        mock_audit.log = AsyncMock()
+
+        mock_redis = MagicMock()
+        mock_redis.set = AsyncMock(side_effect=RuntimeError("Redis down"))
+
+        with (
+            patch(_KIS, return_value=mock_kis),
+            patch(_SESSION, return_value=_mock_session_ctx(mock_session)),
+            patch(_REDIS, return_value=mock_redis),
+            patch(_AUDIT, return_value=mock_audit),
+        ):
+            result = await handle_market_close()
+
+        assert "snapshot_error" in result
+        assert "Redis down" in result["snapshot_error"]
+
+    @pytest.mark.asyncio
+    async def test_audit_log_exception(self):
+        """감사 로그 기록 실패 시 audit_error 설정"""
+        mock_kis = AsyncMock()
+        mock_kis.get_kr_balance.return_value = _make_kis_balance()
+
+        mock_session_trade = AsyncMock()
+        mock_session_trade.execute.return_value = MagicMock(fetchall=lambda: [])
+        mock_session_trade.commit = AsyncMock()
+
+        call_count = 0
+
+        def _session_side_effect():
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return _mock_session_ctx(mock_session_trade)
+            # 감사 로그 세션 — 예외
+            raise RuntimeError("Audit DB unreachable")
+
+        mock_redis = MagicMock()
+        mock_redis.set = AsyncMock()
+
+        with (
+            patch(_KIS, return_value=mock_kis),
+            patch(_SESSION, side_effect=_session_side_effect),
+            patch(_REDIS, return_value=mock_redis),
+        ):
+            result = await handle_market_close()
+
+        assert "audit_error" in result
+        # 감사 로그 실패와 무관하게 스냅샷은 저장돼야 함
+        assert result.get("snapshot_saved") is True
+
+    @pytest.mark.asyncio
+    async def test_audit_log_metadata_structure(self):
+        """감사 로그에 전달되는 metadata 구조 검증"""
+        mock_kis = AsyncMock()
+        mock_kis.get_kr_balance.return_value = _make_kis_balance()
+
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = MagicMock(fetchall=lambda: [("BUY", 3, 5_000_000.0)])
+        mock_session.commit = AsyncMock()
+
+        mock_audit = AsyncMock()
+        mock_audit.log = AsyncMock()
+
+        mock_redis = MagicMock()
+        mock_redis.set = AsyncMock()
+
+        with (
+            patch(_KIS, return_value=mock_kis),
+            patch(_SESSION, return_value=_mock_session_ctx(mock_session)),
+            patch(_REDIS, return_value=mock_redis),
+            patch(_AUDIT, return_value=mock_audit),
+        ):
+            await handle_market_close()
+
+        call_kwargs = mock_audit.log.call_args.kwargs
+        metadata = call_kwargs["metadata"]
+        assert metadata["portfolio_value"] == 50_000_000.0
+        assert metadata["cash_balance"] == 10_000_000.0
+        assert metadata["positions_count"] == 2
+        assert "BUY" in metadata["trade_stats"]
+        assert metadata["trade_stats"]["BUY"]["count"] == 3
+
+    @pytest.mark.asyncio
+    async def test_empty_trade_stats(self):
+        """금일 주문 없을 때 trade_stats가 빈 dict"""
+        mock_kis = AsyncMock()
+        mock_kis.get_kr_balance.return_value = _make_kis_balance()
+
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = MagicMock(fetchall=lambda: [])
+        mock_session.commit = AsyncMock()
+
+        mock_audit = AsyncMock()
+        mock_audit.log = AsyncMock()
+
+        mock_redis = MagicMock()
+        mock_redis.set = AsyncMock()
+
+        with (
+            patch(_KIS, return_value=mock_kis),
+            patch(_SESSION, return_value=_mock_session_ctx(mock_session)),
+            patch(_REDIS, return_value=mock_redis),
+            patch(_AUDIT, return_value=mock_audit),
+        ):
+            result = await handle_market_close()
+
+        assert result["trade_stats"] == {}
+
+    @pytest.mark.asyncio
+    async def test_snapshot_ttl_30_days(self):
+        """Redis 스냅샷 TTL이 30일(86400*30)인지 검증"""
+        mock_kis = AsyncMock()
+        mock_kis.get_kr_balance.return_value = _make_kis_balance()
+
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = MagicMock(fetchall=lambda: [])
+        mock_session.commit = AsyncMock()
+
+        mock_audit = AsyncMock()
+        mock_audit.log = AsyncMock()
+
+        mock_redis = MagicMock()
+        mock_redis.set = AsyncMock()
+
+        with (
+            patch(_KIS, return_value=mock_kis),
+            patch(_SESSION, return_value=_mock_session_ctx(mock_session)),
+            patch(_REDIS, return_value=mock_redis),
+            patch(_AUDIT, return_value=mock_audit),
+        ):
+            await handle_market_close()
+
+        call_kwargs = mock_redis.set.call_args
+        assert call_kwargs.kwargs.get("ex") == 86400 * 30
+
+
+# ══════════════════════════════════════
+# handle_post_market 보강 테스트
+# ══════════════════════════════════════
+
+
+def _make_post_market_mocks(
+    snapshot_value=50_000_000.0,
+    snapshot_cash=10_000_000.0,
+    prev_value=49_000_000.0,
+    trade_rows=None,
+):
+    """handle_post_market 테스트를 위한 공통 mock 세트 생성"""
+    _today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    snapshot = json.dumps(
+        {
+            "date": _today,
+            "portfolio_value": snapshot_value,
+            "cash_balance": snapshot_cash,
+            "positions_count": 1,
+            "positions": [
+                {
+                    "ticker": "005930",
+                    "name": "삼성전자",
+                    "quantity": 100,
+                    "avg_price": 65000,
+                    "current_price": 68000,
+                    "eval_amount": 6800000,
+                    "pnl_amount": 300000,
+                    "pnl_percent": 4.62,
+                }
+            ],
+        }
+    )
+    prev_snapshot = json.dumps({"portfolio_value": prev_value})
+
+    async def _redis_get(key):
+        if "snapshot" in key:
+            if _today in key:
+                return snapshot
+            return prev_snapshot
+        return None
+
+    mock_redis = MagicMock()
+    mock_redis.get = AsyncMock(side_effect=_redis_get)
+    mock_redis.set = AsyncMock()
+
+    mock_session = AsyncMock()
+    if trade_rows is None:
+        trade_rows = []
+    mock_session.execute.return_value = MagicMock(fetchall=lambda: trade_rows)
+
+    mock_report = MagicMock()
+    mock_report.daily_pnl = 1_000_000.0
+    mock_report.daily_return_pct = 2.04
+    mock_report.total_trades = len(trade_rows)
+    mock_report.total_positions = 1
+    mock_report.to_dict.return_value = {"daily_pnl": 1_000_000.0}
+
+    mock_reporter = AsyncMock()
+    mock_reporter.generate_report.return_value = mock_report
+    mock_reporter.send_telegram_report.return_value = True
+
+    mock_guard = MagicMock()
+    mock_guard.state = MagicMock(current_drawdown=0.02, consecutive_losses=1)
+
+    return mock_redis, mock_session, mock_reporter, mock_guard, mock_report
+
+
+class TestHandlePostMarketEdgeCases:
+    """handle_post_market 미커버 경로 보강"""
+
+    @pytest.mark.asyncio
+    async def test_trade_query_db_exception(self):
+        """거래 내역 DB 조회 실패 시 trades_error 설정, 리포트는 정상 생성"""
+        mock_redis, _, mock_reporter, mock_guard, _ = _make_post_market_mocks()
+
+        mock_session = AsyncMock()
+        mock_session.execute.side_effect = RuntimeError("DB timeout")
+
+        with (
+            patch(_REDIS, return_value=mock_redis),
+            patch(_SESSION, return_value=_mock_session_ctx(mock_session)),
+            patch(_REPORTER, return_value=mock_reporter),
+            patch(_GUARD, return_value=mock_guard),
+        ):
+            result = await handle_post_market()
+
+        assert "trades_error" in result
+        # 거래 내역 실패해도 리포트 생성은 진행
+        mock_reporter.generate_report.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_trading_guard_exception_uses_defaults(self):
+        """TradingGuard 생성자 예외 시 drawdown=0, consecutive_losses=0 사용"""
+        mock_redis, mock_session, mock_reporter, _, _ = _make_post_market_mocks()
+
+        with (
+            patch(_REDIS, return_value=mock_redis),
+            patch(_SESSION, return_value=_mock_session_ctx(mock_session)),
+            patch(_REPORTER, return_value=mock_reporter),
+            patch(_GUARD, side_effect=RuntimeError("Guard init failed")),
+        ):
+            result = await handle_post_market()
+
+        # 예외에도 리포트 생성 성공
+        call_kwargs = mock_reporter.generate_report.call_args.kwargs
+        assert call_kwargs["max_drawdown_today"] == 0.0
+        assert call_kwargs["consecutive_losses"] == 0
+
+    @pytest.mark.asyncio
+    async def test_report_redis_save_exception(self):
+        """리포트 Redis 저장 실패 시 report_save_error 설정"""
+        mock_redis, mock_session, mock_reporter, mock_guard, _ = _make_post_market_mocks()
+
+        # get은 정상, set에서 예외
+        original_set = mock_redis.set
+
+        async def _set_side_effect(key, value, **kwargs):
+            if "report:daily" in key:
+                raise RuntimeError("Redis write failed")
+            return await original_set(key, value, **kwargs)
+
+        mock_redis.set = AsyncMock(side_effect=_set_side_effect)
+
+        with (
+            patch(_REDIS, return_value=mock_redis),
+            patch(_SESSION, return_value=_mock_session_ctx(mock_session)),
+            patch(_REPORTER, return_value=mock_reporter),
+            patch(_GUARD, return_value=mock_guard),
+        ):
+            result = await handle_post_market()
+
+        assert "report_save_error" in result
+        # 텔레그램은 정상 발송됐어야 함
+        assert result.get("telegram_sent") is True
+
+    @pytest.mark.asyncio
+    async def test_report_generation_exception(self):
+        """DailyReporter.generate_report() 예외 시 report_error 설정"""
+        mock_redis, mock_session, mock_reporter, mock_guard, _ = _make_post_market_mocks()
+
+        mock_reporter.generate_report.side_effect = RuntimeError("Report generation failed")
+
+        with (
+            patch(_REDIS, return_value=mock_redis),
+            patch(_SESSION, return_value=_mock_session_ctx(mock_session)),
+            patch(_REPORTER, return_value=mock_reporter),
+            patch(_GUARD, return_value=mock_guard),
+        ):
+            result = await handle_post_market()
+
+        assert "report_error" in result
+        # 텔레그램 발송은 시도되지 않아야 함
+        assert "telegram_sent" not in result
+
+    @pytest.mark.asyncio
+    async def test_position_weight_calculation(self):
+        """포지션 weight가 eval_amount / portfolio_value_end 로 계산되는지"""
+        mock_redis, mock_session, mock_reporter, mock_guard, _ = _make_post_market_mocks()
+
+        with (
+            patch(_REDIS, return_value=mock_redis),
+            patch(_SESSION, return_value=_mock_session_ctx(mock_session)),
+            patch(_REPORTER, return_value=mock_reporter),
+            patch(_GUARD, return_value=mock_guard),
+        ):
+            await handle_post_market()
+
+        call_kwargs = mock_reporter.generate_report.call_args.kwargs
+        positions = call_kwargs["positions"]
+        assert len(positions) == 1
+        # weight = 6800000 / 50000000 = 0.136
+        assert positions[0].weight == round(6_800_000 / 50_000_000, 4)
+
+    @pytest.mark.asyncio
+    async def test_report_ttl_90_days(self):
+        """리포트 Redis 저장 TTL이 90일(86400*90)인지 검증"""
+        mock_redis, mock_session, mock_reporter, mock_guard, _ = _make_post_market_mocks()
+
+        with (
+            patch(_REDIS, return_value=mock_redis),
+            patch(_SESSION, return_value=_mock_session_ctx(mock_session)),
+            patch(_REPORTER, return_value=mock_reporter),
+            patch(_GUARD, return_value=mock_guard),
+        ):
+            await handle_post_market()
+
+        # redis.set이 2번 호출됨 (RedisManager.get_client 는 동일 mock)
+        # report:daily 키에 대한 set 호출 확인
+        for call in mock_redis.set.call_args_list:
+            key = call.args[0] if call.args else ""
+            if "report:daily" in key:
+                assert call.kwargs.get("ex") == 86400 * 90
+                return
+        pytest.fail("report:daily Redis set 호출을 찾을 수 없음")
+
+    @pytest.mark.asyncio
+    async def test_prev_snapshot_malformed_json(self):
+        """전일 스냅샷 JSON 파싱 실패 시 initial_capital fallback"""
+        _today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today_snapshot = json.dumps(
+            {
+                "portfolio_value": 50_000_000.0,
+                "cash_balance": 10_000_000.0,
+                "positions": [
+                    {
+                        "ticker": "005930",
+                        "name": "삼성전자",
+                        "quantity": 100,
+                        "avg_price": 65000,
+                        "current_price": 68000,
+                        "eval_amount": 6800000,
+                        "pnl_amount": 300000,
+                        "pnl_percent": 4.62,
+                    }
+                ],
+            }
+        )
+
+        async def _redis_get(key):
+            if "snapshot" in key:
+                if _today in key:
+                    return today_snapshot
+                return "{INVALID_JSON"
+            return None
+
+        mock_redis = MagicMock()
+        mock_redis.get = AsyncMock(side_effect=_redis_get)
+        mock_redis.set = AsyncMock()
+
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = MagicMock(fetchall=lambda: [])
+
+        mock_report = MagicMock()
+        mock_report.daily_pnl = 0.0
+        mock_report.daily_return_pct = 0.0
+        mock_report.total_trades = 0
+        mock_report.total_positions = 1
+        mock_report.to_dict.return_value = {}
+
+        mock_reporter = AsyncMock()
+        mock_reporter.generate_report.return_value = mock_report
+        mock_reporter.send_telegram_report.return_value = True
+
+        mock_guard = MagicMock()
+        mock_guard.state = MagicMock(current_drawdown=0.0, consecutive_losses=0)
+
+        mock_settings = MagicMock()
+        mock_settings.risk.initial_capital_krw = 50_000_000.0
+
+        with (
+            patch(_REDIS, return_value=mock_redis),
+            patch(_SESSION, return_value=_mock_session_ctx(mock_session)),
+            patch(_REPORTER, return_value=mock_reporter),
+            patch(_GUARD, return_value=mock_guard),
+            patch(_SETTINGS, return_value=mock_settings),
+        ):
+            result = await handle_post_market()
+
+        # JSON 파싱 실패 → prev_portfolio_value=0 → initial_capital fallback
+        call_kwargs = mock_reporter.generate_report.call_args.kwargs
+        assert call_kwargs["portfolio_value_start"] == 50_000_000.0
+
+    @pytest.mark.asyncio
+    async def test_null_trade_fields_handled(self):
+        """거래 내역에 NULL 필드가 있어도 정상 처리"""
+        trade_rows = [
+            ("005930", "BUY", None, None, "FILLED", None),
+        ]
+        mock_redis, _, mock_reporter, mock_guard, _ = _make_post_market_mocks(trade_rows=trade_rows)
+
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = MagicMock(fetchall=lambda: trade_rows)
+
+        with (
+            patch(_REDIS, return_value=mock_redis),
+            patch(_SESSION, return_value=_mock_session_ctx(mock_session)),
+            patch(_REPORTER, return_value=mock_reporter),
+            patch(_GUARD, return_value=mock_guard),
+        ):
+            result = await handle_post_market()
+
+        call_kwargs = mock_reporter.generate_report.call_args.kwargs
+        trades = call_kwargs["trades"]
+        assert len(trades) == 1
+        assert trades[0].quantity == 0
+        assert trades[0].price == 0.0
+        assert trades[0].amount == 0.0
