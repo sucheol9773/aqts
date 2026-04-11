@@ -190,3 +190,127 @@ class TestCacheEnsembleResults:
         ):
             # 예외가 발생하지 않아야 함 (캐시는 best-effort)
             await _cache_ensemble_results({"TEST": {"signal": 0.1}})
+
+
+class TestHandlePreMarketEconomicCollection:
+    """handle_pre_market 경제지표 수집 wiring 검증"""
+
+    @pytest.mark.asyncio
+    async def test_pre_market_calls_economic_collector(self):
+        """handle_pre_market이 EconomicCollectorService.collect_and_store를 호출하는지"""
+        mock_econ_result = {
+            "fred_count": 9,
+            "ecos_count": 0,
+            "total": 9,
+        }
+
+        with (
+            patch("core.scheduler_handlers.async_session_factory") as mock_session_factory,
+            patch("core.scheduler_handlers.DailyOHLCVCollector") as mock_ohlcv_cls,
+            patch("core.scheduler_handlers.NewsCollectorService") as mock_news_cls,
+            patch("core.data_collector.economic_collector.EconomicCollectorService") as mock_econ_cls,
+            patch("core.health_checker.HealthChecker") as mock_health_cls,
+            patch("core.trading_guard.TradingGuard") as mock_guard_cls,
+        ):
+            # OHLCV mock
+            mock_session = AsyncMock()
+            mock_session_ctx = AsyncMock()
+            mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
+            mock_session_factory.return_value = mock_session_ctx
+            mock_collector = AsyncMock()
+            mock_report = MagicMock()
+            mock_report.errors = []
+            mock_report.to_dict.return_value = {}
+            mock_collector.collect_all.return_value = mock_report
+            mock_ohlcv_cls.return_value = mock_collector
+
+            # News mock
+            mock_news = AsyncMock()
+            mock_news.collect_and_store.return_value = {
+                "total_collected": 0,
+                "new_stored": 0,
+                "duplicates_skipped": 0,
+            }
+            mock_news_cls.return_value = mock_news
+
+            # Economic mock
+            mock_econ = AsyncMock()
+            mock_econ.collect_and_store.return_value = mock_econ_result
+            mock_econ_cls.return_value = mock_econ
+
+            # Health mock
+            mock_health = AsyncMock()
+            mock_health_result = MagicMock()
+            mock_health_result.overall_status.value = "healthy"
+            mock_health_result.ready_for_trading = True
+            mock_health.run_full_check.return_value = mock_health_result
+            mock_health_cls.return_value = mock_health
+
+            # Guard mock
+            mock_guard = MagicMock()
+            mock_guard_cls.return_value = mock_guard
+
+            result = await handle_pre_market()
+
+        mock_econ.collect_and_store.assert_called_once()
+        assert result["economic_collection"] == mock_econ_result
+        assert result["economic_collection"]["fred_count"] == 9
+
+    @pytest.mark.asyncio
+    async def test_pre_market_economic_failure_does_not_block(self):
+        """경제지표 수집 실패가 건전성 검사와 TradingGuard 리셋을 차단하지 않는지"""
+        with (
+            patch("core.scheduler_handlers.async_session_factory") as mock_session_factory,
+            patch("core.scheduler_handlers.DailyOHLCVCollector") as mock_ohlcv_cls,
+            patch("core.scheduler_handlers.NewsCollectorService") as mock_news_cls,
+            patch("core.data_collector.economic_collector.EconomicCollectorService") as mock_econ_cls,
+            patch("core.health_checker.HealthChecker") as mock_health_cls,
+            patch("core.trading_guard.TradingGuard") as mock_guard_cls,
+        ):
+            # OHLCV mock
+            mock_session = AsyncMock()
+            mock_session_ctx = AsyncMock()
+            mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
+            mock_session_factory.return_value = mock_session_ctx
+            mock_collector = AsyncMock()
+            mock_report = MagicMock()
+            mock_report.errors = []
+            mock_report.to_dict.return_value = {}
+            mock_collector.collect_all.return_value = mock_report
+            mock_ohlcv_cls.return_value = mock_collector
+
+            # News mock
+            mock_news = AsyncMock()
+            mock_news.collect_and_store.return_value = {
+                "total_collected": 0,
+                "new_stored": 0,
+                "duplicates_skipped": 0,
+            }
+            mock_news_cls.return_value = mock_news
+
+            # Economic mock — 실패
+            mock_econ = AsyncMock()
+            mock_econ.collect_and_store.side_effect = Exception("FRED API timeout")
+            mock_econ_cls.return_value = mock_econ
+
+            # Health mock
+            mock_health = AsyncMock()
+            mock_health_result = MagicMock()
+            mock_health_result.overall_status.value = "healthy"
+            mock_health_result.ready_for_trading = True
+            mock_health.run_full_check.return_value = mock_health_result
+            mock_health_cls.return_value = mock_health
+
+            # Guard mock
+            mock_guard = MagicMock()
+            mock_guard_cls.return_value = mock_guard
+
+            result = await handle_pre_market()
+
+        # 경제지표 실패 에러가 기록되지만
+        assert "economic_collection_error" in result
+        # 건전성 검사와 TradingGuard 리셋은 정상 실행
+        assert result["health_status"] == "healthy"
+        assert result["daily_reset"] is True

@@ -35,8 +35,9 @@ async def handle_pre_market() -> dict:
 
     1. 유니버스 전 종목 OHLCV 일봉 수집 (KIS API)
     2. 뉴스/공시 수집 (RSS + DART → MongoDB)
-    3. 건전성 검사
-    4. TradingGuard 일일 리셋
+    3. 경제지표 수집 (FRED/ECOS → TimescaleDB + Redis)
+    4. 건전성 검사
+    5. TradingGuard 일일 리셋
     """
     result = {}
 
@@ -68,7 +69,24 @@ async def handle_pre_market() -> dict:
         logger.error(f"[PreMarket] 뉴스 수집 실패: {e}")
         result["news_collection_error"] = str(e)
 
-    # ── 3. 건전성 검사 ──
+    # ── 3. 경제지표 수집 (FRED/ECOS) ──
+    try:
+        from core.data_collector.economic_collector import EconomicCollectorService
+
+        econ_service = EconomicCollectorService()
+        econ_result = await econ_service.collect_and_store()
+        result["economic_collection"] = econ_result
+        logger.info(
+            f"[PreMarket] 경제지표 수집 완료: "
+            f"FRED={econ_result['fred_count']}, "
+            f"ECOS={econ_result['ecos_count']}, "
+            f"Total={econ_result['total']}"
+        )
+    except Exception as e:
+        logger.error(f"[PreMarket] 경제지표 수집 실패: {e}")
+        result["economic_collection_error"] = str(e)
+
+    # ── 4. 건전성 검사 ──
     try:
         from core.health_checker import HealthChecker
 
@@ -79,7 +97,7 @@ async def handle_pre_market() -> dict:
     except Exception as e:
         result["health_check_error"] = str(e)
 
-    # ── 4. TradingGuard 일일 리셋 ──
+    # ── 5. TradingGuard 일일 리셋 ──
     try:
         from core.trading_guard import TradingGuard
 

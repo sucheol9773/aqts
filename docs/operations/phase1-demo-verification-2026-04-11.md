@@ -43,11 +43,13 @@
   - 뉴스 수집 실패 시 다른 단계 차단하지 않음 (독립 try/except)
   - 다음 거래일(04-13 월) 08:30 KST handle_pre_market 자동 실행 시 검증 예정
 
-### 2-3. 경제지표 (FRED/ECOS) — ⚠️ 미수집
+### 2-3. 경제지표 (FRED/ECOS) — ✅ 스케줄러 wiring 완료
 
-- `economic_indicators` 테이블 0건
-- **원인**: FRED/ECOS API 키 미설정 (Phase 0에서 선택사항으로 분류)
-- `EconomicCollectorService.collect_and_store()` 스케줄러 미연결
+- `handle_pre_market()` 스텝 3에 `EconomicCollectorService.collect_and_store()` 연결
+- `_store_to_db()` 주석 해제 → TimescaleDB 영속화 활성화
+- FRED API 키 설정 완료 (미국 지표 9개: GDP, CPI, 금리, VIX 등)
+- ECOS API 키 미설정 (한국 지표는 키 추가 시 자동 동작)
+- 다음 거래일(04-13 월) 08:30 KST handle_pre_market 실행 시 검증 예정
 
 ### 2-4. 환율 — ✅ DB 영속화 구현 완료
 
@@ -239,6 +241,7 @@ INITIAL_CAPITAL_KRW=10000000
 | Docker 포트 보안 강화 | ✅ 완료 | 전 서비스 127.0.0.1 바인딩 (defense in depth) |
 | 환율 DB 영속화 + 스케줄러 | ✅ 완료 | `_store_rate_to_db()` + 1시간 간격 `_exchange_rate_loop` |
 | NewsCollector 스케줄러 wiring | ✅ 완료 | `handle_pre_market()` 스텝 2에 연결, 실패 시 비차단 |
+| 경제지표 스케줄러 wiring | ✅ 완료 | `handle_pre_market()` 스텝 3, `_store_to_db()` 활성화, FRED 9개 지표 |
 
 ## 8. 미해결 항목
 
@@ -247,4 +250,5 @@ INITIAL_CAPITAL_KRW=10000000
 | 텔레그램 발송 검증 | P1 | 다음 거래일(04-13 월) MARKET_CLOSE 이후 확인 |
 | 환율 수집 배포 검증 | P2 | DB 영속화 코드 완료, 배포 후 `exchange_rates` 테이블 데이터 확인 필요 |
 | NewsCollector 자동 수집 검증 | P2 | 04-13(월) 08:30 KST handle_pre_market 실행 시 검증 |
-| 경제지표 수집 (FRED/ECOS) | P3 | API 키 설정 후 수집 가능 |
+| 경제지표 자동 수집 검증 | P2 | 04-13(월) 08:30 KST FRED 9개 지표 → economic_indicators 테이블 확인 |
+| ECOS API 키 설정 | P3 | 한국은행 API 키 발급 후 서버 .env에 추가하면 자동 동작 |

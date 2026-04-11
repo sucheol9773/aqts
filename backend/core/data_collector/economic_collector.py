@@ -562,8 +562,8 @@ class EconomicCollectorService:
 
         all_indicators = fred_indicators + ecos_indicators
 
-        # TimescaleDB 저장 (추후 구현)
-        # await self._store_to_db(all_indicators)
+        # TimescaleDB 저장
+        await self._store_to_db(all_indicators)
 
         # Redis 캐싱
         await self._cache_latest(all_indicators)
