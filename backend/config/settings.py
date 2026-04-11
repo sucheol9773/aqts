@@ -8,6 +8,8 @@ KIS 설정은 LIVE/DEMO/BACKTEST 3단계 모드를 지원하며,
 모드에 따라 적절한 API 키, 계좌, URL이 자동 선택됩니다.
 """
 
+import logging
+from datetime import datetime, timezone
 from enum import Enum
 from functools import lru_cache
 from typing import Optional
@@ -15,6 +17,8 @@ from urllib.parse import quote_plus
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 
 # ══════════════════════════════════════
@@ -103,9 +107,105 @@ class KISSettings(BaseSettings):
     api_timeout: int = Field(default=10, description="API 요청 타임아웃 (초)")
     api_retry_count: int = Field(default=3, description="API 재시도 횟수")
 
+    # ── WebSocket 보안 예외 설정 ──
+    ws_insecure_allow: str = Field(
+        default="false",
+        description="운영+LIVE에서 ws:// 허용 여부 (기본: false → 부팅 차단)",
+    )
+    ws_exception_ticket: str = Field(
+        default="",
+        description="ws:// 예외 승인 변경번호 (예: CHG-2026-0042)",
+    )
+    ws_exception_expires_at: str = Field(
+        default="",
+        description="ws:// 예외 만료일 ISO 형식 (예: 2026-06-30)",
+    )
+
     @property
     def is_live(self) -> bool:
         return self.trading_mode == TradingMode.LIVE
+
+    def validate_websocket_security(self, environment: str) -> None:
+        """운영+LIVE 환경에서 ws:// 사용 시 부팅을 차단한다.
+
+        예외 조건: KIS_WS_INSECURE_ALLOW=true + 유효한 티켓 + 만료일 미경과.
+        예외가 허용되더라도 경고 로그를 남긴다.
+        """
+        is_production = environment == "production"
+        ws_url = self.active_credential.websocket_url
+
+        if not ws_url or ws_url.startswith("wss://"):
+            return  # 안전한 프로토콜이거나 미설정
+
+        if not (is_production and self.is_live):
+            # 개발/DEMO/BACKTEST 환경에서는 ws:// 경고만
+            if ws_url.startswith("ws://"):
+                logger.info(
+                    "KIS WebSocket이 ws:// (비암호화)를 사용 중입니다. "
+                    "현재 환경(%s/%s)에서는 허용되지만 운영+LIVE에서는 차단됩니다.",
+                    environment,
+                    self.trading_mode.value,
+                )
+            return
+
+        # ── 운영 + LIVE + ws:// → 차단 또는 예외 확인 ──
+        from core.utils.env import env_bool
+
+        insecure_allow = env_bool("KIS_WS_INSECURE_ALLOW", default=False)
+
+        if not insecure_allow:
+            raise RuntimeError(
+                f"[보안 차단] 운영+LIVE 환경에서 ws:// WebSocket은 허용되지 않습니다. "
+                f"현재 URL: {ws_url}\n"
+                f"해결 방법:\n"
+                f"  1. (권장) wss:// 엔드포인트로 변경\n"
+                f"  2. (임시) KIS_WS_INSECURE_ALLOW=true + "
+                f"KIS_WS_EXCEPTION_TICKET + KIS_WS_EXCEPTION_EXPIRES_AT 설정"
+            )
+
+        # 예외 허용 경로: 티켓 + 만료일 검증
+        ticket = self.ws_exception_ticket.strip()
+        expires_at_raw = self.ws_exception_expires_at.strip()
+
+        if not ticket:
+            raise RuntimeError(
+                "[보안 차단] KIS_WS_INSECURE_ALLOW=true이지만 "
+                "KIS_WS_EXCEPTION_TICKET이 비어있습니다. "
+                "변경 승인번호를 설정하세요."
+            )
+
+        if not expires_at_raw:
+            raise RuntimeError(
+                "[보안 차단] KIS_WS_INSECURE_ALLOW=true이지만 "
+                "KIS_WS_EXCEPTION_EXPIRES_AT이 비어있습니다. "
+                "예외 만료일을 설정하세요 (예: 2026-06-30)."
+            )
+
+        try:
+            expires_at = datetime.strptime(expires_at_raw, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        except ValueError:
+            raise RuntimeError(
+                f"[보안 차단] KIS_WS_EXCEPTION_EXPIRES_AT={expires_at_raw!r} "
+                f"형식 오류. YYYY-MM-DD 형식으로 설정하세요."
+            )
+
+        now = datetime.now(tz=timezone.utc)
+        if now > expires_at:
+            raise RuntimeError(
+                f"[보안 차단] ws:// 예외가 만료되었습니다. "
+                f"만료일: {expires_at_raw}, 현재: {now.strftime('%Y-%m-%d')}. "
+                f"예외를 갱신하거나 wss://로 전환하세요."
+            )
+
+        # 예외 유효 — 경고 로그 후 계속
+        days_remaining = (expires_at - now).days
+        logger.warning(
+            "[보안 예외] ws:// WebSocket이 임시 허용됩니다. " "ticket=%s, 만료일=%s (%d일 남음), URL=%s",
+            ticket,
+            expires_at_raw,
+            days_remaining,
+            ws_url,
+        )
 
     @property
     def is_demo(self) -> bool:

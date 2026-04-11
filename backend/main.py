@@ -115,6 +115,9 @@ async def lifespan(app: FastAPI):
     logger.info(f"KIS Trading Mode: {settings.kis.trading_mode.value}")
     logger.info("=" * 60)
 
+    # ── WebSocket 보안 검증 (운영+LIVE에서 ws:// 차단) ──
+    settings.kis.validate_websocket_security(settings.environment)
+
     # 시그널 핸들러 등록
     signal.signal(signal.SIGTERM, _signal_handler)
     signal.signal(signal.SIGINT, _signal_handler)
