@@ -260,3 +260,40 @@ INITIAL_CAPITAL_KRW=10000000
 | ECOS API 키 설정 | P3 | 한국은행 API 키 발급 후 서버 .env에 추가하면 자동 동작 |
 | ~~서버 .env CORS 변수명 변경~~ | ~~P2~~ | ✅ 2026-04-11 적용 완료 |
 | ~~서버 .env AQTS_REVOCATION_BACKEND 추가~~ | ~~P1~~ | ✅ 2026-04-11 적용 완료 |
+
+---
+
+## 9. 월요일(04-13) 자동 검증 스크립트
+
+### 사용법
+
+```bash
+# 서버에서 직접 실행
+cd ~/aqts
+./scripts/verify_phase1_demo.sh              # 전체 검증
+./scripts/verify_phase1_demo.sh pre_market    # 08:30 구간만
+./scripts/verify_phase1_demo.sh market_close  # 15:30 구간만
+./scripts/verify_phase1_demo.sh post_market   # 16:00 구간만
+./scripts/verify_phase1_demo.sh exchange_rate # 환율 수집만
+./scripts/verify_phase1_demo.sh health        # 시스템 상태만
+
+# gcloud 원격 실행
+gcloud compute ssh aqts-server --zone=asia-northeast3-a \
+  --command="cd ~/aqts && ./scripts/verify_phase1_demo.sh all"
+```
+
+### 검증 시점별 실행 가이드
+
+| 시각 (KST) | 명령 | 검증 대상 |
+|-------------|------|-----------|
+| 08:35 | `./scripts/verify_phase1_demo.sh pre_market` | 뉴스 수집, FRED 경제지표, DB 저장 |
+| 10:00+ | `./scripts/verify_phase1_demo.sh exchange_rate` | 환율 DB 영속화 |
+| 15:35 | `./scripts/verify_phase1_demo.sh market_close` | MarketClose 핸들러, 포트폴리오 스냅샷 |
+| 16:05 | `./scripts/verify_phase1_demo.sh post_market` | PostMarket 핸들러, 텔레그램 발송, 일일 리포트 |
+| 언제든 | `./scripts/verify_phase1_demo.sh health` | Docker 상태, API health, 스케줄러 heartbeat |
+
+### 결과 해석
+
+- **PASS**: 해당 항목 정상 동작 확인
+- **FAIL**: 즉시 로그 확인 필요 (`docker compose logs scheduler --since '오늘T00:00:00' | less`)
+- **WARN**: 해당 시점이 아직 지나지 않았거나, 선택적 기능(텔레그램 등)이 미설정된 경우
