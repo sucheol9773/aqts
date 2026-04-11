@@ -246,7 +246,7 @@ INITIAL_CAPITAL_KRW=10000000
 | 보안: Grafana 비밀번호 fallback 제거 | ✅ 완료 | `docker-compose.yml` `:-aqts2026` fallback 삭제, `GRAFANA_PASSWORD` 필수 |
 | 보안: CORS 변수명 정정 | ✅ 완료 | `.env.example` `CORS_ORIGINS` → `CORS_ALLOWED_ORIGINS` |
 | 보안: DB 포트 노출 | ✅ 해당없음 | 전 서비스 `127.0.0.1` 바인딩 확인 완료 |
-| 보안: KIS WebSocket ws:// | ⚠️ known limitation | KIS OpenAPI 공식 엔드포인트가 ws://만 제공, 변경 불가 |
+| 보안: KIS WebSocket ws:// | ✅ 완료 | 부팅 가드 구현: 운영+LIVE에서 ws:// 차단, 예외 만료일 통제(23:59:59 UTC), scheme allowlist(ws/wss만), 설정 단일화. 런북: `docs/security/kis-websocket-security.md` |
 | 보안: OTel insecure | ⚠️ acceptable risk | Docker 내부 네트워크 통신, 호스트 바인딩 127.0.0.1 적용 완료 |
 
 ## 8. 미해결 항목
