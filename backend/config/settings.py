@@ -108,9 +108,11 @@ class KISSettings(BaseSettings):
     api_retry_count: int = Field(default=3, description="API 재시도 횟수")
 
     # ── WebSocket 보안 예외 설정 ──
+    # 단일 소스: pydantic 필드로 선언, validate_websocket_security()에서 직접 참조.
+    # os.environ 직접 조회(env_bool 등)를 병행하지 않는다.
     ws_insecure_allow: str = Field(
         default="false",
-        description="운영+LIVE에서 ws:// 허용 여부 (기본: false → 부팅 차단)",
+        description="운영+LIVE에서 ws:// 허용 여부 (기본: false → 부팅 차단). 'true'/'false' 표준 표기.",
     )
     ws_exception_ticket: str = Field(
         default="",
@@ -118,15 +120,37 @@ class KISSettings(BaseSettings):
     )
     ws_exception_expires_at: str = Field(
         default="",
-        description="ws:// 예외 만료일 ISO 형식 (예: 2026-06-30)",
+        description="ws:// 예외 만료일 YYYY-MM-DD (예: 2026-06-30). 당일 23:59:59 UTC까지 유효.",
     )
+
+    # WebSocket URL에 허용되는 스킴
+    _WS_ALLOWED_SCHEMES = ("ws://", "wss://")
 
     @property
     def is_live(self) -> bool:
         return self.trading_mode == TradingMode.LIVE
 
+    @staticmethod
+    def _parse_ws_insecure_allow(raw: str) -> bool:
+        """ws_insecure_allow 필드값을 bool로 파싱한다.
+
+        env_bool()을 사용하지 않고 pydantic 필드값을 직접 파싱하여
+        설정 소스를 단일화한다.
+        """
+        normalized = raw.strip().lower()
+        if normalized == "true":
+            return True
+        if normalized == "false":
+            return False
+        raise ValueError(f"KIS_WS_INSECURE_ALLOW={raw!r} 은 유효하지 않습니다. " f"'true' 또는 'false'만 허용됩니다.")
+
     def validate_websocket_security(self, environment: str) -> None:
         """운영+LIVE 환경에서 ws:// 사용 시 부팅을 차단한다.
+
+        호출 위치: main.py lifespan 최초 구간 (DB 연결 전, fail-fast 보장).
+
+        만료일 경계 정책: YYYY-MM-DD는 당일 23:59:59 UTC까지 유효.
+        예: 2026-06-30 → 2026-06-30T23:59:59Z까지 허용, 2026-07-01T00:00:00Z부터 차단.
 
         예외 조건: KIS_WS_INSECURE_ALLOW=true + 유효한 티켓 + 만료일 미경과.
         예외가 허용되더라도 경고 로그를 남긴다.
@@ -134,24 +158,35 @@ class KISSettings(BaseSettings):
         is_production = environment == "production"
         ws_url = self.active_credential.websocket_url
 
-        if not ws_url or ws_url.startswith("wss://"):
-            return  # 안전한 프로토콜이거나 미설정
+        # 미설정이면 검증 건너뜀
+        if not ws_url:
+            return
 
+        # ── URL scheme allowlist 검증 ──
+        if not any(ws_url.startswith(scheme) for scheme in self._WS_ALLOWED_SCHEMES):
+            raise RuntimeError(
+                f"[보안 차단] WebSocket URL의 스킴이 허용 목록에 없습니다. "
+                f"현재 URL: {ws_url}\n"
+                f"허용 스킴: {', '.join(self._WS_ALLOWED_SCHEMES)}"
+            )
+
+        # wss:// → 안전한 프로토콜, 통과
+        if ws_url.startswith("wss://"):
+            return
+
+        # ── 이하 ws:// (비암호화) 경로 ──
         if not (is_production and self.is_live):
             # 개발/DEMO/BACKTEST 환경에서는 ws:// 경고만
-            if ws_url.startswith("ws://"):
-                logger.info(
-                    "KIS WebSocket이 ws:// (비암호화)를 사용 중입니다. "
-                    "현재 환경(%s/%s)에서는 허용되지만 운영+LIVE에서는 차단됩니다.",
-                    environment,
-                    self.trading_mode.value,
-                )
+            logger.info(
+                "KIS WebSocket이 ws:// (비암호화)를 사용 중입니다. "
+                "현재 환경(%s/%s)에서는 허용되지만 운영+LIVE에서는 차단됩니다.",
+                environment,
+                self.trading_mode.value,
+            )
             return
 
         # ── 운영 + LIVE + ws:// → 차단 또는 예외 확인 ──
-        from core.utils.env import env_bool
-
-        insecure_allow = env_bool("KIS_WS_INSECURE_ALLOW", default=False)
+        insecure_allow = self._parse_ws_insecure_allow(self.ws_insecure_allow)
 
         if not insecure_allow:
             raise RuntimeError(
@@ -182,7 +217,10 @@ class KISSettings(BaseSettings):
             )
 
         try:
-            expires_at = datetime.strptime(expires_at_raw, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            # 당일 23:59:59 UTC까지 유효 (당일 종료 기준)
+            expires_at = datetime.strptime(expires_at_raw, "%Y-%m-%d").replace(
+                hour=23, minute=59, second=59, tzinfo=timezone.utc
+            )
         except ValueError:
             raise RuntimeError(
                 f"[보안 차단] KIS_WS_EXCEPTION_EXPIRES_AT={expires_at_raw!r} "
@@ -193,14 +231,15 @@ class KISSettings(BaseSettings):
         if now > expires_at:
             raise RuntimeError(
                 f"[보안 차단] ws:// 예외가 만료되었습니다. "
-                f"만료일: {expires_at_raw}, 현재: {now.strftime('%Y-%m-%d')}. "
+                f"만료일: {expires_at_raw} (23:59:59 UTC), "
+                f"현재: {now.strftime('%Y-%m-%dT%H:%M:%SZ')}. "
                 f"예외를 갱신하거나 wss://로 전환하세요."
             )
 
         # 예외 유효 — 경고 로그 후 계속
         days_remaining = (expires_at - now).days
         logger.warning(
-            "[보안 예외] ws:// WebSocket이 임시 허용됩니다. " "ticket=%s, 만료일=%s (%d일 남음), URL=%s",
+            "[보안 예외] ws:// WebSocket이 임시 허용됩니다. " "ticket=%s, 만료일=%s 23:59:59 UTC (%d일 남음), URL=%s",
             ticket,
             expires_at_raw,
             days_remaining,
