@@ -256,6 +256,19 @@ jobs:
               alembic -c alembic.ini upgrade head </dev/null
 
             echo "═══ Step 5d: Restart services with new image (atomic recreate) ═══"
+
+            # 컨테이너 재생성 전 로그 백업 — force-recreate 시 기존 컨테이너의
+            # 로그가 삭제되므로, 디버깅용으로 호스트에 보존한다.
+            LOG_BACKUP_DIR="${HOME}/aqts/logs/deploy-backups"
+            mkdir -p "${LOG_BACKUP_DIR}" </dev/null
+            DEPLOY_TS=$(date -u +%Y%m%dT%H%M%SZ)
+            for SVC in backend scheduler; do
+              docker compose -f docker-compose.yml logs "${SVC}" --no-color \
+                > "${LOG_BACKUP_DIR}/${SVC}-pre-deploy-${DEPLOY_TS}.log" 2>/dev/null </dev/null || true
+            done
+            # 30일 이상 된 백업 로그 자동 정리
+            find "${LOG_BACKUP_DIR}" -name "*.log" -mtime +30 -delete 2>/dev/null </dev/null || true
+
             # backend 와 scheduler 는 동일 이미지 태그를 공유하므로, compose 가
             # "변경 없음" 으로 판단하여 한쪽만 recreate 하거나 skip 할 위험을
             # 제거하기 위해 --force-recreate 로 명시한다. 이는 두 컨테이너가
@@ -439,6 +452,16 @@ jobs:
             fi
             echo "rollback EXPECTED_IMAGE_ID=${EXPECTED_IMAGE_ID}"
             export IMAGE_NAMESPACE IMAGE_TAG
+
+            # 롤백 전 로그 백업 (배포 경로와 동일)
+            LOG_BACKUP_DIR="${HOME}/aqts/logs/deploy-backups"
+            mkdir -p "${LOG_BACKUP_DIR}" </dev/null
+            ROLLBACK_TS=$(date -u +%Y%m%dT%H%M%SZ)
+            for SVC in backend scheduler; do
+              docker compose -f docker-compose.yml logs "${SVC}" --no-color \
+                > "${LOG_BACKUP_DIR}/${SVC}-pre-rollback-${ROLLBACK_TS}.log" 2>/dev/null </dev/null || true
+            done
+
             # 배포 경로와 동일하게 --force-recreate 로 backend/scheduler 를
             # 원자적으로 교체한다. 롤백 경로에서도 image drift 재발을 방지.
             docker compose -f docker-compose.yml up -d --force-recreate --no-deps backend scheduler

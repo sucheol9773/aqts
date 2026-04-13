@@ -342,3 +342,28 @@ gcloud compute ssh aqts-server --zone=asia-northeast3-a \
 - **PASS**: 해당 항목 정상 동작 확인
 - **FAIL**: 즉시 로그 확인 필요 (`docker compose logs scheduler --since '오늘T00:00:00' | less`)
 - **WARN**: 해당 시점이 아직 지나지 않았거나, 선택적 기능(텔레그램 등)이 미설정된 경우
+
+---
+
+## 6. 2026-04-13 추가 수정 사항
+
+### 6.1 verify_phase1_demo.sh 스케줄러 heartbeat 검증 방식 변경
+
+**변경 전**: backend health API(`/api/system/health`)에서 `scheduler_heartbeat.age_seconds`를 파싱.
+**문제**: scheduler가 별도 컨테이너로 분리되어 `SCHEDULER_ENABLED=false` → backend가 `scheduler: "external"` 반환 → heartbeat 확인 불가.
+**변경 후**: `docker compose ps scheduler --format json`으로 Docker health status 직접 확인. `healthy`면 PASS, `running`(healthcheck 없음)이면 WARN.
+
+### 6.2 CD 배포 시 로그 백업 (cd.yml)
+
+**문제**: `docker compose up -d --force-recreate`로 컨테이너가 재생성되면 기존 컨테이너의 JSON 로그 파일이 함께 삭제됨. 배포 전 스케줄러 로그(freeze 디버깅용 등)가 유실.
+**해결**: `--force-recreate` 직전에 `docker compose logs` 출력을 `~/aqts/logs/deploy-backups/` 호스트 디렉토리에 타임스탬프 기반 파일로 백업. 30일 이상 된 백업은 자동 정리. 배포 경로와 롤백 경로 모두 적용.
+
+### 6.3 verify_phase1_demo.sh pipefail 환경 grep 0건 종료 수정
+
+**문제**: `set -eo pipefail` 환경에서 `grep pattern | wc -l`의 grep이 0건 매칭 시 exit 1 → pipefail로 파이프 실패 → 스크립트 즉시 종료. heartbeat 경고 이후 스크립트가 조용히 종료되는 현상.
+**해결**: 모든 `grep ... | wc -l` 패턴을 `{ grep ... || true; } | wc -l`로 변경.
+
+### 6.4 asyncio.gather return_exceptions=True 추가 (economic_collector.py)
+
+**문제**: FRED/ECOS 병렬 수집 시 한쪽 예외가 다른 쪽을 취소 → 전체 수집 실패 및 이벤트루프 freeze 가능성.
+**해결**: `return_exceptions=True` 추가, 예외 발생 시 빈 리스트 대체 + error 로깅. 4건 테스트 추가.

@@ -139,33 +139,35 @@ except:
         fail "Backend health: ${health_status}"
     fi
 
-    # Scheduler heartbeat
-    local heartbeat_age
-    heartbeat_age=$(curl -sf http://localhost:8000/api/system/health 2>/dev/null | python3 -c "
+    # Scheduler heartbeat — 별도 컨테이너이므로 Docker health status로 확인
+    # (backend health API는 SCHEDULER_ENABLED=false라 "external" 반환)
+    local sched_health
+    sched_health=$($COMPOSE ps scheduler --format json 2>/dev/null | python3 -c "
 import sys, json
 try:
-    d = json.load(sys.stdin)
-    c = d.get('components', d.get('checks', {}))
-    # heartbeat 키 찾기
-    for k in ('scheduler_heartbeat', 'heartbeat', 'scheduler'):
-        if k in c:
-            v = c[k]
-            if isinstance(v, dict):
-                print(v.get('age_seconds', v.get('age', -1)))
-            else:
-                print(v)
-            break
+    for line in sys.stdin:
+        d = json.loads(line.strip())
+        # Health 필드: 'healthy', 'unhealthy', 'starting', '' (no healthcheck)
+        h = d.get('Health', d.get('health', ''))
+        s = d.get('State', d.get('state', ''))
+        if h:
+            print(f'{s}({h})')
+        else:
+            print(s)
+        break
     else:
-        print(-1)
+        print('not_found')
 except:
-    print(-1)
-" 2>/dev/null || echo "-1")
+    print('parse_error')
+" 2>/dev/null || echo "error")
 
-    heartbeat_age=$(echo "$heartbeat_age" | tr -d '[:space:]')
-    if echo "$heartbeat_age" | grep -qE '^[0-9]+$' && [ "$heartbeat_age" -lt 120 ]; then
-        pass "Scheduler heartbeat: ${heartbeat_age}s ago"
+    sched_health=$(echo "$sched_health" | tr -d '[:space:]')
+    if echo "$sched_health" | grep -q "healthy"; then
+        pass "Scheduler 컨테이너: ${sched_health}"
+    elif echo "$sched_health" | grep -q "running"; then
+        warn "Scheduler 컨테이너: ${sched_health} (healthcheck 미설정 또는 starting)"
     else
-        warn "Scheduler heartbeat: age=${heartbeat_age}s (120s 초과 또는 확인 불가)"
+        fail "Scheduler 컨테이너: ${sched_health}"
     fi
 
     # 스케줄러 이벤트 실행 확인 (오늘 거래일인 경우)
