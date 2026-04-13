@@ -31,7 +31,11 @@ PASS_COUNT=0
 FAIL_COUNT=0
 WARN_COUNT=0
 
-TODAY=$(date +%Y-%m-%d)
+TODAY=$(TZ=Asia/Seoul date +%Y-%m-%d)
+# docker compose logs --since 은 UTC 기준이므로, KST 00:00 = UTC 전날 15:00
+TODAY_UTC=$(TZ=Asia/Seoul date -d "${TODAY} 00:00:00" -u +%Y-%m-%dT%H:%M:%S 2>/dev/null \
+    || date -u -d "$(TZ=Asia/Seoul date +%Y-%m-%dT00:00:00%z)" +%Y-%m-%dT%H:%M:%S 2>/dev/null \
+    || echo "${TODAY}T00:00:00")
 COMPOSE="docker compose"
 
 # ── 유틸리티 함수 ──
@@ -68,8 +72,9 @@ check_log() {
     local min_count="${4:-1}"
 
     local count
-    count=$($COMPOSE logs "$container" --since "${TODAY}T00:00:00" 2>/dev/null \
+    count=$($COMPOSE logs "$container" --since "${TODAY_UTC}" 2>/dev/null \
         | grep -c "$pattern" 2>/dev/null || echo "0")
+    count=$(echo "$count" | tr -d '[:space:]')
 
     if [ "$count" -ge "$min_count" ]; then
         pass "$description (${count}건)"
@@ -85,8 +90,9 @@ check_no_error() {
     local description="$3"
 
     local count
-    count=$($COMPOSE logs "$container" --since "${TODAY}T00:00:00" 2>/dev/null \
+    count=$($COMPOSE logs "$container" --since "${TODAY_UTC}" 2>/dev/null \
         | grep -c "$pattern" 2>/dev/null || echo "0")
+    count=$(echo "$count" | tr -d '[:space:]')
 
     if [ "$count" -eq 0 ]; then
         pass "$description"
@@ -150,7 +156,8 @@ except:
     print(-1)
 " 2>/dev/null || echo "-1")
 
-    if [ "$heartbeat_age" != "-1" ] && [ "$heartbeat_age" -lt 120 ] 2>/dev/null; then
+    heartbeat_age=$(echo "$heartbeat_age" | tr -d '[:space:]')
+    if echo "$heartbeat_age" | grep -qE '^[0-9]+$' && [ "$heartbeat_age" -lt 120 ]; then
         pass "Scheduler heartbeat: ${heartbeat_age}s ago"
     else
         warn "Scheduler heartbeat: age=${heartbeat_age}s (120s 초과 또는 확인 불가)"
@@ -261,11 +268,11 @@ verify_post_market() {
 
     # 텔레그램 발송 확인
     local telegram_ok
-    telegram_ok=$($COMPOSE logs scheduler --since "${TODAY}T00:00:00" 2>/dev/null \
+    telegram_ok=$($COMPOSE logs scheduler --since "${TODAY_UTC}" 2>/dev/null \
         | grep -c "Telegram.*발송\|send_text.*success\|텔레그램.*완료" 2>/dev/null || echo "0")
 
     local telegram_err
-    telegram_err=$($COMPOSE logs scheduler --since "${TODAY}T00:00:00" 2>/dev/null \
+    telegram_err=$($COMPOSE logs scheduler --since "${TODAY_UTC}" 2>/dev/null \
         | grep -c "Telegram 발송 실패\|텔레그램.*미설정" 2>/dev/null || echo "0")
 
     if [ "$telegram_ok" -gt 0 ]; then
@@ -334,7 +341,7 @@ echo -e "  ${GREEN}PASS${NC}: ${PASS_COUNT}  ${RED}FAIL${NC}: ${FAIL_COUNT}  ${Y
 
 if [ "$FAIL_COUNT" -gt 0 ]; then
     echo -e "\n  ${RED}${BOLD}일부 항목 실패. 로그를 확인하세요:${NC}"
-    echo "  docker compose logs scheduler --since '${TODAY}T00:00:00' | less"
+    echo "  docker compose logs scheduler --since '${TODAY_UTC}' | less"
     exit 1
 elif [ "$WARN_COUNT" -gt 0 ]; then
     echo -e "\n  ${YELLOW}경고 항목이 있습니다. 해당 시점이 아직 안 지났을 수 있습니다.${NC}"
