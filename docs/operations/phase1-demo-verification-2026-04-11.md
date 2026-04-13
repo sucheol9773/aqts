@@ -462,3 +462,19 @@ gcloud compute ssh aqts-server --zone=asia-northeast3-a \
 - Redis SCAN은 `scheduler_idempotency.py::load_executed_for_date()`에서 스케줄러 부팅 시 1회만 호출 (async, non-blocking).
 - 일일 최대 5개 키 (`scheduler:executed:{YYYY-MM-DD}:{EVENT_TYPE}`), TTL 자동 만료 — 키 누적 위험 없음.
 - 기존에 "freeze"로 보고된 현상은 스케줄러 루프의 긴 sleep 경로로 인한 heartbeat stale이었으며, `scheduler_heartbeat.py`의 30초 단위 chunk sleep으로 이미 해결 완료.
+
+### 6.12 앙상블 시그널 레짐 enum 캐스팅 버그 수정 (2026-04-13)
+
+**증상**: 116개 앙상블 시그널 중 일부 티커에서 `{"error": "'str' object has no attribute 'value'"}` 발생. 레짐 전환이 일어나지 않는 SIDEWAYS 티커는 정상, 레짐 전환(TRENDING_UP/DOWN, HIGH_VOLATILITY)이 발생하는 티커에서만 실패.
+
+**근본 원인**: `pandas.Series.where()`에 `DynamicRegime(str, Enum)` 객체를 전달하면 numpy 고정폭 문자열 변환 과정에서 `str(enum)`이 `'DynamicRegime.TRENDING_UP'` (25자)로 변환된 뒤 기존 시리즈 길이(11자)로 잘려 `'DynamicRegi'`라는 무효한 문자열이 됨. 이후 `to_summary_dict()`에서 `.value` 접근 시 `AttributeError` 발생.
+
+**수정 내용**:
+
+- `dynamic_ensemble.py::_assign_regime_weights()`: `regime_series`에 enum 대신 `.value` 문자열을 직접 저장 (`DynamicRegime.SIDEWAYS` → `DynamicRegime.SIDEWAYS.value`)
+- `dynamic_ensemble.py::compute()`: 최종 추출 시 `DynamicRegime(regime_series.iloc[-1])`로 enum 복원
+- `runner.py::to_summary_dict()`, `_compute()`: 방어적 `hasattr` 체크 추가
+- `test_dynamic_ensemble.py`: `TestRegimeEnumPreservation` 테스트 클래스 추가 (레짐 전환 시 enum 타입 보존 + 모든 레짐 유형에서 `.value` 접근 검증)
+- 연동 영향: `hyperopt/objective.py`의 `regime_series == regime_enum` 비교는 `DynamicRegime(str, Enum)`이므로 문자열 비교와 호환되어 영향 없음
+
+**검증**: 전체 pytest 4009 passed.

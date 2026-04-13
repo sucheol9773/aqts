@@ -155,6 +155,75 @@ class TestRegimeDetection:
         ), f"상승 추세에서 TF({result.weights['TF']:.2f}) >= MR({result.weights['MR']:.2f})여야 함"
 
 
+class TestRegimeEnumPreservation:
+    """pandas Series.where() 레짐 전환 시 DynamicRegime enum 타입 보존 검증
+
+    근거: pandas Series.where()가 DynamicRegime(str, Enum) 값을 순수 str로
+    캐스팅하는 버그 발생 (2026-04-13). 레짐 전환이 일어나는 티커에서만
+    .value 접근 시 AttributeError 발생.
+    """
+
+    def test_regime_type_after_transition(self):
+        """레짐 전환 발생 시 result.regime이 DynamicRegime enum인지 검증"""
+        n = 200
+        dates = pd.date_range("2023-01-01", periods=n, freq="B")
+        # 강한 상승 추세 → TRENDING_UP 레짐 전환 유도
+        close = pd.Series(50000 + np.arange(n) * 300.0, index=dates)
+        ohlcv = pd.DataFrame(
+            {
+                "open": close - 50,
+                "high": close + 150,
+                "low": close - 150,
+                "close": close,
+                "volume": np.full(n, 500000.0),
+            },
+            index=dates,
+        )
+        signals = pd.Series(0.5, index=dates)
+
+        service = DynamicEnsembleService()
+        result = service.compute(ohlcv, signals, signals, signals)
+
+        # 핵심 검증: regime이 DynamicRegime enum 인스턴스여야 함
+        assert isinstance(result.regime, DynamicRegime), f"regime이 {type(result.regime)}이 아닌 DynamicRegime이어야 함"
+        # .value 접근이 에러 없이 동작해야 함
+        regime_value = result.regime.value
+        assert regime_value in [r.value for r in DynamicRegime]
+
+    def test_regime_value_accessible_for_all_regimes(self):
+        """모든 레짐 유형에서 .value 접근이 정상 동작하는지 검증"""
+        service = DynamicEnsembleService()
+
+        test_cases = [
+            ("강한 상승", np.arange(200) * 300.0),
+            ("강한 하락", -np.arange(200) * 300.0),
+            ("횡보", np.random.RandomState(42).randn(200) * 100),
+        ]
+
+        for label, price_delta in test_cases:
+            n = 200
+            dates = pd.date_range("2023-01-01", periods=n, freq="B")
+            close = pd.Series(50000 + price_delta, index=dates)
+            ohlcv = pd.DataFrame(
+                {
+                    "open": close - 50,
+                    "high": close + 150,
+                    "low": close - 150,
+                    "close": close,
+                    "volume": np.full(n, 500000.0),
+                },
+                index=dates,
+            )
+            signals = pd.Series(0.3, index=dates)
+            result = service.compute(ohlcv, signals, signals, signals)
+
+            assert isinstance(result.regime, DynamicRegime), (
+                f"[{label}] regime 타입이 {type(result.regime)}, " f"값={result.regime!r}"
+            )
+            # to_summary_dict 에서 호출하는 것과 동일한 패턴
+            assert isinstance(result.regime.value, str)
+
+
 class TestBacktestConsistency:
     """run_backtest.py의 _compute_dynamic_ensemble()과 일관성 검증"""
 

@@ -187,7 +187,8 @@ class DynamicEnsembleService:
         ensemble = ensemble * vol_scalar
 
         # ── 최신 날짜 결과 추출 ──
-        current_regime = regime_series.iloc[-1]
+        # regime_series는 .value 문자열을 저장하므로 enum으로 변환
+        current_regime = DynamicRegime(regime_series.iloc[-1])
         current_weights = {
             "MR": float(w_mr.iloc[-1]),
             "TF": float(w_tf.iloc[-1]),
@@ -256,7 +257,10 @@ class DynamicEnsembleService:
         w_tf = pd.Series(sideways_weights["TF"], index=dates)
         w_mr = pd.Series(sideways_weights["MR"], index=dates)
         w_rp = pd.Series(sideways_weights["RP"], index=dates)
-        regime_series = pd.Series(DynamicRegime.SIDEWAYS, index=dates)
+        # pandas Series.where()가 DynamicRegime(str, Enum) 객체를 넣으면
+        # numpy 고정폭 문자열로 잘려 깨지는 버그가 있음 (2026-04-13 발견).
+        # .value 문자열을 직접 사용하고, 최종 추출 시 enum으로 변환한다.
+        regime_series = pd.Series(DynamicRegime.SIDEWAYS.value, index=dates)
 
         # TRENDING_UP
         trend_up = (adx > adx_threshold) & (momentum > 0)
@@ -264,7 +268,7 @@ class DynamicEnsembleService:
         w_tf = w_tf.where(~trend_up, trending_up_weights["TF"])
         w_mr = w_mr.where(~trend_up, trending_up_weights["MR"])
         w_rp = w_rp.where(~trend_up, trending_up_weights["RP"])
-        regime_series = regime_series.where(~trend_up, DynamicRegime.TRENDING_UP)
+        regime_series = regime_series.where(~trend_up, DynamicRegime.TRENDING_UP.value)
 
         # TRENDING_DOWN
         trend_down = (adx > adx_threshold) & (momentum < 0) & (~trend_up)
@@ -272,7 +276,7 @@ class DynamicEnsembleService:
         w_tf = w_tf.where(~trend_down, trending_down_weights["TF"])
         w_mr = w_mr.where(~trend_down, trending_down_weights["MR"])
         w_rp = w_rp.where(~trend_down, trending_down_weights["RP"])
-        regime_series = regime_series.where(~trend_down, DynamicRegime.TRENDING_DOWN)
+        regime_series = regime_series.where(~trend_down, DynamicRegime.TRENDING_DOWN.value)
 
         # HIGH_VOLATILITY
         high_vol = (vol_percentile > vol_pct_threshold) & (adx <= adx_threshold) & (~trend_up) & (~trend_down)
@@ -280,7 +284,7 @@ class DynamicEnsembleService:
         w_tf = w_tf.where(~high_vol, high_vol_weights["TF"])
         w_mr = w_mr.where(~high_vol, high_vol_weights["MR"])
         w_rp = w_rp.where(~high_vol, high_vol_weights["RP"])
-        regime_series = regime_series.where(~high_vol, DynamicRegime.HIGH_VOLATILITY)
+        regime_series = regime_series.where(~high_vol, DynamicRegime.HIGH_VOLATILITY.value)
 
         return w_tf, w_mr, w_rp, regime_series
 

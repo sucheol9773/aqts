@@ -58,7 +58,7 @@ class RunnerResult:
             "ticker": self.ticker,
             "country": self.country,
             "ensemble_signal": round(self.ensemble_signal, 4),
-            "regime": self.regime.value,
+            "regime": self.regime.value if hasattr(self.regime, "value") else str(self.regime),
             "weights": {k: round(v, 4) for k, v in self.weights.items()},
             "adx": round(self.ensemble.adx, 2),
             "vol_percentile": round(self.ensemble.vol_percentile, 4),
@@ -163,7 +163,7 @@ class DynamicEnsembleRunner:
 
         logger.info(
             f"[DynamicEnsemble] {ticker}: "
-            f"regime={ensemble_result.regime.value}, "
+            f"regime={ensemble_result.regime.value if hasattr(ensemble_result.regime, 'value') else str(ensemble_result.regime)}, "
             f"signal={ensemble_result.ensemble_signal:.4f}, "
             f"weights=TF:{ensemble_result.weights['TF']:.2f}/"
             f"MR:{ensemble_result.weights['MR']:.2f}/"

@@ -83,6 +83,9 @@ class TestDynamicEnsembleRunner:
         assert summary["country"] == "KR"
         assert "ensemble_signal" in summary
         assert "regime" in summary
+        # regime은 문자열로 직렬화되어야 함 (DynamicRegime.value)
+        assert isinstance(summary["regime"], str)
+        assert summary["regime"] in ["TRENDING_UP", "TRENDING_DOWN", "HIGH_VOLATILITY", "SIDEWAYS"]
         assert "weights" in summary
         assert "adx" in summary
         assert "vol_scalar" in summary
