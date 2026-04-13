@@ -256,10 +256,33 @@ INITIAL_CAPITAL_KRW=10000000
 | 텔레그램 발송 검증 | P1 | 다음 거래일(04-13 월) MARKET_CLOSE 이후 확인 |
 | 환율 수집 배포 검증 | P2 | DB 영속화 코드 완료, 배포 후 `exchange_rates` 테이블 데이터 확인 필요 |
 | NewsCollector 자동 수집 검증 | P2 | 04-13(월) 08:30 KST handle_pre_market 실행 시 검증 |
-| 경제지표 자동 수집 검증 | P2 | 04-13(월) 08:30 KST FRED 9개 지표 → economic_indicators 테이블 확인 |
+| 경제지표 자동 수집 검증 | P2 | 04-13(월) 08:30 KST FRED 9개 지표 수집 성공, DB 저장 실패 → 스키마 불일치 수정 완료 (아래 §8.1 참조) |
 | ECOS API 키 설정 | P3 | 한국은행 API 키 발급 후 서버 .env에 추가하면 자동 동작 |
 | ~~서버 .env CORS 변수명 변경~~ | ~~P2~~ | ✅ 2026-04-11 적용 완료 |
 | ~~서버 .env AQTS_REVOCATION_BACKEND 추가~~ | ~~P1~~ | ✅ 2026-04-11 적용 완료 |
+
+### 8.1 경제지표 DB 저장 스키마 불일치 수정 (2026-04-13)
+
+**증상**: `handle_pre_market` 실행 시 FRED 9개 지표 수집은 성공하나, `_store_to_db()`에서 `column "date" of relation "economic_indicators" does not exist` 에러 발생. 경제지표가 Redis 캐시에만 존재하고 TimescaleDB에는 저장되지 않음.
+
+**근본 원인**: `001_initial_schema.py` Alembic 마이그레이션이 정의한 테이블 스키마와 `_store_to_db()` INSERT문의 컬럼명이 불일치.
+
+| 항목 | DB 스키마 (마이그레이션) | 코드 INSERT문 (수정 전) |
+|------|--------------------------|-------------------------|
+| 시간 컬럼 | `time` | `date` |
+| 식별 컬럼 | `indicator_code` (PK) | (미사용) |
+| PK/UNIQUE | `PK(time, indicator_code)` | `ON CONFLICT(indicator_name, date, source)` |
+| 추가 컬럼 | (없음) | `unit`, `change_pct`, `collected_at` |
+
+**수정 방안**: 코드를 기존 DB 스키마에 맞춤 (DB 무변경, TimescaleDB 하이퍼테이블 ALTER 위험 회피).
+
+**변경 파일**:
+
+- `core/data_collector/economic_collector.py`: `EconomicIndicator` dataclass 필드 `date`→`time`, `indicator_code` 추가, `unit`/`change_pct`/`collected_at` 제거. FRED/ECOS 수집부에 `indicator_code` 매핑(FRED: series_id, ECOS: stat_code). INSERT문 DB 스키마 정렬.
+- `api/routes/market.py`: `item.date` → `item.time` (2곳)
+- `tests/test_economic_collector.py`: dataclass 테스트 갱신
+
+**검증**: ruff/black 통과, `test_economic_collector.py` 17개 전수 통과, 전체 pytest 3752 passed (기존 실패 제외).
 
 ---
 

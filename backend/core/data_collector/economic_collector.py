@@ -70,33 +70,28 @@ ECOS_SERIES_MAP = {
 # ══════════════════════════════════════
 @dataclass
 class EconomicIndicator:
-    """경제지표 데이터 컨테이너"""
+    """경제지표 데이터 컨테이너
+
+    DB 스키마(economic_indicators 테이블)와 1:1 매핑:
+      time, indicator_code, indicator_name, value, country, source
+    """
 
     indicator_name: str  # 지표명 (예: "GDP", "CPI")
+    indicator_code: str  # 시리즈 코드 (FRED: series_id, ECOS: stat_code)
     value: float  # 지표값
-    date: datetime  # 데이터 기준 날짜
+    time: datetime  # 데이터 기준 날짜 (DB 컬럼명: time)
     source: str  # 데이터 출처 (FRED, ECOS)
     country: str  # 국가 코드 (US, KR)
-    unit: str = ""  # 단위 (예: %, %, index)
-    change_pct: Optional[float] = None  # 변화율 (%)
-    collected_at: Optional[datetime] = None  # 수집 시간
-
-    def __post_init__(self):
-        """초기화 후 처리"""
-        if self.collected_at is None:
-            self.collected_at = datetime.now(timezone.utc)
 
     def to_dict(self) -> dict[str, Any]:
         """TimescaleDB 저장용 딕셔너리 변환"""
         return {
             "indicator_name": self.indicator_name,
+            "indicator_code": self.indicator_code,
             "value": self.value,
-            "date": self.date,
+            "time": self.time,
             "source": self.source,
             "country": self.country,
-            "unit": self.unit,
-            "change_pct": self.change_pct,
-            "collected_at": self.collected_at,
         }
 
 
@@ -232,12 +227,11 @@ class FREDCollector:
 
                 return EconomicIndicator(
                     indicator_name=indicator_type.value,
+                    indicator_code=series_id,
                     value=value,
-                    date=date,
+                    time=date,
                     source="FRED",
                     country="US",
-                    unit=self._get_unit(indicator_type),
-                    collected_at=datetime.now(timezone.utc),
                 )
 
             except httpx.TimeoutException:
@@ -434,12 +428,11 @@ class ECOSCollector:
 
                 return EconomicIndicator(
                     indicator_name=indicator_type.value,
+                    indicator_code=stat_code,
                     value=value,
-                    date=date,
+                    time=date,
                     source="ECOS",
                     country="KR",
-                    unit=self._get_unit(indicator_type),
-                    collected_at=datetime.now(timezone.utc),
                 )
 
             except httpx.TimeoutException:
@@ -647,7 +640,7 @@ class EconomicCollectorService:
         TimescaleDB에 경제지표 저장 (UPSERT)
 
         economic_indicators 테이블에 수집된 지표를 저장합니다.
-        동일 (indicator_name, date, source) 조합이 이미 존재하면 값을 갱신합니다.
+        동일 (time, indicator_code) PK가 이미 존재하면 값을 갱신합니다.
 
         Args:
             indicators: 경제지표 리스트
@@ -661,35 +654,30 @@ class EconomicCollectorService:
             from db.database import async_session_factory
 
             async with async_session_factory() as session:
-                query = sa_text(
-                    """
+                query = sa_text("""
                     INSERT INTO economic_indicators (
-                        indicator_name, value, date, source, country,
-                        unit, change_pct, collected_at
+                        time, indicator_code, indicator_name, value,
+                        country, source
                     ) VALUES (
-                        :indicator_name, :value, :date, :source, :country,
-                        :unit, :change_pct, :collected_at
+                        :time, :indicator_code, :indicator_name, :value,
+                        :country, :source
                     )
-                    ON CONFLICT (indicator_name, date, source)
+                    ON CONFLICT (time, indicator_code)
                     DO UPDATE SET
-                        value = EXCLUDED.value,
-                        change_pct = EXCLUDED.change_pct,
-                        collected_at = EXCLUDED.collected_at
-                """
-                )
+                        indicator_name = EXCLUDED.indicator_name,
+                        value = EXCLUDED.value
+                """)
 
                 for ind in indicators:
                     await session.execute(
                         query,
                         {
+                            "time": ind.time,
+                            "indicator_code": ind.indicator_code,
                             "indicator_name": ind.indicator_name,
                             "value": ind.value,
-                            "date": ind.date,
-                            "source": ind.source,
                             "country": ind.country,
-                            "unit": ind.unit,
-                            "change_pct": ind.change_pct,
-                            "collected_at": ind.collected_at,
+                            "source": ind.source,
                         },
                     )
                 await session.commit()

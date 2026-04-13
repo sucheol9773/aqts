@@ -142,7 +142,7 @@ async def get_economic_indicators(
                         {
                             "indicator": item.indicator_name,
                             "value": item.value,
-                            "date": item.date.isoformat() if hasattr(item, "date") and item.date else None,
+                            "date": item.time.isoformat() if item.time else None,
                             "source": "FRED",
                             "country": "US",
                         }
@@ -158,7 +158,7 @@ async def get_economic_indicators(
                         {
                             "indicator": item.indicator_name,
                             "value": item.value,
-                            "date": item.date.isoformat() if hasattr(item, "date") and item.date else None,
+                            "date": item.time.isoformat() if item.time else None,
                             "source": "ECOS",
                             "country": "KR",
                         }

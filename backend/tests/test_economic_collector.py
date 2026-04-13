@@ -30,46 +30,47 @@ from core.data_collector.economic_collector import (
 # ══════════════════════════════════════
 def test_economic_indicator_dataclass():
     """경제지표 데이터 클래스 테스트"""
-    date = datetime(2024, 1, 15, tzinfo=timezone.utc)
+    dt = datetime(2024, 1, 15, tzinfo=timezone.utc)
 
     indicator = EconomicIndicator(
         indicator_name="GDP",
+        indicator_code="A191RL1Q225SBEA",
         value=27500.0,
-        date=date,
+        time=dt,
         source="FRED",
         country="US",
-        unit="Billions of Dollars",
-        change_pct=2.5,
     )
 
     assert indicator.indicator_name == "GDP"
+    assert indicator.indicator_code == "A191RL1Q225SBEA"
     assert indicator.value == 27500.0
+    assert indicator.time == dt
     assert indicator.source == "FRED"
     assert indicator.country == "US"
-    assert indicator.change_pct == 2.5
-    assert indicator.collected_at is not None
 
 
 def test_economic_indicator_to_dict():
-    """경제지표를 딕셔너리로 변환"""
-    date = datetime(2024, 1, 15, tzinfo=timezone.utc)
+    """경제지표를 딕셔너리로 변환 (DB 스키마와 1:1 매핑)"""
+    dt = datetime(2024, 1, 15, tzinfo=timezone.utc)
 
     indicator = EconomicIndicator(
         indicator_name="CPI",
+        indicator_code="CPIAUCSL",
         value=305.7,
-        date=date,
+        time=dt,
         source="FRED",
         country="US",
-        unit="Index",
     )
 
     data_dict = indicator.to_dict()
 
     assert data_dict["indicator_name"] == "CPI"
+    assert data_dict["indicator_code"] == "CPIAUCSL"
     assert data_dict["value"] == 305.7
+    assert data_dict["time"] == dt
     assert data_dict["source"] == "FRED"
     assert data_dict["country"] == "US"
-    assert "collected_at" in data_dict
+    assert len(data_dict) == 6  # DB 컬럼 수와 일치
 
 
 # ══════════════════════════════════════
