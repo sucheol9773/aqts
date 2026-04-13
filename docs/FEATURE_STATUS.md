@@ -64,7 +64,7 @@
 | construction | 포트폴리오 구성 (MVO·Risk Parity·Black-Litterman) | Tested | core/portfolio_manager/construction.py | test_construction.py (77) | 3중 엔진, Ledoit-Wolf 축소, USD 하드캡 |
 | rebalancing | 리밸런싱 (정기·긴급·방어) | Tested | core/portfolio_manager/rebalancing.py | test_rebalancing.py (36) | 3가지 리밸런싱 모드 |
 | universe | 투자 유니버스 관리 | Tested | core/portfolio_manager/universe.py | test_universe.py (29) | 섹터 필터, 지정 종목, 유동성 필터 |
-| exchange_rate | 환율 관리 (KIS+FRED, Redis 캐싱) | Tested | core/portfolio_manager/exchange_rate.py | test_exchange_rate.py (47) | 5분/24시간 TTL 캐시 |
+| exchange_rate | 환율 관리 (KIS+FRED, Redis 캐싱) | Tested | core/portfolio_manager/exchange_rate.py | test_exchange_rate.py (48) | 5분/24시간 TTL 캐시 |
 | weight_optimizer | 가중치 자동 최적화 (Sharpe·Risk-Adjusted 등) | Tested | core/weight_optimizer.py | test_weight_optimizer.py (32) | 4가지 최적화 방식, Walk-Forward 포함 |
 
 ---
@@ -347,7 +347,7 @@
 ## Test Coverage Summary
 
 ```
-Total Tests: 3,900 tests (413 smoke-marked) — ALL PASS, Coverage 90%
+Total Tests: 3,901 tests (413 smoke-marked) — ALL PASS, Coverage 90%
 ├── Core Features: 40+ modules with passing tests
 ├── Data Contracts: 154 tests (9 contracts) [smoke]
 ├── Pipeline Gates: 59 tests (12 components)
