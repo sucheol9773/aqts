@@ -10,7 +10,7 @@ F-01-06 명세 구현:
 
 import asyncio
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import List, Optional
 
@@ -105,6 +105,22 @@ REPORT_CODE_MAP = {
 
 REPORT_CODE_INVERSE = {v: k for k, v in REPORT_CODE_MAP.items()}
 
+# DART 보고서코드 → DB period_type 매핑
+REPRT_CODE_TO_PERIOD_TYPE = {
+    "11013": "Q1",  # 1분기
+    "11012": "H1",  # 반기
+    "11014": "Q3",  # 3분기
+    "11011": "FY",  # 사업보고서 (연간)
+}
+
+# DART 보고서코드 → 보고서 기준 월-일 (report_date 생성용)
+REPRT_CODE_TO_MONTH_DAY = {
+    "11013": (3, 31),  # 1분기: 3월 31일
+    "11012": (6, 30),  # 반기: 6월 30일
+    "11014": (9, 30),  # 3분기: 9월 30일
+    "11011": (12, 31),  # 사업보고서: 12월 31일
+}
+
 # DART 계정과목 매핑 (응답 필드명 -> 내부 필드명)
 ACCOUNT_MAP = {
     "매출액": "revenue",
@@ -181,7 +197,11 @@ class FinancialCollectorService:
         )
 
         # 기본 정보 조회 (ticker, corp_name)
-        corp_info = await self._fetch_corp_info(corp_code)
+        try:
+            corp_info = await self._fetch_corp_info(corp_code)
+        except RuntimeError:
+            # DB 조회 자체가 실패 — logger.error는 _fetch_corp_info에서 이미 출력됨
+            return None
         if not corp_info:
             logger.warning(f"Could not find company info for corp_code: {corp_code}")
             return None
@@ -220,21 +240,41 @@ class FinancialCollectorService:
         회사 기본정보 조회 (ticker, corp_name)
 
         DART 고유번호로부터 종목코드와 회사명을 조회합니다.
-        (실제 구현시 별도 매핑 테이블이 필요하거나 KIS API 활용)
+        universe 테이블에서 ticker 정확 매칭만 시도합니다.
+        (corp_code는 DART 전용 8자리 코드이며, universe에 해당 컬럼이 없어
+         corp_code→ticker 매핑은 불가합니다.)
+
+        향후 corp_code↔ticker 매핑 테이블 도입 시 확장 가능합니다.
+
+        Returns:
+            {"ticker": str, "corp_name": str} 또는 None (데이터 없음)
+
+        Raises:
+            RuntimeError: DB 조회 자체가 실패한 경우 (데이터 없음과 구분)
         """
-        query = text(
+        try:
+            # universe 테이블에서 ticker 정확 매칭만 시도
+            # LIKE 패턴 매칭은 false positive 위험이 있어 사용하지 않음
+            query = text(
+                """
+                SELECT ticker, name FROM universe
+                WHERE ticker = :corp_code
+                LIMIT 1
             """
-            SELECT ticker, corp_name FROM company_info WHERE corp_code = :corp_code LIMIT 1
-        """
-        )
-        result = await self._db.execute(query, {"corp_code": corp_code})
-        row = result.fetchone()
+            )
+            result = await self._db.execute(query, {"corp_code": corp_code})
+            row = result.fetchone()
 
-        if row:
-            return {"ticker": row[0], "corp_name": row[1]}
+            if row:
+                return {"ticker": row[0], "corp_name": row[1]}
 
-        logger.warning(f"Company info not found in DB for corp_code: {corp_code}")
-        return None
+            logger.warning(
+                f"Company info not found for corp_code: {corp_code}. " f"corp_code→ticker 매핑 테이블이 필요합니다."
+            )
+            return None
+        except Exception as e:
+            logger.error(f"Company info DB 조회 실패 (corp_code={corp_code}): {e}")
+            raise RuntimeError(f"Company info DB lookup failed for corp_code={corp_code}") from e
 
     async def _fetch_financial_data(
         self,
@@ -426,9 +466,59 @@ class FinancialCollectorService:
     # ══════════════════════════════════════
     # DB 저장
     # ══════════════════════════════════════
+    def _to_db_record(self, stmt: FinancialStatement) -> dict:
+        """
+        FinancialStatement (DART 형식) → DB 레코드 (financial_statements 테이블) 변환
+
+        DART API 필드를 실제 DB 스키마에 맞게 매핑합니다:
+        - bsns_year + reprt_code → report_date (date)
+        - reprt_code → period_type (Q1/H1/Q3/FY)
+        - fs_div → accounting_standard (CFS→K-IFRS, OFS→K-GAAP)
+        - market은 DART 데이터이므로 기본값 'KRX' 사용
+        """
+        # report_date 생성: bsns_year + reprt_code 기반
+        month_day = REPRT_CODE_TO_MONTH_DAY.get(stmt.reprt_code)
+        if month_day is None:
+            raise ValueError(
+                f"Unknown reprt_code '{stmt.reprt_code}' for ticker={stmt.ticker}, "
+                f"bsns_year={stmt.bsns_year}. "
+                f"Allowed: {list(REPRT_CODE_TO_MONTH_DAY.keys())}"
+            )
+        report_date = date(stmt.bsns_year, month_day[0], month_day[1])
+
+        # period_type 변환
+        period_type = REPRT_CODE_TO_PERIOD_TYPE.get(stmt.reprt_code)
+        if period_type is None:
+            raise ValueError(
+                f"Unknown reprt_code '{stmt.reprt_code}' for period_type mapping. "
+                f"Allowed: {list(REPRT_CODE_TO_PERIOD_TYPE.keys())}"
+            )
+
+        # accounting_standard 변환 (CFS=연결→K-IFRS, OFS=개별→K-GAAP)
+        accounting_map = {"CFS": "K-IFRS", "OFS": "K-GAAP"}
+        accounting_standard = accounting_map.get(stmt.fs_div, "K-IFRS")
+
+        return {
+            "ticker": stmt.ticker,
+            "market": "KRX",
+            "report_date": report_date,
+            "period_type": period_type,
+            "revenue": stmt.revenue,
+            "operating_income": stmt.operating_income,
+            "net_income": stmt.net_income,
+            "total_assets": stmt.total_assets,
+            "total_liabilities": stmt.total_liabilities,
+            "total_equity": stmt.total_equity,
+            "eps": stmt.eps,
+            "accounting_standard": accounting_standard,
+        }
+
     async def save_to_db(self, statements: List[FinancialStatement]) -> int:
         """
         재무제표를 DB에 저장
+
+        DART API 형식의 FinancialStatement를 실제 DB 스키마
+        (ticker, market, report_date, period_type, ...)에 맞게 변환하여 저장합니다.
 
         Args:
             statements: FinancialStatement 리스트
@@ -444,16 +534,15 @@ class FinancialCollectorService:
         query = text(
             """
             INSERT INTO financial_statements
-            (corp_code, ticker, corp_name, bsns_year, reprt_code, fs_div,
+            (ticker, market, report_date, period_type,
              revenue, operating_income, net_income, total_assets, total_liabilities,
-             total_equity, eps, collected_at)
+             total_equity, eps, accounting_standard)
             VALUES
-            (:corp_code, :ticker, :corp_name, :bsns_year, :reprt_code, :fs_div,
+            (:ticker, :market, :report_date, :period_type,
              :revenue, :operating_income, :net_income, :total_assets, :total_liabilities,
-             :total_equity, :eps, :collected_at)
-            ON CONFLICT (corp_code, bsns_year, reprt_code, fs_div) DO UPDATE SET
-                ticker = EXCLUDED.ticker,
-                corp_name = EXCLUDED.corp_name,
+             :total_equity, :eps, :accounting_standard)
+            ON CONFLICT (ticker, report_date, period_type) DO UPDATE SET
+                market = EXCLUDED.market,
                 revenue = EXCLUDED.revenue,
                 operating_income = EXCLUDED.operating_income,
                 net_income = EXCLUDED.net_income,
@@ -461,12 +550,12 @@ class FinancialCollectorService:
                 total_liabilities = EXCLUDED.total_liabilities,
                 total_equity = EXCLUDED.total_equity,
                 eps = EXCLUDED.eps,
-                collected_at = EXCLUDED.collected_at
+                accounting_standard = EXCLUDED.accounting_standard
         """
         )
 
         try:
-            records = [stmt.to_dict() for stmt in statements]
+            records = [self._to_db_record(stmt) for stmt in statements]
             await self._db.execute(query, records)
             await self._db.commit()
 
@@ -589,7 +678,7 @@ class FinancialCollectorService:
                         total_assets, total_liabilities, total_equity, eps
                     FROM financial_statements
                     WHERE ticker = :ticker
-                    ORDER BY bsns_year DESC, reprt_code DESC
+                    ORDER BY report_date DESC
                     LIMIT 1
                 """
                 )

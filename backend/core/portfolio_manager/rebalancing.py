@@ -381,7 +381,7 @@ class RebalancingEngine:
                 row = result.fetchone()
                 return row[0] if row and row[0] else None
         except Exception as e:
-            logger.debug(f"Failed to get last rebalancing time: {e}")
+            logger.warning(f"마지막 리밸런싱 시간 조회 실패: None 반환 → 첫 실행으로 간주될 수 있음. error={e}")
             return None
 
     async def _is_first_business_day_of_month(self, check_date: datetime) -> bool:
@@ -680,4 +680,4 @@ class RebalancingEngine:
                 )
                 await session.commit()
         except Exception as e:
-            logger.debug(f"Failed to record rebalancing: {e}")
+            logger.error(f"리밸런싱 이벤트 DB 기록 실패: 감사 추적 누락 위험. error={e}")

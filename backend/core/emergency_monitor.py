@@ -295,9 +295,11 @@ class EmergencyRebalancingMonitor:
         """
         try:
             # 1. 현재 포지션 조회
+            # 빈 리스트: 실제 포지션 0건 또는 KIS+DB 모두 실패
+            # (DB 실패 시 _load_positions_from_db에서 logger.error 이미 출력됨)
             positions = await self._fetch_current_positions()
             if not positions:
-                logger.debug("No positions to monitor")
+                logger.info("Emergency monitor: no positions to monitor (empty or data source unavailable)")
                 return None
 
             # 2. 손실률 계산
@@ -332,7 +334,11 @@ class EmergencyRebalancingMonitor:
 
         if not self._kis_client:
             logger.debug("KIS client not available, loading from DB")
-            return await self._load_positions_from_db()
+            try:
+                return await self._load_positions_from_db()
+            except RuntimeError:
+                # DB 폴백도 실패 — 이미 logger.error로 기록됨
+                return []
 
         try:
             # 한국 잔고 조회
@@ -371,39 +377,66 @@ class EmergencyRebalancingMonitor:
 
         except Exception as e:
             logger.error(f"Failed to fetch positions from KIS: {e}")
-            return await self._load_positions_from_db()
+            try:
+                return await self._load_positions_from_db()
+            except RuntimeError:
+                # KIS도 DB도 실패 — 이미 logger.error로 기록됨
+                return []
 
         return positions
 
     async def _load_positions_from_db(self) -> list[PositionSnapshot]:
-        """DB에서 최근 포지션 스냅샷을 로드합니다 (폴백)"""
+        """DB에서 최근 포지션 스냅샷을 로드합니다 (폴백)
+
+        portfolio_holdings 테이블에서 보유 종목을 조회합니다.
+        sector 정보는 portfolio_holdings에 없으므로 빈 문자열로 설정합니다.
+
+        Raises:
+            RuntimeError: DB 조회 실패 시 (상위에서 빈 리스트와 구분 가능)
+        """
         try:
             async with async_session_factory() as session:
                 query = text(
                     """
-                    SELECT ticker, market, quantity, avg_purchase_price,
-                           current_price, sector
-                    FROM positions
+                    SELECT ticker, market, quantity, avg_price, current_price
+                    FROM portfolio_holdings
                     WHERE quantity > 0
-                    ORDER BY current_price * quantity DESC
+                    ORDER BY COALESCE(current_price, 0) * quantity DESC
                 """
                 )
                 result = await session.execute(query)
                 rows = result.fetchall()
-                return [
-                    PositionSnapshot(
-                        ticker=row[0],
-                        market=Market(row[1]) if row[1] else Market.KRX,
-                        quantity=int(row[2]),
-                        avg_purchase_price=float(row[3]),
-                        current_price=float(row[4]),
-                        sector=row[5] or "",
+
+                positions = []
+                for row in rows:
+                    current_price = float(row[4]) if row[4] else None
+                    avg_price = float(row[3])
+
+                    if current_price is None:
+                        logger.warning(
+                            f"portfolio_holdings: current_price NULL for "
+                            f"ticker={row[0]}, avg_price={avg_price}. "
+                            f"비상 모니터링 손실률 계산이 부정확할 수 있습니다."
+                        )
+
+                    positions.append(
+                        PositionSnapshot(
+                            ticker=row[0],
+                            market=Market(row[1]) if row[1] else Market.KRX,
+                            quantity=int(row[2]),
+                            avg_purchase_price=avg_price,
+                            current_price=current_price if current_price is not None else avg_price,
+                            sector="",
+                        )
                     )
-                    for row in rows
-                ]
+
+                return positions
         except Exception as e:
-            logger.debug(f"Failed to load positions from DB: {e}")
-            return []
+            logger.error(
+                f"비상 모니터링 DB 폴백 실패: portfolio_holdings 조회 불가. "
+                f"비상 손실률 모니터링이 작동하지 않습니다. error={e}"
+            )
+            raise RuntimeError(f"Emergency monitor DB fallback failed: {e}") from e
 
     # ══════════════════════════════════════
     # 손실률 계산
@@ -805,7 +838,7 @@ class EmergencyRebalancingMonitor:
                 )
                 await session.commit()
         except Exception as e:
-            logger.debug(f"Failed to record emergency event: {e}")
+            logger.error(f"비상 리밸런싱 이벤트 DB 기록 실패: 감사 추적 누락 위험. error={e}")
 
     # ══════════════════════════════════════
     # 유틸리티

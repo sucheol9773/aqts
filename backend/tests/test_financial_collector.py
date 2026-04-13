@@ -19,6 +19,8 @@ from core.data_collector.financial_collector import (
     ACCOUNT_MAP,
     REPORT_CODE_INVERSE,
     REPORT_CODE_MAP,
+    REPRT_CODE_TO_MONTH_DAY,
+    REPRT_CODE_TO_PERIOD_TYPE,
     DerivedMetrics,
     FinancialCollectorService,
     FinancialStatement,
@@ -901,3 +903,114 @@ class TestAccountMappings:
         assert ACCOUNT_MAP["자본총계"] == "total_equity"
         assert ACCOUNT_MAP["기본주당순이익"] == "eps"
         assert ACCOUNT_MAP["주당순이익"] == "eps"
+
+
+@pytest.mark.smoke
+class TestReportCodeToDbMappings:
+    """Tests for DART reprt_code → DB period_type/report_date mappings"""
+
+    def test_reprt_code_to_period_type_all_codes(self):
+        """Test all report codes map to correct period types"""
+        assert REPRT_CODE_TO_PERIOD_TYPE["11013"] == "Q1"
+        assert REPRT_CODE_TO_PERIOD_TYPE["11012"] == "H1"
+        assert REPRT_CODE_TO_PERIOD_TYPE["11014"] == "Q3"
+        assert REPRT_CODE_TO_PERIOD_TYPE["11011"] == "FY"
+
+    def test_reprt_code_to_month_day_all_codes(self):
+        """Test all report codes map to correct month-day pairs"""
+        assert REPRT_CODE_TO_MONTH_DAY["11013"] == (3, 31)
+        assert REPRT_CODE_TO_MONTH_DAY["11012"] == (6, 30)
+        assert REPRT_CODE_TO_MONTH_DAY["11014"] == (9, 30)
+        assert REPRT_CODE_TO_MONTH_DAY["11011"] == (12, 31)
+
+
+@pytest.mark.smoke
+class TestToDbRecord:
+    """Tests for _to_db_record DART→DB schema mapping"""
+
+    @pytest.mark.asyncio
+    async def test_to_db_record_annual_report(self):
+        """Test conversion of annual report (11011/FY) to DB record"""
+        from datetime import date
+
+        mock_db = AsyncMock()
+
+        with patch("core.data_collector.financial_collector.get_settings") as mock_settings:
+            mock_settings.return_value.external.dart_api_key = "test_key"
+
+            async with FinancialCollectorService(mock_db) as collector:
+                stmt = FinancialStatement(
+                    corp_code="00126380",
+                    ticker="005930",
+                    corp_name="삼성전자",
+                    bsns_year=2023,
+                    reprt_code="11011",
+                    fs_div="CFS",
+                    revenue=355_600_000.0,
+                    net_income=42_900_000.0,
+                    eps=6_330.0,
+                )
+
+                record = collector._to_db_record(stmt)
+
+                assert record["ticker"] == "005930"
+                assert record["market"] == "KRX"
+                assert record["report_date"] == date(2023, 12, 31)
+                assert record["period_type"] == "FY"
+                assert record["revenue"] == 355_600_000.0
+                assert record["net_income"] == 42_900_000.0
+                assert record["eps"] == 6_330.0
+                assert record["accounting_standard"] == "K-IFRS"
+
+    @pytest.mark.asyncio
+    async def test_to_db_record_quarterly_report(self):
+        """Test conversion of Q1 report (11013) to DB record"""
+        from datetime import date
+
+        mock_db = AsyncMock()
+
+        with patch("core.data_collector.financial_collector.get_settings") as mock_settings:
+            mock_settings.return_value.external.dart_api_key = "test_key"
+
+            async with FinancialCollectorService(mock_db) as collector:
+                stmt = FinancialStatement(
+                    corp_code="00126380",
+                    ticker="005930",
+                    corp_name="삼성전자",
+                    bsns_year=2024,
+                    reprt_code="11013",
+                    fs_div="OFS",
+                    revenue=100_000_000.0,
+                )
+
+                record = collector._to_db_record(stmt)
+
+                assert record["report_date"] == date(2024, 3, 31)
+                assert record["period_type"] == "Q1"
+                assert record["accounting_standard"] == "K-GAAP"
+
+    @pytest.mark.asyncio
+    async def test_to_db_record_half_year_report(self):
+        """Test conversion of H1 report (11012) to DB record"""
+        from datetime import date
+
+        mock_db = AsyncMock()
+
+        with patch("core.data_collector.financial_collector.get_settings") as mock_settings:
+            mock_settings.return_value.external.dart_api_key = "test_key"
+
+            async with FinancialCollectorService(mock_db) as collector:
+                stmt = FinancialStatement(
+                    corp_code="00126380",
+                    ticker="005930",
+                    corp_name="삼성전자",
+                    bsns_year=2024,
+                    reprt_code="11012",
+                    fs_div="CFS",
+                )
+
+                record = collector._to_db_record(stmt)
+
+                assert record["report_date"] == date(2024, 6, 30)
+                assert record["period_type"] == "H1"
+                assert record["accounting_standard"] == "K-IFRS"
