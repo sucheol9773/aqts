@@ -373,13 +373,24 @@ class ECOSCollector:
         stat_code = series_info["stat_code"]
         item_code = series_info["item_code"]
 
-        # 날짜 범위 설정 (최근 30일)
-        today = datetime.now()
-        start_date = (today - timedelta(days=30)).strftime("%Y%m%d")
-        end_date = today.strftime("%Y%m%d")
-
         # 주기 결정 (월간: "M", 분기: "Q", 연간: "A")
         cycle = self._get_cycle(indicator_type)
+
+        # 날짜 범위 설정 — ECOS API는 주기에 맞는 날짜 형식 필요
+        # M(월간): YYYYMM, Q(분기): YYYYQ1~Q4, A(연간): YYYY
+        today = datetime.now()
+        if cycle == "Q":
+            # 분기: 최근 2년치 조회
+            start_date = (today - timedelta(days=730)).strftime("%Y%m")
+            end_date = today.strftime("%Y%m")
+        elif cycle == "A":
+            # 연간: 최근 3년치
+            start_date = str(today.year - 3)
+            end_date = str(today.year)
+        else:
+            # 월간: 최근 6개월
+            start_date = (today - timedelta(days=180)).strftime("%Y%m")
+            end_date = today.strftime("%Y%m")
 
         # URL 구성
         url = (
@@ -394,12 +405,16 @@ class ECOSCollector:
 
                 data = response.json()
 
-                # ECOS 응답 구조 확인
-                if data.get("stat_code") != "00":
-                    logger.warning(f"ECOS [{stat_code}] error code: {data.get('stat_code')}")
+                # ECOS 응답 구조:
+                # 정상: {"StatisticSearch": {"list_total_count": N, "row": [...]}}
+                # 에러: {"RESULT": {"CODE": "ERROR-xxx", "MESSAGE": "..."}}
+                if "RESULT" in data:
+                    err = data["RESULT"]
+                    logger.warning(f"ECOS [{stat_code}] API error: " f"{err.get('CODE')} - {err.get('MESSAGE')}")
                     return None
 
-                records = data.get("row", [])
+                stat_search = data.get("StatisticSearch", {})
+                records = stat_search.get("row", [])
                 if not records:
                     logger.warning(f"ECOS [{stat_code}] no records found")
                     return None

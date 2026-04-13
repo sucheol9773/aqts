@@ -123,6 +123,8 @@ class ExchangeRateManager:
             rate_data = await self._get_cached_rate(pair)
             if rate_data:
                 logger.debug(f"캐시된 환율: {rate_data.rate} ({rate_data.source})")
+                if persist:
+                    await self._store_rate_to_db(rate_data)
                 return rate_data
 
             # 2. KIS API로부터 조회

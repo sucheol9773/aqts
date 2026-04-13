@@ -586,13 +586,15 @@ class TestECOSCollectorFetch:
 
             mock_response = MagicMock()
             mock_response.json.return_value = {
-                "stat_code": "00",
-                "row": [
-                    {
-                        "TIME": "202604",
-                        "DATA_VALUE": "3.5",
-                    }
-                ],
+                "StatisticSearch": {
+                    "list_total_count": 1,
+                    "row": [
+                        {
+                            "TIME": "202604",
+                            "DATA_VALUE": "3.5",
+                        }
+                    ],
+                }
             }
             mock_response.raise_for_status = MagicMock()
 
@@ -620,7 +622,7 @@ class TestECOSCollectorFetch:
 
             with patch("httpx.AsyncClient") as mock_client:
                 mock_response = AsyncMock()
-                mock_response.json.return_value = {"stat_code": "01"}
+                mock_response.json.return_value = {"RESULT": {"CODE": "ERROR-101", "MESSAGE": "잘못된 날짜 형식"}}
                 mock_response.raise_for_status = MagicMock()
 
                 mock_client.return_value.__aenter__.return_value.get = AsyncMock(return_value=mock_response)

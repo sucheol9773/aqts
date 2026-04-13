@@ -843,8 +843,14 @@ class TestExchangeRateManagerDBPersistence:
         assert stored_rate.source == "FRED"
 
     @pytest.mark.asyncio
-    async def test_get_current_rate_cache_hit_skips_store(self, exchange_rate_manager):
-        """Test that cache hit skips DB persistence even with persist=True."""
+    async def test_get_current_rate_cache_hit_persist_true_calls_store(self, exchange_rate_manager):
+        """Test that cache hit with persist=True still stores to DB.
+
+        캐시는 빠른 응답을 위한 레이어이고, DB 영속화는 시계열 기록용이다.
+        캐시 히트 여부와 무관하게 persist=True이면 DB에 저장해야 한다.
+        (변경 이유: 환율 수집 루프가 persist=True로 호출하지만, 캐시 히트 시
+        DB 저장을 건너뛰어 exchange_rates 테이블에 데이터가 누적되지 않던 버그 수정)
+        """
         cached_rate = ExchangeRate(
             pair="USD/KRW",
             rate=1350.0,
@@ -855,6 +861,22 @@ class TestExchangeRateManagerDBPersistence:
         exchange_rate_manager._store_rate_to_db = AsyncMock()
 
         result = await exchange_rate_manager.get_current_rate("USD/KRW", persist=True)
+
+        assert result.source == "CACHE"
+        exchange_rate_manager._store_rate_to_db.assert_called_once_with(cached_rate)
+
+    async def test_get_current_rate_cache_hit_persist_false_skips_store(self, exchange_rate_manager):
+        """Test that cache hit with persist=False does not store to DB."""
+        cached_rate = ExchangeRate(
+            pair="USD/KRW",
+            rate=1350.0,
+            source="CACHE",
+            fetched_at=datetime.now(ZoneInfo("UTC")),
+        )
+        exchange_rate_manager._get_cached_rate = AsyncMock(return_value=cached_rate)
+        exchange_rate_manager._store_rate_to_db = AsyncMock()
+
+        result = await exchange_rate_manager.get_current_rate("USD/KRW", persist=False)
 
         assert result.source == "CACHE"
         exchange_rate_manager._store_rate_to_db.assert_not_called()

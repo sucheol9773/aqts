@@ -43,21 +43,28 @@
   - 뉴스 수집 실패 시 다른 단계 차단하지 않음 (독립 try/except)
   - 다음 거래일(04-13 월) 08:30 KST handle_pre_market 자동 실행 시 검증 예정
 
-### 2-3. 경제지표 (FRED/ECOS) — ✅ 스케줄러 wiring 완료
+### 2-3. 경제지표 (FRED/ECOS) — ✅ FRED 정상 / ⚠️ ECOS 버그 수정
 
 - `handle_pre_market()` 스텝 3에 `EconomicCollectorService.collect_and_store()` 연결
 - `_store_to_db()` 주석 해제 → TimescaleDB 영속화 활성화
 - FRED API 키 설정 완료 (미국 지표 9개: GDP, CPI, 금리, VIX 등)
-- ECOS API 키 미설정 (한국 지표는 키 추가 시 자동 동작)
-- 다음 거래일(04-13 월) 08:30 KST handle_pre_market 실행 시 검증 예정
+- ECOS API 키 설정 완료 (한국 지표 5개: 기준금리, CPI, 실업률, GDP, 경상수지)
+- **04-13 수동 검증**: FRED 9건 수집+DB 저장 성공, ECOS 0건 실패
+- **ECOS 버그 수정 (04-13)**:
+  1. 날짜 형식: 월간(`M`) 주기에 `%Y%m%d` 전송 → `%Y%m` 으로 수정 (ERROR-101)
+  2. 응답 파싱: `data.get("stat_code")` → `data["StatisticSearch"]["row"]` 구조로 수정
+  3. 검색 범위: 30일 → 월간 6개월, 분기 2년으로 확대
 
-### 2-4. 환율 — ✅ DB 영속화 구현 완료
+### 2-4. 환율 — ⚠️ 캐시 히트 시 DB 미저장 버그 수정
 
 - `ExchangeRateManager._store_rate_to_db()` 메서드 추가 (TimescaleDB UPSERT)
 - `get_current_rate(persist=True)` 파라미터로 DB 저장 제어
 - `scheduler_main.py`에 1시간 간격 백그라운드 수집 루프 추가 (`_exchange_rate_loop`)
 - Redis 캐시 + TimescaleDB 이중 영속화 구조
-- 배포 후 `exchange_rates` 테이블에 데이터 적재 시작 예정
+- **04-13 버그 발견**: 캐시 히트 시 `persist=True` 여부와 무관하게 즉시 return → DB 미저장
+- **수정**: 캐시 히트 경로에도 `persist=True`이면 `_store_rate_to_db()` 호출 추가
+- 수정 전: exchange_rates 테이블 3건만 존재 (캐시 미스 시에만 저장)
+- 수정 후: 매 수집 주기(1시간)마다 DB 영속화 보장
 
 ### 2-5. Circuit Breaker — ✅ 정상 대기
 
