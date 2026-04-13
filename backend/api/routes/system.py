@@ -181,10 +181,10 @@ async def trigger_rebalancing(
         await audit.log(
             action_type="REBALANCING_TRIGGERED",
             module="portfolio_manager",
-            description=f"Manual rebalancing triggered by user {current_user}",
+            description=f"Manual rebalancing triggered by user {current_user.username}",
             metadata={
                 "rebalancing_type": rebalancing_type,
-                "user": current_user,
+                "user": current_user.id,
             },
         )
 
@@ -289,7 +289,7 @@ async def trigger_rebalancing(
                 "type": rebalancing_type,
                 "status": "completed",
                 "triggered_at": triggered_at.isoformat(),
-                "user": current_user,
+                "user": current_user.id,
                 "result": rebal_result.to_dict(),
             },
             message=f"리밸런싱 완료: {len(rebal_result.orders)}건 주문 생성",
@@ -366,7 +366,7 @@ async def run_analysis_pipeline(
                 "succeeded": succeeded_count,
                 "blocked": blocked_count,
                 "force_refresh": force_refresh,
-                "user": current_user,
+                "user": current_user.id,
             },
         )
 

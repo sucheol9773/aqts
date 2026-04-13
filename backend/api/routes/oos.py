@@ -118,7 +118,7 @@ async def create_oos_run(
             None,  # market_data
         )
 
-        logger.info(f"OOS run created: {result.run_id}, " f"status={result.status.value}, user={current_user}")
+        logger.info(f"OOS run created: {result.run_id}, " f"status={result.status.value}, user={current_user.username}")
 
         return APIResponse(
             success=True,

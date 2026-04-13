@@ -627,7 +627,7 @@ async def cancel_order(
             await audit.log_strict(
                 action_type="ORDER_CANCELLED",
                 module="order_executor",
-                description=f"Order {order_id} cancelled by user {current_user}",
+                description=f"Order {order_id} cancelled by user {current_user.username}",
                 metadata={"order_id": order_id, "previous_status": current_status.value},
             )
         except AuditWriteFailure:

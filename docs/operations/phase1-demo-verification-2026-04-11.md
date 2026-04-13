@@ -562,3 +562,19 @@ Phase 1 DEMO 검증 완료 후, 미완성 API wiring 4건에 대해 순차적으
 - 테스트: `test_system_routes.py`, `test_coverage_api_routes_v2.py`의 `current_user` mock을 문자열 → `AuthenticatedUser` 객체로 교체
 
 **검증**: ruff 0 errors, black 0 reformatted, pytest 4013 passed.
+
+### 7.7 감사 로그 / API 응답의 raw AuthenticatedUser 직렬화 수정 (2026-04-14)
+
+**증상**: 감사 로그 metadata와 API 응답의 `"user"` 필드에 `AuthenticatedUser(NamedTuple)` 객체가 그대로 전달됨. NamedTuple은 JSON 직렬화 시 배열(tuple)로 변환되어 API 응답에서 `"user": ["uuid", "admin", "admin"]` 형태가 됨. `json.dumps(default=str)` 경유 시 `"AuthenticatedUser(id='...', username='...', role='...')"` 문자열이 저장됨.
+
+**근본 원인**: §7.6의 user_id wiring 수정이 DB 쿼리 경로만 커버하고, 감사 로그 metadata 딕셔너리와 API 응답 딕셔너리에 포함된 `current_user` 참조는 누락.
+
+**영향 범위**: `system.py` (3건), `oos.py` (1건), `orders.py` (1건) — 총 5건.
+
+**수정 내용**:
+
+- `api/routes/system.py`: metadata `"user": current_user` → `current_user.id` (2건), description f-string `{current_user}` → `{current_user.username}` (1건), API 응답 `"user": current_user` → `current_user.id` (1건)
+- `api/routes/oos.py`: logger.info f-string `user={current_user}` → `user={current_user.username}` (1건)
+- `api/routes/orders.py`: audit description `user {current_user}` → `user {current_user.username}` (1건)
+
+**검증**: ruff 0 errors, black 0 reformatted, pytest 4013 passed (233.94s).
