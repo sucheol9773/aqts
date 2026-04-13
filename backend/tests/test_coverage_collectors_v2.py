@@ -561,8 +561,9 @@ class TestFREDCollectorCollectAll:
             with patch.object(FREDCollector, "_fetch_series") as mock_fetch:
                 mock_fetch.return_value = EconomicIndicator(
                     indicator_name="GDP",
+                    indicator_code="GDP",
                     value=1000.0,
-                    date=datetime.now(timezone.utc),
+                    time=datetime.now(timezone.utc),
                     source="FRED",
                     country="US",
                 )
@@ -654,30 +655,38 @@ class TestEconomicIndicator:
     """EconomicIndicator dataclass tests"""
 
     def test_economic_indicator_post_init(self):
-        """Ensure collected_at is set if not provided"""
+        """Ensure EconomicIndicator fields are correctly set"""
+        now = datetime.now(timezone.utc)
         ind = EconomicIndicator(
             indicator_name="GDP",
+            indicator_code="GDP",
             value=1000.0,
-            date=datetime.now(timezone.utc),
+            time=now,
             source="FRED",
             country="US",
         )
-        assert ind.collected_at is not None
+        assert ind.indicator_name == "GDP"
+        assert ind.indicator_code == "GDP"
+        assert ind.time == now
 
     def test_economic_indicator_to_dict(self):
         """Convert EconomicIndicator to dict"""
+        now = datetime.now(timezone.utc)
         ind = EconomicIndicator(
             indicator_name="GDP",
+            indicator_code="GDP",
             value=1000.0,
-            date=datetime.now(timezone.utc),
+            time=now,
             source="FRED",
             country="US",
-            unit="Billions",
         )
         d = ind.to_dict()
         assert d["indicator_name"] == "GDP"
+        assert d["indicator_code"] == "GDP"
         assert d["value"] == 1000.0
+        assert d["time"] == now
         assert d["source"] == "FRED"
+        assert d["country"] == "US"
 
 
 class TestEconomicCollectorService:
@@ -711,8 +720,9 @@ class TestEconomicCollectorService:
             with patch.object(FREDCollector, "collect_indicator") as mock_collect:
                 mock_collect.return_value = EconomicIndicator(
                     indicator_name="GDP",
+                    indicator_code="GDP",
                     value=1000.0,
-                    date=datetime.now(timezone.utc),
+                    time=datetime.now(timezone.utc),
                     source="FRED",
                     country="US",
                 )
