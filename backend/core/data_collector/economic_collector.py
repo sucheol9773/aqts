@@ -565,11 +565,27 @@ class EconomicCollectorService:
         Returns:
             {"fred_count": int, "ecos_count": int, "total": int}
         """
-        # 병렬 수집
-        fred_indicators, ecos_indicators = await asyncio.gather(
+        # 병렬 수집 — return_exceptions=True로 한쪽 실패가 다른 쪽을 취소하지 않도록 방어
+        results = await asyncio.gather(
             self._fred.collect_all(),
             self._ecos.collect_all(),
+            return_exceptions=True,
         )
+
+        fred_result, ecos_result = results
+
+        # 예외 발생 시 빈 리스트로 대체하고 로깅
+        if isinstance(fred_result, BaseException):
+            logger.error(f"FRED collection failed: {fred_result}", exc_info=fred_result)
+            fred_indicators: list[EconomicIndicator] = []
+        else:
+            fred_indicators = fred_result
+
+        if isinstance(ecos_result, BaseException):
+            logger.error(f"ECOS collection failed: {ecos_result}", exc_info=ecos_result)
+            ecos_indicators: list[EconomicIndicator] = []
+        else:
+            ecos_indicators = ecos_result
 
         all_indicators = fred_indicators + ecos_indicators
 

@@ -26,7 +26,7 @@
 | kis_client | KIS API 래퍼 (LIVE/DEMO/BACKTEST) | Tested | core/data_collector/kis_client.py | test_kis_client.py (14) | 한국투자증권 OpenAPI 통합, 3가지 모드 지원 |
 | market_data | 시세 데이터 수집 및 무결성 검증 | Tested | core/data_collector/market_data.py | test_market_data.py (12) | 가격 데이터 OHLCV, 이상치 검증 |
 | news_collector | RSS 뉴스 + DART 공시 수집 | Tested | core/data_collector/news_collector.py | test_news_collector.py (13) | Naver/Hankyung/Maekyung/Reuters 4개 소스 |
-| economic_collector | FRED·ECOS 경제지표 수집 | Tested | core/data_collector/economic_collector.py | test_economic_collector.py (17) | 미국 9개 + 한국 5개 지표 |
+| economic_collector | FRED·ECOS 경제지표 수집 | Tested | core/data_collector/economic_collector.py | test_economic_collector.py (21) | 미국 9개 + 한국 5개 지표 |
 | financial_collector | DART 재무제표 (하이브리드) | Tested | core/data_collector/financial_collector.py | test_financial_collector.py (36) | API + 일괄 txt, PER/PBR/ROE 파생 |
 | social_collector | Reddit SNS 데이터 수집 | Tested | core/data_collector/social_collector.py | test_social_collector.py (59) | OAuth2, 8개 서브레딧, 키워드 필터 |
 | kis_websocket | KIS 실시간 WebSocket (체결가+호가) | Tested | core/data_collector/kis_websocket.py | test_realtime.py (20) | H0STCNT0/H0STASP0, PINGPONG, 지수 백오프 재연결, 최대 40 구독 |
@@ -347,7 +347,7 @@
 ## Test Coverage Summary
 
 ```
-Total Tests: 3,901 tests (413 smoke-marked) — ALL PASS, Coverage 90%
+Total Tests: 3,905 tests (413 smoke-marked) — ALL PASS, Coverage 90%
 ├── Core Features: 40+ modules with passing tests
 ├── Data Contracts: 154 tests (9 contracts) [smoke]
 ├── Pipeline Gates: 59 tests (12 components)

@@ -315,3 +315,136 @@ def test_all_indicators_mapped():
     # ECOS 매핑 확인
     for indicator in ecos_indicators:
         assert indicator in ECOS_SERIES_MAP, f"Missing ECOS mapping for {indicator.value}"
+
+
+# ══════════════════════════════════════
+# EconomicCollectorService.collect_and_store 테스트
+# ══════════════════════════════════════
+
+
+class TestCollectAndStoreGatherResilience:
+    """
+    asyncio.gather(return_exceptions=True) 동작 검증.
+
+    한쪽 수집기(FRED/ECOS)가 예외를 던져도 다른 쪽은 정상 수집되고,
+    전체 프로세스(DB 저장, 캐싱)가 중단되지 않아야 한다.
+    """
+
+    @staticmethod
+    def _make_indicator(name: str, code: str) -> EconomicIndicator:
+        return EconomicIndicator(
+            indicator_name=name,
+            indicator_code=code,
+            value=1.0,
+            time=datetime(2025, 1, 1, tzinfo=timezone.utc),
+            country="US",
+            source="TEST",
+        )
+
+    @pytest.mark.asyncio
+    async def test_both_succeed(self):
+        """FRED/ECOS 모두 성공 시 전체 지표가 저장된다."""
+        service = EconomicCollectorService()
+        fred_data = [self._make_indicator("FED_RATE", "FEDFUNDS")]
+        ecos_data = [self._make_indicator("BOK_RATE", "722Y001")]
+
+        with (
+            patch.object(service._fred, "collect_all", new_callable=AsyncMock, return_value=fred_data),
+            patch.object(service._ecos, "collect_all", new_callable=AsyncMock, return_value=ecos_data),
+            patch.object(service, "_store_to_db", new_callable=AsyncMock) as mock_store,
+            patch.object(service, "_cache_latest", new_callable=AsyncMock),
+        ):
+            result = await service.collect_and_store()
+
+        assert result["fred_count"] == 1
+        assert result["ecos_count"] == 1
+        assert result["total"] == 2
+        # DB 저장에 전체 지표가 전달되었는지 확인
+        mock_store.assert_awaited_once()
+        stored = mock_store.call_args[0][0]
+        assert len(stored) == 2
+
+    @pytest.mark.asyncio
+    async def test_fred_fails_ecos_succeeds(self):
+        """FRED 실패 시에도 ECOS 지표는 정상 수집·저장된다."""
+        service = EconomicCollectorService()
+        ecos_data = [self._make_indicator("BOK_RATE", "722Y001")]
+
+        with (
+            patch.object(
+                service._fred,
+                "collect_all",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("FRED API timeout"),
+            ),
+            patch.object(service._ecos, "collect_all", new_callable=AsyncMock, return_value=ecos_data),
+            patch.object(service, "_store_to_db", new_callable=AsyncMock) as mock_store,
+            patch.object(service, "_cache_latest", new_callable=AsyncMock),
+        ):
+            result = await service.collect_and_store()
+
+        assert result["fred_count"] == 0
+        assert result["ecos_count"] == 1
+        assert result["total"] == 1
+        mock_store.assert_awaited_once()
+        stored = mock_store.call_args[0][0]
+        assert len(stored) == 1
+        assert stored[0].indicator_code == "722Y001"
+
+    @pytest.mark.asyncio
+    async def test_ecos_fails_fred_succeeds(self):
+        """ECOS 실패 시에도 FRED 지표는 정상 수집·저장된다."""
+        service = EconomicCollectorService()
+        fred_data = [self._make_indicator("FED_RATE", "FEDFUNDS")]
+
+        with (
+            patch.object(service._fred, "collect_all", new_callable=AsyncMock, return_value=fred_data),
+            patch.object(
+                service._ecos,
+                "collect_all",
+                new_callable=AsyncMock,
+                side_effect=ConnectionError("ECOS connection refused"),
+            ),
+            patch.object(service, "_store_to_db", new_callable=AsyncMock) as mock_store,
+            patch.object(service, "_cache_latest", new_callable=AsyncMock),
+        ):
+            result = await service.collect_and_store()
+
+        assert result["fred_count"] == 1
+        assert result["ecos_count"] == 0
+        assert result["total"] == 1
+        mock_store.assert_awaited_once()
+        stored = mock_store.call_args[0][0]
+        assert len(stored) == 1
+        assert stored[0].indicator_code == "FEDFUNDS"
+
+    @pytest.mark.asyncio
+    async def test_both_fail(self):
+        """양쪽 모두 실패해도 빈 결과로 정상 완료되고 DB 저장이 호출된다."""
+        service = EconomicCollectorService()
+
+        with (
+            patch.object(
+                service._fred,
+                "collect_all",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("FRED down"),
+            ),
+            patch.object(
+                service._ecos,
+                "collect_all",
+                new_callable=AsyncMock,
+                side_effect=TimeoutError("ECOS timeout"),
+            ),
+            patch.object(service, "_store_to_db", new_callable=AsyncMock) as mock_store,
+            patch.object(service, "_cache_latest", new_callable=AsyncMock),
+        ):
+            result = await service.collect_and_store()
+
+        assert result["fred_count"] == 0
+        assert result["ecos_count"] == 0
+        assert result["total"] == 0
+        # 빈 리스트로 _store_to_db가 호출된다 (내부에서 early return)
+        mock_store.assert_awaited_once()
+        stored = mock_store.call_args[0][0]
+        assert len(stored) == 0
