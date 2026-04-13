@@ -215,22 +215,34 @@ verify_pre_market() {
     check_no_error "scheduler" "경제지표 수집 실패" "경제지표 에러 없음"
 
     # DB 저장 확인 (TimescaleDB)
+    # NOTE: economic_indicators.time 은 관측일(observation date)이지 수집일이 아니다.
+    # FRED/ECOS 지표는 월간/분기별이므로 오늘 수집해도 time 은 과거 날짜다.
+    # 따라서 최근 90일 이내 관측 데이터 존재 여부로 검증한다.
     local econ_count
     econ_count=$(docker exec aqts-postgres bash -c \
-        "psql -U aqts_user -d aqts -t -A -c \"SELECT count(*) FROM economic_indicators WHERE time::date = '${TODAY}'\"" \
+        "psql -U aqts_user -d aqts -t -A -c \"SELECT count(DISTINCT indicator_code) FROM economic_indicators WHERE time >= CURRENT_DATE - INTERVAL '90 days'\"" \
         </dev/null 2>/dev/null || echo "0")
     econ_count=$(echo "$econ_count" | tr -d '[:space:]')
 
     if [ "$econ_count" -gt 0 ] 2>/dev/null; then
-        pass "경제지표 DB 저장 (${econ_count}건)"
+        pass "경제지표 DB 저장 (${econ_count}개 지표, 최근 90일)"
     else
-        warn "경제지표 DB 저장 확인 불가 (${econ_count}건)"
+        warn "경제지표 DB 저장 확인 불가 (${econ_count}개 지표)"
     fi
 
     # 뉴스 MongoDB 저장 확인
+    # NOTE: mongosh CLI 인증 문제를 방지하기 위해 scheduler 컨테이너의 Python 을 사용한다.
+    # scheduler 는 앱과 동일한 MONGO_USER/MONGO_PASSWORD 환경변수를 보유한다.
     local news_count
-    news_count=$(docker exec aqts-mongodb bash -c \
-        "mongosh --quiet --eval 'db.news_articles.countDocuments({collected_at: {\$gte: new Date(\"${TODAY}\")}})' aqts" \
+    news_count=$(docker exec aqts-scheduler python -c "
+import os, pymongo
+from urllib.parse import quote_plus
+from datetime import datetime
+u = os.environ.get('MONGO_USER', '')
+p = os.environ.get('MONGO_PASSWORD', '')
+uri = f'mongodb://{u}:{quote_plus(p)}@mongodb:27017/aqts?authSource=admin'
+c = pymongo.MongoClient(uri, serverSelectionTimeoutMS=3000)
+print(c.aqts.news_articles.count_documents({'collected_at': {'\$gte': datetime.strptime('${TODAY}', '%Y-%m-%d')}}))" \
         </dev/null 2>/dev/null || echo "0")
     news_count=$(echo "$news_count" | tr -d '[:space:]')
 
@@ -284,10 +296,17 @@ verify_market_close() {
     fi
 
     # 스냅샷 Redis 저장
+    # NOTE: redis-cli 인증 문제를 방지하기 위해 scheduler 컨테이너의 Python 을 사용한다.
     local snapshot
-    snapshot=$(docker exec aqts-redis redis-cli GET "portfolio:snapshot:${TODAY}" </dev/null 2>/dev/null || echo "")
+    snapshot=$(docker exec aqts-scheduler python -c "
+import redis, os
+r = redis.Redis(host='redis', port=6379, password=os.environ.get('REDIS_PASSWORD',''), decode_responses=True)
+v = r.get('portfolio:snapshot:${TODAY}')
+print('EXISTS' if v else 'NONE')" \
+        </dev/null 2>/dev/null || echo "NONE")
+    snapshot=$(echo "$snapshot" | tr -d '[:space:]')
 
-    if [ -n "$snapshot" ] && [ "$snapshot" != "(nil)" ]; then
+    if [ "$snapshot" = "EXISTS" ]; then
         pass "포트폴리오 스냅샷 Redis 저장"
     else
         warn "포트폴리오 스냅샷 미확인 (키: portfolio:snapshot:${TODAY})"
@@ -326,10 +345,17 @@ verify_post_market() {
     fi
 
     # 리포트 Redis 저장
+    # NOTE: redis-cli 인증 문제를 방지하기 위해 scheduler 컨테이너의 Python 을 사용한다.
     local report
-    report=$(docker exec aqts-redis redis-cli GET "daily_report:${TODAY}" </dev/null 2>/dev/null || echo "")
+    report=$(docker exec aqts-scheduler python -c "
+import redis, os
+r = redis.Redis(host='redis', port=6379, password=os.environ.get('REDIS_PASSWORD',''), decode_responses=True)
+v = r.get('daily_report:${TODAY}')
+print('EXISTS' if v else 'NONE')" \
+        </dev/null 2>/dev/null || echo "NONE")
+    report=$(echo "$report" | tr -d '[:space:]')
 
-    if [ -n "$report" ] && [ "$report" != "(nil)" ]; then
+    if [ "$report" = "EXISTS" ]; then
         pass "일일 리포트 Redis 저장"
     else
         warn "일일 리포트 미확인 (키: daily_report:${TODAY})"

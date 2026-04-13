@@ -401,7 +401,28 @@ gcloud compute ssh aqts-server --zone=asia-northeast3-a \
 
 **추가 수정**: 경제지표 DB 쿼리의 사용자명 `aqts` → `aqts_user` (§6.1에서 exchange_rates만 수정했고 economic_indicators 쿼리가 누락되어 있었음).
 
-### 6.7 verify_phase1_demo.sh 검색 패턴 보정 — false-negative 해소
+### 6.7 verify_phase1_demo.sh DB 인증 및 쿼리 로직 수정 (2026-04-13)
+
+**문제 3건**:
+
+1. **MongoDB 인증 누락**: `mongosh --quiet --eval '...' aqts` — credentials 없이 호출 → `MongoServerError: Authentication failed`. 뉴스 MongoDB 저장 확인이 항상 0건(WARN) 반환.
+2. **Redis 인증 누락**: `redis-cli GET "portfolio:snapshot:..."` — 비밀번호 없이 호출 → `(error) NOAUTH Authentication required.` 문자열이 비어있지 않고 `(nil)`도 아니므로 **거짓 PASS** 발생. 포트폴리오 스냅샷/일일 리포트 확인이 실제 데이터와 무관하게 항상 PASS.
+3. **경제지표 PostgreSQL 날짜 조건 오류**: `WHERE time::date = '2026-04-13'` — `time` 컬럼은 FRED/ECOS API의 **관측일**(예: 2026-03-01)이지 수집일이 아님. 오늘 수집해도 관측일이 오늘이 아니면 0건 반환.
+
+**추가 발견**: Redis/MongoDB 비밀번호에 `!` 특수문자가 포함되어 있어, bash 히스토리 확장(`set +H` 필요)과 `redis-cli -a`/`mongosh -p` 등 CLI 인자 전달에서 반복적으로 인증 실패 발생. shell 레벨에서의 credentials 전달은 구조적으로 취약.
+
+**해결 방식**: MongoDB/Redis 쿼리를 `docker exec aqts-scheduler python -c "..."` 로 변경. scheduler 컨테이너 내부에서 Python `os.environ` + `quote_plus()` 로 credentials를 처리하므로 **모든 특수문자**(!, @, #, $ 등)에 안전.
+
+| 항목 | 변경 전 | 변경 후 |
+|---|---|---|
+| 경제지표 PostgreSQL | `WHERE time::date = TODAY` | `WHERE time >= CURRENT_DATE - INTERVAL '90 days'`, `count(DISTINCT indicator_code)` |
+| 뉴스 MongoDB | `docker exec aqts-mongodb mongosh ...` (인증 없음) | `docker exec aqts-scheduler python -c "..."` (PyMongo + 환경변수 인증) |
+| Redis 스냅샷 | `docker exec aqts-redis redis-cli GET ...` (인증 없음, 거짓 PASS) | `docker exec aqts-scheduler python -c "..."` (redis-py + 환경변수 인증) |
+| Redis 리포트 | 동일 거짓 PASS | 동일 방식으로 수정 |
+
+**검증 기대 결과**: WARN 6 → WARN 2 이하 (MarketClose/PostMarket 에러는 KIS Rate Limit 관련, 텔레그램은 설정 상태 의존).
+
+### 6.8 verify_phase1_demo.sh 검색 패턴 보정 — false-negative 해소
 
 **문제**: 실제 실행 완료된 이벤트가 FAIL로 판정되는 false-negative 7건.
 
@@ -415,7 +436,7 @@ gcloud compute ssh aqts-server --zone=asia-northeast3-a \
 | PostMarket 핸들러 완료 | `[PostMarket] 완료:` 패턴만 검색하나 KIS 실패 시 `skip` 로그 출력 | `skip` 도 "실행 확인" 으로 인정 (에러가 아닌 방어 동작) |
 | MarketClose 에러/스킵 | `skip` 을 에러와 동일 취급 | `실패`만 에러로 판정, `skip`은 별도 warn으로 분리 |
 
-### 6.8 verify_phase1_demo.sh 경제지표 DB 쿼리 컬럼명 수정 (collected_at → time)
+### 6.9 verify_phase1_demo.sh 경제지표 DB 쿼리 컬럼명 수정 (collected_at → time)
 
 **문제**: `economic_indicators` 테이블의 타임스탬프 컬럼은 `time`이지만, 검증 스크립트에서 `collected_at`으로 참조하여 항상 0건으로 조회됨 (WARN 판정).
 **해결**: `collected_at::date` → `time::date`로 수정.
