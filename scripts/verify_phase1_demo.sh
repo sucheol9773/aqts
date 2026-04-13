@@ -224,7 +224,7 @@ verify_exchange_rate() {
     # DB 저장 확인
     local rate_count
     rate_count=$(docker exec aqts-postgres bash -c \
-        "psql -U aqts -d aqts -t -A -c \"SELECT count(*) FROM exchange_rates WHERE collected_at::date = '${TODAY}'\"" \
+        "psql -U aqts_user -d aqts -t -A -c \"SELECT count(*) FROM exchange_rates WHERE time::date = '${TODAY}'\"" \
         </dev/null 2>/dev/null || echo "0")
     rate_count=$(echo "$rate_count" | tr -d '[:space:]')
 
