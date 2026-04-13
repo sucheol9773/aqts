@@ -144,11 +144,11 @@ def sample_investor_profile():
     return InvestorProfile(
         user_id="test_user_001",
         risk_profile=RiskProfile.BALANCED,
-        seed_capital=50_000_000,
-        investment_purpose="WEALTH_GROWTH",
+        seed_amount=50_000_000,
+        investment_goal="WEALTH_GROWTH",
         investment_style=InvestmentStyle.DISCRETIONARY,
         loss_tolerance=-0.10,
-        sector_filters=["Energy"],  # Energy 섹터 제외
+        sector_filter=["Energy"],  # Energy 섹터 제외
         designated_tickers=["005930"],  # 005930 강제 포함
     )
 
@@ -161,11 +161,11 @@ def sample_investor_profile_no_filters():
     return InvestorProfile(
         user_id="test_user_002",
         risk_profile=RiskProfile.CONSERVATIVE,
-        seed_capital=30_000_000,
-        investment_purpose="INCOME",
+        seed_amount=30_000_000,
+        investment_goal="INCOME",
         investment_style=InvestmentStyle.ADVISORY,
         loss_tolerance=-0.05,
-        sector_filters=[],  # 필터 없음
+        sector_filter=[],  # 필터 없음
         designated_tickers=[],  # 지정 종목 없음
     )
 
@@ -890,8 +890,8 @@ class TestUniverseManager:
             InvestorProfile(
                 user_id="test",
                 risk_profile=RiskProfile.BALANCED,
-                seed_capital=50_000_000,
-                investment_purpose="WEALTH_GROWTH",
+                seed_amount=50_000_000,
+                investment_goal="WEALTH_GROWTH",
                 investment_style=InvestmentStyle.DISCRETIONARY,
                 loss_tolerance=-0.10,
             )
@@ -916,8 +916,8 @@ class TestUniverseManager:
             InvestorProfile(
                 user_id="test",
                 risk_profile=RiskProfile.BALANCED,
-                seed_capital=50_000_000,
-                investment_purpose="WEALTH_GROWTH",
+                seed_amount=50_000_000,
+                investment_goal="WEALTH_GROWTH",
                 investment_style=InvestmentStyle.DISCRETIONARY,
                 loss_tolerance=-0.10,
             )
@@ -980,11 +980,11 @@ class TestUniverseIntegration:
         profile = InvestorProfile(
             user_id="user_001",
             risk_profile=RiskProfile.BALANCED,
-            seed_capital=50_000_000,
-            investment_purpose="WEALTH_GROWTH",
+            seed_amount=50_000_000,
+            investment_goal="WEALTH_GROWTH",
             investment_style=InvestmentStyle.DISCRETIONARY,
             loss_tolerance=-0.10,
-            sector_filters=["Energy"],
+            sector_filter=["Energy"],
             designated_tickers=["005930"],
         )
 

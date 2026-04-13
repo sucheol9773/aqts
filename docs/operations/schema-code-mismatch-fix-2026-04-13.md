@@ -149,7 +149,53 @@ check_bool_literals: PASSED
 2. 기존 rebalancing/emergency 기록은 없으므로 데이터 마이그레이션 불필요
 3. `financial_collector.py` 변경은 DART API 호출 흐름에만 영향 (Phase 1 데모에서는 미사용)
 
-## 미해결 (MEDIUM)
+## MEDIUM 스키마-코드 불일치 해결 (동일일자 후속 커밋)
 
-- `user_profiles` 테이블: 코드에서 `user_id`, `seed_capital`, `investment_purpose` 사용하나 실제 DB에는 `investment_types`, `seed_amount`, `investment_goal` 등 다른 컬럼명
-- `universe` 테이블: 코드에서 `market_cap`, `avg_daily_volume` 참조하나 실제 DB에 해당 컬럼 없음
+### user_profiles 테이블 — 4개 컬럼명 불일치 + 1개 누락 컬럼
+
+**문제**: 코드의 InvestorProfile 데이터클래스 필드명과 DB 컬럼명이 불일치
+
+| 코드 (변경 전) | DB 컬럼 (변경 후) |
+|---|---|
+| `seed_capital` | `seed_amount` |
+| `investment_purpose` | `investment_goal` |
+| `sector_filters` (복수형) | `sector_filter` (단수형) |
+| `user_id` (누락) | `user_id` (Migration 007에서 추가) |
+
+**수정 범위**:
+
+- `core/portfolio_manager/profile.py`: InvestorProfile 데이터클래스 필드명 변경, `to_dict()` 키 변경, `from_dict()` 키 변경, SQL INSERT/SELECT/UPDATE 쿼리 컬럼명 변경. `sector_filter`는 DB ARRAY(Text) 타입이므로 `json.dumps()` 제거하고 리스트 직접 전달. `from_dict()`는 하위호환을 위해 JSON 문자열과 리스트 모두 처리.
+- `api/routes/profile.py`: `_profile_to_response()` 헬퍼에서 `profile.seed_capital` → `profile.seed_amount`, `profile.investment_purpose` → `profile.investment_goal`
+- `api/routes/market.py`: InvestorProfile 생성 시 `seed_capital=` → `seed_amount=`, `investment_purpose=` → `investment_goal=`
+- `core/portfolio_manager/rebalancing.py`: `self.profile.seed_capital` → `self.profile.seed_amount` (2개소). 함수 파라미터 `seed_capital`은 독립 수치 파라미터이므로 변경 불필요.
+- `tests/test_profile.py`: ~100개소 필드명 변경 + `to_dict()` 기대값을 `json.dumps()` → 리스트로 변경
+- `tests/test_universe.py`: ~10개소 InvestorProfile 생성 필드명 변경
+- `tests/test_rebalancing.py`: InvestorProfile 생성/접근 필드명 변경 (함수 파라미터 `seed_capital`은 유지)
+- `tests/test_coverage_api_routes_v2.py`: mock 속성명 변경
+
+### universe 테이블 — 2개 누락 컬럼 + ON CONFLICT 불일치
+
+**문제**: 코드에서 `market_cap`, `avg_daily_volume` 컬럼을 참조하나 DB에 없음. `ON CONFLICT (ticker)` 사용하나 실제 UNIQUE 제약은 `(ticker, market)`.
+
+**수정**:
+
+- `alembic/versions/007_user_profiles_universe_columns.py`: `market_cap` NUMERIC(20,2), `avg_daily_volume` NUMERIC(20,2) 컬럼 추가
+- `core/portfolio_manager/universe.py`: `ON CONFLICT (ticker)` → `ON CONFLICT (ticker, market)`, `self._profile.sector_filters` → `self._profile.sector_filter`
+
+### 변경 시 주의한 구분
+
+함수 파라미터명 `seed_capital` (예: `construct(seed_capital=...)`, `execute_scheduled_rebalancing(seed_capital=...)`, `_generate_rebalancing_orders(seed_capital=...)`)은 InvestorProfile 데이터클래스 필드가 아닌 독립적인 수치 파라미터이므로 변경하지 않았다. 변경 대상은 InvestorProfile 생성(`InvestorProfile(seed_amount=...)`) 및 프로필 필드 접근(`self.profile.seed_amount`)으로 한정했다.
+
+### 배포 시 주의사항
+
+1. `alembic upgrade head` 실행 필요 (007 마이그레이션: user_profiles.user_id + universe.market_cap/avg_daily_volume)
+2. 기존 user_profiles 행이 있으면 `user_id`는 NULL로 추가됨 — 운영에서 데이터 보정 후 NOT NULL 전환 필요
+3. 기존 universe 행의 `market_cap`, `avg_daily_volume`은 NULL — 다음 유니버스 빌드 시 채워짐
+
+### 검증 결과
+
+```
+ruff check:    0 errors
+black --check: 0 reformats
+pytest:        4007 passed, 0 failed, 24 warnings
+```

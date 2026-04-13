@@ -418,8 +418,8 @@ class RebalancingEngine:
 
             # 간단한 구현: 현재 가치 기반 손실률
             # 실제로는 매입가를 기반으로 계산해야 함
-            seed_capital = self.profile.seed_capital
-            current_loss_pct = (total_value - seed_capital) / seed_capital
+            seed_amount = self.profile.seed_amount
+            current_loss_pct = (total_value - seed_amount) / seed_amount
 
             return min(0.0, current_loss_pct)  # 손실만 반환 (음수)
 
@@ -466,7 +466,7 @@ class RebalancingEngine:
 
         portfolio = TargetPortfolio(
             allocations=defensive_allocations,
-            total_value=self.profile.seed_capital,
+            total_value=self.profile.seed_amount,
             cash_ratio=cash_ratio,
             optimization_method="defensive",
         )

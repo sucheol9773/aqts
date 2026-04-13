@@ -41,11 +41,11 @@ class InvestorProfile:
 
     user_id: str
     risk_profile: RiskProfile  # 투자 성향 (보수/균형/공격/배당)
-    seed_capital: float  # 초기 자본 (원)
-    investment_purpose: str  # 투자 목적
+    seed_amount: float  # 초기 자본 (원) — DB: seed_amount
+    investment_goal: str  # 투자 목적 — DB: investment_goal
     investment_style: InvestmentStyle  # 투자 스타일 (일임형/자문형)
     loss_tolerance: float  # 손실 허용도 (%)
-    sector_filters: list[str] = field(default_factory=list)  # 제외 섹터 목록
+    sector_filter: list[str] = field(default_factory=list)  # 제외 섹터 목록 — DB: sector_filter (ARRAY)
     designated_tickers: list[str] = field(default_factory=list)  # 지정 종목 목록
     rebalancing_frequency: RebalancingFrequency = RebalancingFrequency.MONTHLY  # 리밸런싱 주기
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -56,12 +56,12 @@ class InvestorProfile:
         return {
             "user_id": self.user_id,
             "risk_profile": self.risk_profile.value,
-            "seed_capital": self.seed_capital,
-            "investment_purpose": self.investment_purpose,
+            "seed_amount": self.seed_amount,
+            "investment_goal": self.investment_goal,
             "investment_style": self.investment_style.value,
             "loss_tolerance": self.loss_tolerance,
-            "sector_filters": json.dumps(self.sector_filters),
-            "designated_tickers": json.dumps(self.designated_tickers),
+            "sector_filter": self.sector_filter,
+            "designated_tickers": self.designated_tickers,
             "rebalancing_frequency": self.rebalancing_frequency.value,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
@@ -70,15 +70,24 @@ class InvestorProfile:
     @classmethod
     def from_dict(cls, data: dict) -> "InvestorProfile":
         """딕셔너리에서 생성"""
+        # sector_filter: DB 는 ARRAY(Text) 타입이므로 이미 list 일 수 있다.
+        sector_raw = data.get("sector_filter", [])
+        if isinstance(sector_raw, str):
+            sector_raw = json.loads(sector_raw)
+        # designated_tickers: 동일
+        tickers_raw = data.get("designated_tickers", [])
+        if isinstance(tickers_raw, str):
+            tickers_raw = json.loads(tickers_raw)
+
         return cls(
             user_id=data["user_id"],
             risk_profile=RiskProfile(data["risk_profile"]),
-            seed_capital=data["seed_capital"],
-            investment_purpose=data["investment_purpose"],
+            seed_amount=data["seed_amount"],
+            investment_goal=data["investment_goal"],
             investment_style=InvestmentStyle(data["investment_style"]),
             loss_tolerance=data["loss_tolerance"],
-            sector_filters=json.loads(data.get("sector_filters", "[]")),
-            designated_tickers=json.loads(data.get("designated_tickers", "[]")),
+            sector_filter=sector_raw if sector_raw else [],
+            designated_tickers=tickers_raw if tickers_raw else [],
             rebalancing_frequency=RebalancingFrequency(data.get("rebalancing_frequency", "MONTHLY")),
             created_at=data.get("created_at", datetime.now(timezone.utc)),
             updated_at=data.get("updated_at", datetime.now(timezone.utc)),
@@ -106,11 +115,11 @@ class InvestorProfileManager:
         self,
         user_id: str,
         risk_profile: RiskProfile,
-        seed_capital: float,
-        investment_purpose: str,
+        seed_amount: float,
+        investment_goal: str,
         investment_style: InvestmentStyle,
         loss_tolerance: float,
-        sector_filters: Optional[list[str]] = None,
+        sector_filter: Optional[list[str]] = None,
         designated_tickers: Optional[list[str]] = None,
         rebalancing_frequency: Optional[RebalancingFrequency] = None,
     ) -> InvestorProfile:
@@ -120,11 +129,11 @@ class InvestorProfileManager:
         Args:
             user_id: 사용자 ID
             risk_profile: 투자 성향
-            seed_capital: 초기 자본 (원)
-            investment_purpose: 투자 목적
+            seed_amount: 초기 자본 (원)
+            investment_goal: 투자 목적
             investment_style: 투자 스타일
             loss_tolerance: 손실 허용도 (%)
-            sector_filters: 제외 섹터 목록 (선택)
+            sector_filter: 제외 섹터 목록 (선택)
             designated_tickers: 지정 종목 목록 (선택)
             rebalancing_frequency: 리밸런싱 주기 (선택, 기본값: MONTHLY)
 
@@ -137,11 +146,11 @@ class InvestorProfileManager:
         profile = InvestorProfile(
             user_id=user_id,
             risk_profile=risk_profile,
-            seed_capital=seed_capital,
-            investment_purpose=investment_purpose,
+            seed_amount=seed_amount,
+            investment_goal=investment_goal,
             investment_style=investment_style,
             loss_tolerance=loss_tolerance,
-            sector_filters=sector_filters or [],
+            sector_filter=sector_filter or [],
             designated_tickers=designated_tickers or [],
             rebalancing_frequency=rebalancing_frequency or RebalancingFrequency.MONTHLY,
         )
@@ -151,13 +160,13 @@ class InvestorProfileManager:
                 query = text(
                     """
                     INSERT INTO user_profiles (
-                        user_id, risk_profile, seed_capital, investment_purpose,
-                        investment_style, loss_tolerance, sector_filters,
+                        user_id, risk_profile, seed_amount, investment_goal,
+                        investment_style, loss_tolerance, sector_filter,
                         designated_tickers, rebalancing_frequency, created_at, updated_at
                     )
                     VALUES (
-                        :user_id, :risk_profile, :seed_capital, :investment_purpose,
-                        :investment_style, :loss_tolerance, :sector_filters,
+                        :user_id, :risk_profile, :seed_amount, :investment_goal,
+                        :investment_style, :loss_tolerance, :sector_filter,
                         :designated_tickers, :rebalancing_frequency, :created_at, :updated_at
                     )
                 """
@@ -191,8 +200,8 @@ class InvestorProfileManager:
             async with async_session_factory() as session:
                 query = text(
                     """
-                    SELECT user_id, risk_profile, seed_capital, investment_purpose,
-                           investment_style, loss_tolerance, sector_filters,
+                    SELECT user_id, risk_profile, seed_amount, investment_goal,
+                           investment_style, loss_tolerance, sector_filter,
                            designated_tickers, rebalancing_frequency, created_at, updated_at
                     FROM user_profiles
                     WHERE user_id = :user_id
@@ -208,11 +217,11 @@ class InvestorProfileManager:
                 data = {
                     "user_id": row[0],
                     "risk_profile": row[1],
-                    "seed_capital": row[2],
-                    "investment_purpose": row[3],
+                    "seed_amount": row[2],
+                    "investment_goal": row[3],
                     "investment_style": row[4],
                     "loss_tolerance": row[5],
-                    "sector_filters": row[6],
+                    "sector_filter": row[6],
                     "designated_tickers": row[7],
                     "rebalancing_frequency": row[8],
                     "created_at": row[9],
@@ -230,7 +239,7 @@ class InvestorProfileManager:
 
         Args:
             user_id: 사용자 ID
-            **kwargs: 갱신할 프로필 필드 (risk_profile, seed_capital, etc.)
+            **kwargs: 갱신할 프로필 필드 (risk_profile, seed_amount, etc.)
 
         Returns:
             갱신된 InvestorProfile 인스턴스
@@ -258,11 +267,11 @@ class InvestorProfileManager:
                     """
                     UPDATE user_profiles
                     SET risk_profile = :risk_profile,
-                        seed_capital = :seed_capital,
-                        investment_purpose = :investment_purpose,
+                        seed_amount = :seed_amount,
+                        investment_goal = :investment_goal,
                         investment_style = :investment_style,
                         loss_tolerance = :loss_tolerance,
-                        sector_filters = :sector_filters,
+                        sector_filter = :sector_filter,
                         designated_tickers = :designated_tickers,
                         rebalancing_frequency = :rebalancing_frequency,
                         updated_at = :updated_at

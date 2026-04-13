@@ -22,8 +22,8 @@ def _profile_to_response(profile) -> ProfileResponse:
     return ProfileResponse(
         risk_profile=profile.risk_profile.value,
         investment_style=profile.investment_style.value,
-        investment_goal=profile.investment_purpose,
-        initial_capital=profile.seed_capital,
+        investment_goal=profile.investment_goal,
+        initial_capital=profile.seed_amount,
         max_loss_tolerance=profile.loss_tolerance,
         created_at=profile.created_at.isoformat() if profile.created_at else None,
         updated_at=profile.updated_at.isoformat() if profile.updated_at else None,
@@ -85,8 +85,8 @@ async def update_profile(
             profile = await manager.create_profile(
                 user_id=current_user,
                 risk_profile=RiskProfile(request.risk_profile),
-                seed_capital=request.initial_capital,
-                investment_purpose=request.investment_goal,
+                seed_amount=request.initial_capital,
+                investment_goal=request.investment_goal,
                 investment_style=InvestmentStyle(request.investment_style),
                 loss_tolerance=request.max_loss_tolerance or 0.10,
             )
@@ -98,9 +98,9 @@ async def update_profile(
             if request.investment_style:
                 update_kwargs["investment_style"] = InvestmentStyle(request.investment_style)
             if request.investment_goal:
-                update_kwargs["investment_purpose"] = request.investment_goal
+                update_kwargs["investment_goal"] = request.investment_goal
             if request.initial_capital:
-                update_kwargs["seed_capital"] = request.initial_capital
+                update_kwargs["seed_amount"] = request.initial_capital
             if request.max_loss_tolerance is not None:
                 update_kwargs["loss_tolerance"] = request.max_loss_tolerance
 

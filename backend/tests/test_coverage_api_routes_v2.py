@@ -911,8 +911,8 @@ class TestProfileRoutes:
         mock_profile = MagicMock()
         mock_profile.risk_profile = RiskProfile.BALANCED
         mock_profile.investment_style = InvestmentStyle.ADVISORY
-        mock_profile.investment_purpose = "WEALTH_GROWTH"
-        mock_profile.seed_capital = 50_000_000
+        mock_profile.investment_goal = "WEALTH_GROWTH"
+        mock_profile.seed_amount = 50_000_000
         mock_profile.loss_tolerance = 0.10
         mock_profile.created_at = datetime.now(timezone.utc)
         mock_profile.updated_at = datetime.now(timezone.utc)
@@ -973,8 +973,8 @@ class TestProfileRoutes:
         mock_new = MagicMock()
         mock_new.risk_profile = RiskProfile.AGGRESSIVE
         mock_new.investment_style = InvestmentStyle.DISCRETIONARY
-        mock_new.investment_purpose = "WEALTH_GROWTH"
-        mock_new.seed_capital = 100_000_000
+        mock_new.investment_goal = "WEALTH_GROWTH"
+        mock_new.seed_amount = 100_000_000
         mock_new.loss_tolerance = 0.20
         mock_new.created_at = datetime.now(timezone.utc)
         mock_new.updated_at = datetime.now(timezone.utc)
@@ -1007,8 +1007,8 @@ class TestProfileRoutes:
         updated = MagicMock()
         updated.risk_profile = RiskProfile.BALANCED
         updated.investment_style = InvestmentStyle.ADVISORY
-        updated.investment_purpose = "WEALTH_GROWTH"
-        updated.seed_capital = 50_000_000
+        updated.investment_goal = "WEALTH_GROWTH"
+        updated.seed_amount = 50_000_000
         updated.loss_tolerance = 0.15
         updated.created_at = datetime.now(timezone.utc)
         updated.updated_at = datetime.now(timezone.utc)

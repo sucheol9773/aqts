@@ -41,11 +41,11 @@ class TestInvestorProfile:
         # Given: 프로필 생성 파라미터
         user_id = "user_001"
         risk_profile = RiskProfile.BALANCED
-        seed_capital = 50_000_000.0
-        investment_purpose = "자산 증식"
+        seed_amount = 50_000_000.0
+        investment_goal = "자산 증식"
         investment_style = InvestmentStyle.DISCRETIONARY
         loss_tolerance = 0.10
-        sector_filters = ["IT", "Healthcare"]
+        sector_filter = ["IT", "Healthcare"]
         designated_tickers = ["005930", "000660"]
         rebalancing_frequency = RebalancingFrequency.MONTHLY
 
@@ -53,11 +53,11 @@ class TestInvestorProfile:
         profile = InvestorProfile(
             user_id=user_id,
             risk_profile=risk_profile,
-            seed_capital=seed_capital,
-            investment_purpose=investment_purpose,
+            seed_amount=seed_amount,
+            investment_goal=investment_goal,
             investment_style=investment_style,
             loss_tolerance=loss_tolerance,
-            sector_filters=sector_filters,
+            sector_filter=sector_filter,
             designated_tickers=designated_tickers,
             rebalancing_frequency=rebalancing_frequency,
         )
@@ -65,11 +65,11 @@ class TestInvestorProfile:
         # Then: 모든 필드 검증
         assert profile.user_id == user_id
         assert profile.risk_profile == risk_profile
-        assert profile.seed_capital == seed_capital
-        assert profile.investment_purpose == investment_purpose
+        assert profile.seed_amount == seed_amount
+        assert profile.investment_goal == investment_goal
         assert profile.investment_style == investment_style
         assert profile.loss_tolerance == loss_tolerance
-        assert profile.sector_filters == sector_filters
+        assert profile.sector_filter == sector_filter
         assert profile.designated_tickers == designated_tickers
         assert profile.rebalancing_frequency == rebalancing_frequency
         assert profile.created_at is not None
@@ -84,14 +84,14 @@ class TestInvestorProfile:
         profile = InvestorProfile(
             user_id="user_002",
             risk_profile=RiskProfile.AGGRESSIVE,
-            seed_capital=30_000_000.0,
-            investment_purpose="수익 창출",
+            seed_amount=30_000_000.0,
+            investment_goal="수익 창출",
             investment_style=InvestmentStyle.ADVISORY,
             loss_tolerance=0.15,
         )
 
         # Then: 기본값 검증
-        assert profile.sector_filters == []
+        assert profile.sector_filter == []
         assert profile.designated_tickers == []
         assert profile.rebalancing_frequency == RebalancingFrequency.MONTHLY
 
@@ -104,11 +104,11 @@ class TestInvestorProfile:
         profile = InvestorProfile(
             user_id="user_003",
             risk_profile=RiskProfile.CONSERVATIVE,
-            seed_capital=100_000_000.0,
-            investment_purpose="은퇴 자금",
+            seed_amount=100_000_000.0,
+            investment_goal="은퇴 자금",
             investment_style=InvestmentStyle.DISCRETIONARY,
             loss_tolerance=0.05,
-            sector_filters=["Energy", "Utilities"],
+            sector_filter=["Energy", "Utilities"],
             designated_tickers=["010950", "011200"],
             rebalancing_frequency=RebalancingFrequency.QUARTERLY,
         )
@@ -119,13 +119,13 @@ class TestInvestorProfile:
         # Then: 변환 결과 검증
         assert result["user_id"] == "user_003"
         assert result["risk_profile"] == "CONSERVATIVE"  # enum.value
-        assert result["seed_capital"] == 100_000_000.0
-        assert result["investment_purpose"] == "은퇴 자금"
+        assert result["seed_amount"] == 100_000_000.0
+        assert result["investment_goal"] == "은퇴 자금"
         assert result["investment_style"] == "DISCRETIONARY"  # enum.value
         assert result["loss_tolerance"] == 0.05
-        # 리스트는 JSON 문자열로 변환
-        assert result["sector_filters"] == json.dumps(["Energy", "Utilities"])
-        assert result["designated_tickers"] == json.dumps(["010950", "011200"])
+        # DB ARRAY 타입이므로 리스트 그대로 반환
+        assert result["sector_filter"] == ["Energy", "Utilities"]
+        assert result["designated_tickers"] == ["010950", "011200"]
         assert result["rebalancing_frequency"] == "QUARTERLY"  # enum.value
         assert isinstance(result["created_at"], datetime)
         assert isinstance(result["updated_at"], datetime)
@@ -139,8 +139,8 @@ class TestInvestorProfile:
         profile = InvestorProfile(
             user_id="user_004",
             risk_profile=RiskProfile.BALANCED,
-            seed_capital=50_000_000.0,
-            investment_purpose="테스트",
+            seed_amount=50_000_000.0,
+            investment_goal="테스트",
             investment_style=InvestmentStyle.ADVISORY,
             loss_tolerance=0.10,
         )
@@ -148,9 +148,9 @@ class TestInvestorProfile:
         # When: 딕셔너리 변환
         result = profile.to_dict()
 
-        # Then: 빈 JSON 배열 검증
-        assert result["sector_filters"] == "[]"
-        assert result["designated_tickers"] == "[]"
+        # Then: 빈 리스트 검증
+        assert result["sector_filter"] == []
+        assert result["designated_tickers"] == []
 
     def test_from_dict(self):
         """딕셔너리에서 프로필 생성 테스트
@@ -162,11 +162,11 @@ class TestInvestorProfile:
         data = {
             "user_id": "user_005",
             "risk_profile": "BALANCED",
-            "seed_capital": 50_000_000.0,
-            "investment_purpose": "자산 증식",
+            "seed_amount": 50_000_000.0,
+            "investment_goal": "자산 증식",
             "investment_style": "DISCRETIONARY",
             "loss_tolerance": 0.10,
-            "sector_filters": json.dumps(["IT", "Finance"]),
+            "sector_filter": json.dumps(["IT", "Finance"]),
             "designated_tickers": json.dumps(["005930", "207940"]),
             "rebalancing_frequency": "BIMONTHLY",
             "created_at": now,
@@ -179,11 +179,11 @@ class TestInvestorProfile:
         # Then: 역직렬화 결과 검증
         assert profile.user_id == "user_005"
         assert profile.risk_profile == RiskProfile.BALANCED
-        assert profile.seed_capital == 50_000_000.0
-        assert profile.investment_purpose == "자산 증식"
+        assert profile.seed_amount == 50_000_000.0
+        assert profile.investment_goal == "자산 증식"
         assert profile.investment_style == InvestmentStyle.DISCRETIONARY
         assert profile.loss_tolerance == 0.10
-        assert profile.sector_filters == ["IT", "Finance"]
+        assert profile.sector_filter == ["IT", "Finance"]
         assert profile.designated_tickers == ["005930", "207940"]
         assert profile.rebalancing_frequency == RebalancingFrequency.BIMONTHLY
         assert profile.created_at == now
@@ -198,8 +198,8 @@ class TestInvestorProfile:
         data = {
             "user_id": "user_006",
             "risk_profile": "AGGRESSIVE",
-            "seed_capital": 30_000_000.0,
-            "investment_purpose": "단기 수익",
+            "seed_amount": 30_000_000.0,
+            "investment_goal": "단기 수익",
             "investment_style": "ADVISORY",
             "loss_tolerance": 0.15,
         }
@@ -208,7 +208,7 @@ class TestInvestorProfile:
         profile = InvestorProfile.from_dict(data)
 
         # Then: 기본값 검증
-        assert profile.sector_filters == []
+        assert profile.sector_filter == []
         assert profile.designated_tickers == []
         assert profile.rebalancing_frequency == RebalancingFrequency.MONTHLY
 
@@ -221,11 +221,11 @@ class TestInvestorProfile:
         original = InvestorProfile(
             user_id="user_007",
             risk_profile=RiskProfile.DIVIDEND,
-            seed_capital=100_000_000.0,
-            investment_purpose="배당 수입",
+            seed_amount=100_000_000.0,
+            investment_goal="배당 수입",
             investment_style=InvestmentStyle.DISCRETIONARY,
             loss_tolerance=0.08,
-            sector_filters=["Utilities", "Finance", "Real Estate"],
+            sector_filter=["Utilities", "Finance", "Real Estate"],
             designated_tickers=["010950", "011170", "000270"],
             rebalancing_frequency=RebalancingFrequency.QUARTERLY,
         )
@@ -237,11 +237,11 @@ class TestInvestorProfile:
         # Then: 모든 필드 비교
         assert restored.user_id == original.user_id
         assert restored.risk_profile == original.risk_profile
-        assert restored.seed_capital == original.seed_capital
-        assert restored.investment_purpose == original.investment_purpose
+        assert restored.seed_amount == original.seed_amount
+        assert restored.investment_goal == original.investment_goal
         assert restored.investment_style == original.investment_style
         assert restored.loss_tolerance == original.loss_tolerance
-        assert restored.sector_filters == original.sector_filters
+        assert restored.sector_filter == original.sector_filter
         assert restored.designated_tickers == original.designated_tickers
         assert restored.rebalancing_frequency == original.rebalancing_frequency
 
@@ -278,8 +278,8 @@ class TestInvestorProfileManager:
         ):
             user_id = "user_create_001"
             risk_profile = RiskProfile.BALANCED
-            seed_capital = 50_000_000.0
-            investment_purpose = "자산 증식"
+            seed_amount = 50_000_000.0
+            investment_goal = "자산 증식"
             investment_style = InvestmentStyle.DISCRETIONARY
             loss_tolerance = 0.10
 
@@ -287,8 +287,8 @@ class TestInvestorProfileManager:
             result = await manager.create_profile(
                 user_id=user_id,
                 risk_profile=risk_profile,
-                seed_capital=seed_capital,
-                investment_purpose=investment_purpose,
+                seed_amount=seed_amount,
+                investment_goal=investment_goal,
                 investment_style=investment_style,
                 loss_tolerance=loss_tolerance,
             )
@@ -296,8 +296,8 @@ class TestInvestorProfileManager:
             # Then: 반환된 프로필 검증
             assert result.user_id == user_id
             assert result.risk_profile == risk_profile
-            assert result.seed_capital == seed_capital
-            assert result.investment_purpose == investment_purpose
+            assert result.seed_amount == seed_amount
+            assert result.investment_goal == investment_goal
             assert result.investment_style == investment_style
             assert result.loss_tolerance == loss_tolerance
             # DB 저장 메서드 호출 검증
@@ -308,7 +308,7 @@ class TestInvestorProfileManager:
     async def test_create_profile_with_optional_fields(self, manager, mock_session):
         """선택적 필드를 포함한 프로필 생성 테스트
 
-        sector_filters, designated_tickers, rebalancing_frequency를
+        sector_filter, designated_tickers, rebalancing_frequency를
         포함하여 프로필을 생성하는지 검증합니다.
         """
         # Given: 모든 필드를 지정
@@ -320,17 +320,17 @@ class TestInvestorProfileManager:
             result = await manager.create_profile(
                 user_id="user_create_002",
                 risk_profile=RiskProfile.AGGRESSIVE,
-                seed_capital=30_000_000.0,
-                investment_purpose="수익 창출",
+                seed_amount=30_000_000.0,
+                investment_goal="수익 창출",
                 investment_style=InvestmentStyle.ADVISORY,
                 loss_tolerance=0.15,
-                sector_filters=["IT", "Healthcare"],
+                sector_filter=["IT", "Healthcare"],
                 designated_tickers=["005930", "000660"],
                 rebalancing_frequency=RebalancingFrequency.BIMONTHLY,
             )
 
             # Then: 선택적 필드 검증
-            assert result.sector_filters == ["IT", "Healthcare"]
+            assert result.sector_filter == ["IT", "Healthcare"]
             assert result.designated_tickers == ["005930", "000660"]
             assert result.rebalancing_frequency == RebalancingFrequency.BIMONTHLY
 
@@ -345,12 +345,12 @@ class TestInvestorProfileManager:
         result_row = (
             "user_get_001",  # user_id
             "BALANCED",  # risk_profile
-            50_000_000.0,  # seed_capital
-            "자산 증식",  # investment_purpose
+            50_000_000.0,  # seed_amount
+            "자산 증식",  # investment_goal
             "DISCRETIONARY",  # investment_style
             0.10,  # loss_tolerance
-            json.dumps(["IT", "Finance"]),  # sector_filters
-            json.dumps(["005930"]),  # designated_tickers
+            ["IT", "Finance"],  # sector_filter (DB ARRAY 타입 → 리스트 반환)
+            ["005930"],  # designated_tickers (DB ARRAY 타입 → 리스트 반환)
             "MONTHLY",  # rebalancing_frequency
             now,  # created_at
             now,  # updated_at
@@ -371,9 +371,9 @@ class TestInvestorProfileManager:
             assert result is not None
             assert result.user_id == "user_get_001"
             assert result.risk_profile == RiskProfile.BALANCED
-            assert result.seed_capital == 50_000_000.0
-            assert result.investment_purpose == "자산 증식"
-            assert result.sector_filters == ["IT", "Finance"]
+            assert result.seed_amount == 50_000_000.0
+            assert result.investment_goal == "자산 증식"
+            assert result.sector_filter == ["IT", "Finance"]
             assert result.designated_tickers == ["005930"]
             mock_session.execute.assert_called_once()
 
@@ -413,8 +413,8 @@ class TestInvestorProfileManager:
             "자산 증식",
             "DISCRETIONARY",
             0.10,
-            json.dumps([]),
-            json.dumps([]),
+            [],  # sector_filter (DB ARRAY 타입 → 리스트 반환)
+            [],  # designated_tickers (DB ARRAY 타입 → 리스트 반환)
             "MONTHLY",
             now,
             now,
@@ -438,7 +438,7 @@ class TestInvestorProfileManager:
             assert result.risk_profile == RiskProfile.AGGRESSIVE
             assert result.loss_tolerance == 0.15
             # 원래 필드는 유지
-            assert result.seed_capital == 50_000_000.0
+            assert result.seed_amount == 50_000_000.0
             # updated_at이 갱신됨
             assert result.updated_at > now
             # execute 2번 호출: get_profile 1회 + update 1회
@@ -481,8 +481,8 @@ class TestInvestorProfileManager:
             "자산 증식",
             "DISCRETIONARY",
             0.10,
-            json.dumps(["IT"]),
-            json.dumps(["005930"]),
+            ["IT"],  # sector_filter (DB ARRAY 타입 → 리스트 반환)
+            ["005930"],  # designated_tickers (DB ARRAY 타입 → 리스트 반환)
             "MONTHLY",
             now,
             now,
@@ -498,16 +498,16 @@ class TestInvestorProfileManager:
             # When: 여러 필드 갱신
             result = await manager.update_profile(
                 user_id="user_update_002",
-                seed_capital=100_000_000.0,
+                seed_amount=100_000_000.0,
                 loss_tolerance=0.20,
-                sector_filters=["Energy", "Finance"],
+                sector_filter=["Energy", "Finance"],
                 rebalancing_frequency=RebalancingFrequency.QUARTERLY,
             )
 
             # Then: 모든 갱신 필드 검증
-            assert result.seed_capital == 100_000_000.0
+            assert result.seed_amount == 100_000_000.0
             assert result.loss_tolerance == 0.20
-            assert result.sector_filters == ["Energy", "Finance"]
+            assert result.sector_filter == ["Energy", "Finance"]
             assert result.rebalancing_frequency == RebalancingFrequency.QUARTERLY
 
     def test_apply_profile_to_strategy_balanced(self, manager):
@@ -519,8 +519,8 @@ class TestInvestorProfileManager:
         profile = InvestorProfile(
             user_id="user_strategy_001",
             risk_profile=RiskProfile.BALANCED,
-            seed_capital=50_000_000.0,
-            investment_purpose="자산 증식",
+            seed_amount=50_000_000.0,
+            investment_goal="자산 증식",
             investment_style=InvestmentStyle.DISCRETIONARY,
             loss_tolerance=0.10,
             rebalancing_frequency=RebalancingFrequency.MONTHLY,
@@ -552,8 +552,8 @@ class TestInvestorProfileManager:
         profile = InvestorProfile(
             user_id="user_strategy_002",
             risk_profile=RiskProfile.CONSERVATIVE,
-            seed_capital=100_000_000.0,
-            investment_purpose="은퇴 자금",
+            seed_amount=100_000_000.0,
+            investment_goal="은퇴 자금",
             investment_style=InvestmentStyle.ADVISORY,
             loss_tolerance=0.05,
             rebalancing_frequency=RebalancingFrequency.QUARTERLY,
@@ -583,8 +583,8 @@ class TestInvestorProfileManager:
         profile = InvestorProfile(
             user_id="user_strategy_003",
             risk_profile=RiskProfile.AGGRESSIVE,
-            seed_capital=30_000_000.0,
-            investment_purpose="수익 창출",
+            seed_amount=30_000_000.0,
+            investment_goal="수익 창출",
             investment_style=InvestmentStyle.DISCRETIONARY,
             loss_tolerance=0.15,
             rebalancing_frequency=RebalancingFrequency.MONTHLY,
@@ -614,8 +614,8 @@ class TestInvestorProfileManager:
         profile = InvestorProfile(
             user_id="user_strategy_004",
             risk_profile=RiskProfile.DIVIDEND,
-            seed_capital=100_000_000.0,
-            investment_purpose="배당 수입",
+            seed_amount=100_000_000.0,
+            investment_goal="배당 수입",
             investment_style=InvestmentStyle.ADVISORY,
             loss_tolerance=0.08,
             rebalancing_frequency=RebalancingFrequency.QUARTERLY,
@@ -645,8 +645,8 @@ class TestInvestorProfileManager:
             InvestorProfile(
                 user_id=f"user_{rp.value.lower()}",
                 risk_profile=rp,
-                seed_capital=50_000_000.0,
-                investment_purpose="test",
+                seed_amount=50_000_000.0,
+                investment_goal="test",
                 investment_style=InvestmentStyle.DISCRETIONARY,
                 loss_tolerance=0.10,
             )
@@ -673,8 +673,8 @@ class TestInvestorProfileManager:
         profile = InvestorProfile(
             user_id="user_fields_test",
             risk_profile=RiskProfile.BALANCED,
-            seed_capital=50_000_000.0,
-            investment_purpose="test",
+            seed_amount=50_000_000.0,
+            investment_goal="test",
             investment_style=InvestmentStyle.DISCRETIONARY,
             loss_tolerance=0.10,
         )
@@ -725,11 +725,11 @@ class TestInvestorProfileIntegration:
         # Given: 프로필 생성 파라미터
         user_id = "workflow_user_001"
         risk_profile = RiskProfile.BALANCED
-        seed_capital = 50_000_000.0
-        investment_purpose = "자산 증식"
+        seed_amount = 50_000_000.0
+        investment_goal = "자산 증식"
         investment_style = InvestmentStyle.DISCRETIONARY
         loss_tolerance = 0.10
-        sector_filters = ["IT", "Healthcare"]
+        sector_filter = ["IT", "Healthcare"]
         designated_tickers = ["005930", "000660"]
 
         with patch(
@@ -740,11 +740,11 @@ class TestInvestorProfileIntegration:
             created_profile = await manager.create_profile(
                 user_id=user_id,
                 risk_profile=risk_profile,
-                seed_capital=seed_capital,
-                investment_purpose=investment_purpose,
+                seed_amount=seed_amount,
+                investment_goal=investment_goal,
                 investment_style=investment_style,
                 loss_tolerance=loss_tolerance,
-                sector_filters=sector_filters,
+                sector_filter=sector_filter,
                 designated_tickers=designated_tickers,
             )
 
@@ -755,11 +755,11 @@ class TestInvestorProfileIntegration:
                 for key in [
                     "user_id",
                     "risk_profile",
-                    "seed_capital",
-                    "investment_purpose",
+                    "seed_amount",
+                    "investment_goal",
                     "investment_style",
                     "loss_tolerance",
-                    "sector_filters",
+                    "sector_filter",
                     "designated_tickers",
                     "rebalancing_frequency",
                     "created_at",
@@ -776,11 +776,11 @@ class TestInvestorProfileIntegration:
             # Then: 생성된 프로필과 조회된 프로필이 동일
             assert retrieved_profile.user_id == created_profile.user_id
             assert retrieved_profile.risk_profile == created_profile.risk_profile
-            assert retrieved_profile.seed_capital == created_profile.seed_capital
-            assert retrieved_profile.investment_purpose == created_profile.investment_purpose
+            assert retrieved_profile.seed_amount == created_profile.seed_amount
+            assert retrieved_profile.investment_goal == created_profile.investment_goal
             assert retrieved_profile.investment_style == created_profile.investment_style
             assert retrieved_profile.loss_tolerance == created_profile.loss_tolerance
-            assert retrieved_profile.sector_filters == created_profile.sector_filters
+            assert retrieved_profile.sector_filter == created_profile.sector_filter
             assert retrieved_profile.designated_tickers == created_profile.designated_tickers
 
     @pytest.mark.asyncio
@@ -797,8 +797,8 @@ class TestInvestorProfileIntegration:
             created_profile = await manager.create_profile(
                 user_id="workflow_user_002",
                 risk_profile=RiskProfile.CONSERVATIVE,
-                seed_capital=100_000_000.0,
-                investment_purpose="은퇴 자금",
+                seed_amount=100_000_000.0,
+                investment_goal="은퇴 자금",
                 investment_style=InvestmentStyle.ADVISORY,
                 loss_tolerance=0.05,
             )

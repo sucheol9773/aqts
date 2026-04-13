@@ -226,8 +226,8 @@ def investor_profile():
     return InvestorProfile(
         user_id="test_user",
         risk_profile=RiskProfile.BALANCED,
-        seed_capital=50_000_000.0,  # 5천만원
-        investment_purpose="WEALTH_GROWTH",
+        seed_amount=50_000_000.0,  # 5천만원
+        investment_goal="WEALTH_GROWTH",
         investment_style=InvestmentStyle.DISCRETIONARY,
         loss_tolerance=-0.10,  # -10%
         rebalancing_frequency=RebalancingFrequency.MONTHLY,
@@ -408,7 +408,7 @@ class TestRebalancingEngine:
     async def test_check_emergency_trigger_no_loss(self, rebalancing_engine):
         """큰 손실 허용도로 설정 시 트리거 미발생"""
         # Arrange
-        rebalancing_engine.profile.seed_capital = 50_000_000.0
+        rebalancing_engine.profile.seed_amount = 50_000_000.0
         rebalancing_engine.profile.loss_tolerance = -0.50  # -50% 손실 허용
         current_portfolio = {"005930": 0.5, "000660": 0.5}
         market_data = {"005930": 50000, "000660": 50000}
@@ -437,7 +437,7 @@ class TestRebalancingEngine:
     async def test_check_emergency_trigger_loss_exceeds(self, rebalancing_engine):
         """손실 허용도 초과 - 비상 트리거 발생"""
         # Arrange
-        rebalancing_engine.profile.seed_capital = 50_000_000.0
+        rebalancing_engine.profile.seed_amount = 50_000_000.0
         rebalancing_engine.profile.loss_tolerance = -0.10  # -10%
         current_portfolio = {"005930": 0.5, "000660": 0.5}
         market_data = {"005930": 40000, "000660": 40000}
@@ -774,7 +774,7 @@ class TestRebalancingEngine:
     async def test_calculate_portfolio_loss_no_loss(self, rebalancing_engine):
         """손실 없음 - 0.0 반환"""
         # Arrange
-        rebalancing_engine.profile.seed_capital = 50_000_000.0
+        rebalancing_engine.profile.seed_amount = 50_000_000.0
         current_portfolio = {"005930": 0.5, "000660": 0.5}
         portfolio_values = {"005930": 27_500_000, "000660": 27_500_000}  # 총 55M
 
@@ -788,7 +788,7 @@ class TestRebalancingEngine:
     async def test_calculate_portfolio_loss_with_loss(self, rebalancing_engine):
         """손실 발생 - 음수 반환"""
         # Arrange
-        rebalancing_engine.profile.seed_capital = 50_000_000.0
+        rebalancing_engine.profile.seed_amount = 50_000_000.0
         current_portfolio = {"005930": 0.5, "000660": 0.5}
         portfolio_values = {"005930": 20_000_000, "000660": 20_000_000}  # 총 40M
 
@@ -816,7 +816,7 @@ class TestRebalancingEngine:
     async def test_calculate_portfolio_loss_capped_at_zero(self, rebalancing_engine):
         """손실이 항상 0 이하인지 테스트 (이득은 0으로 캡핑)"""
         # Arrange
-        rebalancing_engine.profile.seed_capital = 40_000_000.0
+        rebalancing_engine.profile.seed_amount = 40_000_000.0
         current_portfolio = {"005930": 1.0}
         portfolio_values = {"005930": 50_000_000}  # 이득 25%
 

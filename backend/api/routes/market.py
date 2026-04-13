@@ -193,8 +193,8 @@ async def get_universe(current_user=Depends(require_viewer)):
             profile = InvestorProfile(
                 user_id=current_user,
                 risk_profile=RiskProfile.BALANCED,
-                seed_capital=50_000_000,
-                investment_purpose="WEALTH_GROWTH",
+                seed_amount=50_000_000,
+                investment_goal="WEALTH_GROWTH",
                 investment_style=InvestmentStyle.ADVISORY,
                 loss_tolerance=0.10,
             )

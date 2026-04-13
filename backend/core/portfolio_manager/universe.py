@@ -136,8 +136,8 @@ class UniverseManager:
             logger.info(f"로드된 종목 수: {len(items)}")
 
             # 2. 섹터 필터 적용
-            if self._profile.sector_filters:
-                items = self._apply_sector_filter(items, self._profile.sector_filters)
+            if self._profile.sector_filter:
+                items = self._apply_sector_filter(items, self._profile.sector_filter)
                 logger.info(f"섹터 필터 후: {len(items)}개")
 
             # 3. 지정 종목 강제 포함
@@ -179,8 +179,8 @@ class UniverseManager:
             items = await self._load_all_active_stocks()
 
             # 동일한 필터 파이프라인 적용
-            if self._profile.sector_filters:
-                items = self._apply_sector_filter(items, self._profile.sector_filters)
+            if self._profile.sector_filter:
+                items = self._apply_sector_filter(items, self._profile.sector_filter)
 
             items = self._apply_designated_tickers(items, self._profile.designated_tickers)
             items = self._apply_auto_filter(items)
@@ -200,7 +200,7 @@ class UniverseManager:
         섹터 필터 적용
 
         사용자가 지정한 섹터만 포함합니다.
-        사용자 프로필의 sector_filters에 명시된 섹터만 유니버스에 포함됩니다.
+        사용자 프로필의 sector_filter에 명시된 섹터만 유니버스에 포함됩니다.
 
         Args:
             items: 종목 리스트
@@ -361,11 +361,11 @@ class UniverseManager:
                             :ticker, :market, :sector, :asset_type,
                             :market_cap, :avg_daily_volume, :is_active, :updated_at
                         )
-                        ON CONFLICT (ticker) DO UPDATE SET
-                            market_cap = :market_cap,
-                            avg_daily_volume = :avg_daily_volume,
-                            is_active = :is_active,
-                            updated_at = :updated_at
+                        ON CONFLICT (ticker, market) DO UPDATE SET
+                            market_cap = EXCLUDED.market_cap,
+                            avg_daily_volume = EXCLUDED.avg_daily_volume,
+                            is_active = EXCLUDED.is_active,
+                            updated_at = EXCLUDED.updated_at
                     """
                     )
 
