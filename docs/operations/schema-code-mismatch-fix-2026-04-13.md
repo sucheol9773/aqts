@@ -199,3 +199,21 @@ ruff check:    0 errors
 black --check: 0 reformats
 pytest:        4007 passed, 0 failed, 24 warnings
 ```
+
+## CD 파이프라인 latest 태그 불일치 수정 (동일일자 후속 커밋)
+
+### 문제
+
+CD 파이프라인이 `docker pull ghcr.io/.../aqts-backend:sha-xxx`만 수행하고, 서버 로컬의 `latest` 태그를 갱신하지 않았다. `docker-compose.yml`은 `${IMAGE_TAG:-latest}`로 폴백하므로, `IMAGE_TAG` 미설정 상태에서 수동으로 `docker compose run`을 실행하면 과거 이미지가 사용되어 마이그레이션 파일 누락 등의 오류가 발생했다.
+
+### 발현 경위
+
+Migration 007 적용을 위해 `docker compose run --rm -T backend alembic upgrade head`를 수동 실행했으나, `latest` 태그가 migration 006/007이 없는 구 이미지를 가리키고 있어 `Can't locate revision identified by '007'` 오류가 발생했다. 실행 중인 `aqts-backend` 컨테이너(SHA 태그 사용)에는 파일이 정상 존재.
+
+### 수정
+
+`cd.yml` Step 4에서 `docker pull` 직후 로컬 `latest` 태그를 현재 배포 이미지로 갱신하는 `docker tag` 명령을 추가했다. 이 태그는 서버 로컬 전용이며 ghcr.io에 push하지 않는다.
+
+```bash
+docker tag "${IMAGE_REF}" "ghcr.io/${IMAGE_NAMESPACE}/aqts-backend:latest"
+```

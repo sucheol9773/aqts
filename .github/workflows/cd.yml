@@ -139,6 +139,14 @@ jobs:
             echo "═══ Step 4: Pull verified image from GHCR ═══"
             docker pull "${IMAGE_REF}"
 
+            # 서버 로컬의 latest 태그를 현재 배포 이미지로 갱신한다.
+            # docker-compose.yml 은 IMAGE_TAG 미설정 시 latest 폴백을 사용하므로,
+            # 수동 docker compose run 시에도 현재 배포 이미지가 사용되도록 보장한다.
+            # 이 태그는 로컬 전용이며 ghcr.io 에 push 하지 않는다.
+            LATEST_REF="ghcr.io/${IMAGE_NAMESPACE}/aqts-backend:latest"
+            docker tag "${IMAGE_REF}" "${LATEST_REF}"
+            echo "✅ Local latest tag updated → ${IMAGE_REF}"
+
             # backend 와 scheduler 는 동일 이미지/digest 를 공유해야 한다.
             # pull 직후의 로컬 digest 를 EXPECTED_IMAGE_ID 로 잠가두고,
             # 이후 단계에서 두 컨테이너가 실제로 이 digest 를 실행 중인지
