@@ -392,3 +392,11 @@ gcloud compute ssh aqts-server --zone=asia-northeast3-a \
 - `portfolio_holdings.avg_price` — 별도 테이블의 올바른 컬럼명 (001_initial_schema.py L203)
 
 **검증**: ruff 0 errors, black 0 reformats, pytest 4002 passed / 0 failed.
+
+### 6.6 verify_phase1_demo.sh 배포 후 로그 유실 대응 — 백업 로그 fallback 검색
+
+**문제**: CD 파이프라인의 `--force-recreate`로 컨테이너가 재생성되면 `docker compose logs`에 이전 이벤트 로그가 남지 않음. 배포 후 검증 스크립트를 실행하면 실제로 정상 실행된 이벤트도 FAIL로 판정되는 false-negative 발생. §6.2에서 배포 전 로그 백업을 추가했으나, 검증 스크립트가 이를 활용하지 않아 백업의 효과가 절반만 달성됨.
+
+**해결**: `_combined_logs()` 함수를 추가하여, 현재 컨테이너 로그(`docker compose logs`)와 당일 백업 로그(`~/aqts/logs/deploy-backups/{service}-pre-deploy-{YYYYMMDD}*.log`)를 합산 검색. `check_log`, `check_no_error`, 텔레그램 발송 확인 등 모든 로그 검색 경로에 적용.
+
+**추가 수정**: 경제지표 DB 쿼리의 사용자명 `aqts` → `aqts_user` (§6.1에서 exchange_rates만 수정했고 economic_indicators 쿼리가 누락되어 있었음).

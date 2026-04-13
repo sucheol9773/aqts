@@ -38,6 +38,29 @@ TODAY_UTC=$(TZ=Asia/Seoul date -d "${TODAY} 00:00:00" -u +%Y-%m-%dT%H:%M:%S 2>/d
     || echo "${TODAY}T00:00:00")
 COMPOSE="docker compose"
 
+# ── 배포 전 로그 백업 디렉토리 ──
+# CD 파이프라인이 --force-recreate 직전에 ~/aqts/logs/deploy-backups/ 에 백업한다.
+# 컨테이너 재생성 후에는 docker compose logs 에 이전 이벤트 로그가 없으므로,
+# 당일 백업 파일도 함께 검색하여 로그 유실로 인한 false-negative 를 방지한다.
+LOG_BACKUP_DIR="${HOME}/aqts/logs/deploy-backups"
+
+# 컨테이너 로그 + 당일 백업 로그를 합산하여 반환하는 함수
+# 인자: container_name
+_combined_logs() {
+    local container="$1"
+    # 1) 현재 컨테이너 로그
+    $COMPOSE logs "$container" --since "${TODAY_UTC}" 2>/dev/null || true
+    # 2) 당일 백업 로그 (파일명에 날짜가 YYYYMMDD 형태로 포함됨)
+    local today_compact
+    today_compact=$(echo "${TODAY}" | tr -d '-')
+    if [ -d "${LOG_BACKUP_DIR}" ]; then
+        for f in "${LOG_BACKUP_DIR}/${container}-pre-deploy-${today_compact}"*.log \
+                 "${LOG_BACKUP_DIR}/${container}-pre-rollback-${today_compact}"*.log; do
+            [ -f "$f" ] && cat "$f" 2>/dev/null || true
+        done
+    fi
+}
+
 # ── 유틸리티 함수 ──
 pass() {
     PASS_COUNT=$((PASS_COUNT + 1))
@@ -72,11 +95,10 @@ check_log() {
     local min_count="${4:-1}"
 
     local count
-    # docker compose logs는 stderr에 "service attaching" 메시지를 출력할 수 있으므로
-    # 2>/dev/null로 stderr를 반드시 제거한 뒤 grep에 전달한다.
+    # 컨테이너 로그 + 당일 백업 로그를 합산 검색.
     # grep -c 대신 grep | wc -l 을 사용하여 멀티라인 카운트 문제를 방지한다.
     # pipefail 환경에서 grep 0건 매칭 시 exit 1 → 스크립트 종료 방지를 위해 || true
-    count=$($COMPOSE logs "$container" --since "${TODAY_UTC}" 2>/dev/null \
+    count=$(_combined_logs "$container" \
         | { grep "$pattern" 2>/dev/null || true; } | wc -l)
     count=$((count + 0))  # 안전한 정수 변환
 
@@ -94,7 +116,7 @@ check_no_error() {
     local description="$3"
 
     local count
-    count=$($COMPOSE logs "$container" --since "${TODAY_UTC}" 2>/dev/null \
+    count=$(_combined_logs "$container" \
         | { grep "$pattern" 2>/dev/null || true; } | wc -l)
     count=$((count + 0))  # 안전한 정수 변환
 
@@ -193,7 +215,7 @@ verify_pre_market() {
     # DB 저장 확인 (TimescaleDB)
     local econ_count
     econ_count=$(docker exec aqts-postgres bash -c \
-        "psql -U aqts -d aqts -t -A -c \"SELECT count(*) FROM economic_indicators WHERE collected_at::date = '${TODAY}'\"" \
+        "psql -U aqts_user -d aqts -t -A -c \"SELECT count(*) FROM economic_indicators WHERE collected_at::date = '${TODAY}'\"" \
         </dev/null 2>/dev/null || echo "0")
     econ_count=$(echo "$econ_count" | tr -d '[:space:]')
 
@@ -275,12 +297,12 @@ verify_post_market() {
 
     # 텔레그램 발송 확인
     local telegram_ok
-    telegram_ok=$($COMPOSE logs scheduler --since "${TODAY_UTC}" 2>/dev/null \
+    telegram_ok=$(_combined_logs scheduler \
         | { grep "Telegram.*발송\|send_text.*success\|텔레그램.*완료" 2>/dev/null || true; } | wc -l)
     telegram_ok=$((telegram_ok + 0))
 
     local telegram_err
-    telegram_err=$($COMPOSE logs scheduler --since "${TODAY_UTC}" 2>/dev/null \
+    telegram_err=$(_combined_logs scheduler \
         | { grep "Telegram 발송 실패\|텔레그램.*미설정" 2>/dev/null || true; } | wc -l)
     telegram_err=$((telegram_err + 0))
 
