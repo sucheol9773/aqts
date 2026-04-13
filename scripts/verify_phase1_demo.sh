@@ -75,8 +75,9 @@ check_log() {
     # docker compose logs는 stderr에 "service attaching" 메시지를 출력할 수 있으므로
     # 2>/dev/null로 stderr를 반드시 제거한 뒤 grep에 전달한다.
     # grep -c 대신 grep | wc -l 을 사용하여 멀티라인 카운트 문제를 방지한다.
+    # pipefail 환경에서 grep 0건 매칭 시 exit 1 → 스크립트 종료 방지를 위해 || true
     count=$($COMPOSE logs "$container" --since "${TODAY_UTC}" 2>/dev/null \
-        | grep "$pattern" 2>/dev/null | wc -l)
+        | { grep "$pattern" 2>/dev/null || true; } | wc -l)
     count=$((count + 0))  # 안전한 정수 변환
 
     if [ "$count" -ge "$min_count" ]; then
@@ -94,7 +95,7 @@ check_no_error() {
 
     local count
     count=$($COMPOSE logs "$container" --since "${TODAY_UTC}" 2>/dev/null \
-        | grep "$pattern" 2>/dev/null | wc -l)
+        | { grep "$pattern" 2>/dev/null || true; } | wc -l)
     count=$((count + 0))  # 안전한 정수 변환
 
     if [ "$count" -eq 0 ]; then
@@ -113,7 +114,7 @@ verify_health() {
 
     # Docker 컨테이너 상태
     local running
-    running=$($COMPOSE ps --format json 2>/dev/null | grep '"running"' | wc -l)
+    running=$($COMPOSE ps --format json 2>/dev/null | { grep '"running"' || true; } | wc -l)
     running=$((running + 0))
     if [ "$running" -ge 11 ]; then
         pass "Docker 컨테이너 전체 가동 (${running}개)"
@@ -273,12 +274,12 @@ verify_post_market() {
     # 텔레그램 발송 확인
     local telegram_ok
     telegram_ok=$($COMPOSE logs scheduler --since "${TODAY_UTC}" 2>/dev/null \
-        | grep "Telegram.*발송\|send_text.*success\|텔레그램.*완료" 2>/dev/null | wc -l)
+        | { grep "Telegram.*발송\|send_text.*success\|텔레그램.*완료" 2>/dev/null || true; } | wc -l)
     telegram_ok=$((telegram_ok + 0))
 
     local telegram_err
     telegram_err=$($COMPOSE logs scheduler --since "${TODAY_UTC}" 2>/dev/null \
-        | grep "Telegram 발송 실패\|텔레그램.*미설정" 2>/dev/null | wc -l)
+        | { grep "Telegram 발송 실패\|텔레그램.*미설정" 2>/dev/null || true; } | wc -l)
     telegram_err=$((telegram_err + 0))
 
     if [ "$telegram_ok" -gt 0 ]; then
