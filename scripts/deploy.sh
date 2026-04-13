@@ -168,7 +168,7 @@ log_info "서비스 안정화 대기 (최대 60초)..."
 MAX_WAIT=60
 WAIT=0
 while [[ $WAIT -lt $MAX_WAIT ]]; do
-    HEALTHY=$(docker compose ps --format json 2>/dev/null | grep -c '"healthy"' || true)
+    HEALTHY=$(docker compose ps --format json 2>/dev/null | grep '"healthy"' | wc -l || true)
     TOTAL=$(docker compose ps -q 2>/dev/null | wc -l || echo 0)
 
     if [[ "$HEALTHY" -ge 4 ]]; then
