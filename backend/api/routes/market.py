@@ -183,7 +183,7 @@ async def get_universe(current_user=Depends(require_viewer)):
     try:
         # 사용자 프로필 조회
         profile_manager = InvestorProfileManager()
-        profile = await profile_manager.get_profile(current_user)
+        profile = await profile_manager.get_profile(current_user.id)
 
         if profile is None:
             # 프로필 미존재 시 기본 프로필로 유니버스 생성
@@ -191,7 +191,7 @@ async def get_universe(current_user=Depends(require_viewer)):
             from core.portfolio_manager.profile import InvestorProfile
 
             profile = InvestorProfile(
-                user_id=current_user,
+                user_id=current_user.id,
                 risk_profile=RiskProfile.BALANCED,
                 seed_amount=50_000_000,
                 investment_goal="WEALTH_GROWTH",

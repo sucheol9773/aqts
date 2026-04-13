@@ -40,11 +40,11 @@ async def get_profile(current_user=Depends(require_viewer)):
     """
     try:
         manager = InvestorProfileManager()
-        profile = await manager.get_profile(current_user)
+        profile = await manager.get_profile(current_user.id)
 
         if profile is None:
             # 프로필 미존재 시 기본 프로필 반환
-            logger.info(f"No profile found for user {current_user}, returning defaults")
+            logger.info(f"No profile found for user {current_user.id}, returning defaults")
             default_profile = ProfileResponse(
                 risk_profile=RiskProfile.BALANCED.value,
                 investment_style=InvestmentStyle.ADVISORY.value,
@@ -77,13 +77,13 @@ async def update_profile(
     """
     try:
         manager = InvestorProfileManager()
-        existing = await manager.get_profile(current_user)
+        existing = await manager.get_profile(current_user.id)
 
         if existing is None:
             # 프로필 미존재 → 신규 생성
-            logger.info(f"Creating new profile for user {current_user}")
+            logger.info(f"Creating new profile for user {current_user.id}")
             profile = await manager.create_profile(
-                user_id=current_user,
+                user_id=current_user.id,
                 risk_profile=RiskProfile(request.risk_profile),
                 seed_amount=request.initial_capital,
                 investment_goal=request.investment_goal,
@@ -104,7 +104,7 @@ async def update_profile(
             if request.max_loss_tolerance is not None:
                 update_kwargs["loss_tolerance"] = request.max_loss_tolerance
 
-            profile = await manager.update_profile(current_user, **update_kwargs)
+            profile = await manager.update_profile(current_user.id, **update_kwargs)
 
         logger.info(f"Profile updated: {request.model_dump(exclude_none=True)}")
         return APIResponse(

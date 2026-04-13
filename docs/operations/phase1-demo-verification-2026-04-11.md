@@ -545,3 +545,20 @@ Phase 1 DEMO 검증 완료 후, 미완성 API wiring 4건에 대해 순차적으
 | `tests/test_system_routes.py` | 리밸런싱 stub 테스트 3개 → 실제 엔진 테스트 4개로 교체 |
 
 **검증**: ruff 0 errors, black 0 reformatted, doc-sync PASSED, 전체 pytest 4012 passed.
+
+### 7.6 AuthenticatedUser → user_id wiring 버그 수정 (2026-04-14)
+
+**증상**: `PUT /api/profile/` 호출 시 `asyncpg.exceptions.DataError: invalid input for query argument $1: AuthenticatedUser(id='2ff026cd-...') (expected str, got AuthenticatedUser)` 발생.
+
+**근본 원인**: RBAC 미들웨어(`require_operator`, `require_viewer`)가 반환하는 `AuthenticatedUser(NamedTuple)` 객체를 `InvestorProfileManager.get_profile()` 등에 그대로 전달. `get_profile()`은 `str` 타입 `user_id`를 기대하지만, `AuthenticatedUser` 객체가 전달되어 SQL 파라미터 바인딩 실패.
+
+**영향 범위**: `profile.py`, `system.py`, `market.py` — `current_user`를 DB 쿼리에 직접 전달하는 5개 라우트.
+
+**수정 내용**:
+
+- `api/routes/profile.py`: `get_profile(current_user)` → `get_profile(current_user.id)` 등 4건
+- `api/routes/system.py`: `get_profile(current_user)` → `get_profile(current_user.id)` 1건
+- `api/routes/market.py`: `get_profile(current_user)` → `get_profile(current_user.id)` 1건 + `InvestorProfile(user_id=current_user)` → `user_id=current_user.id` 1건
+- 테스트: `test_system_routes.py`, `test_coverage_api_routes_v2.py`의 `current_user` mock을 문자열 → `AuthenticatedUser` 객체로 교체
+
+**검증**: ruff 0 errors, black 0 reformatted, pytest 4013 passed.

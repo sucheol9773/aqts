@@ -29,7 +29,9 @@ from config.constants import Market, OrderSide, OrderStatus
 
 @pytest.fixture
 def mock_user():
-    return "test_user"
+    from api.middleware.auth import AuthenticatedUser
+
+    return AuthenticatedUser(id="test_user", username="test_user", role="admin")
 
 
 @pytest.fixture

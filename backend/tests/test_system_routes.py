@@ -16,6 +16,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from starlette.requests import Request
 
+from api.middleware.auth import AuthenticatedUser
+
+
+def _mock_user(user_id: str = "admin", role: str = "admin") -> AuthenticatedUser:
+    """테스트용 AuthenticatedUser 객체 생성 헬퍼"""
+    return AuthenticatedUser(id=user_id, username=user_id, role=role)
+
 
 def _make_request(path: str = "/api/system/pipeline") -> Request:
     """테스트용 Starlette Request 생성"""
@@ -61,7 +68,7 @@ class TestSystemRoutes:
             mock_get_settings.return_value = mock_settings
 
             # Execute
-            response = await get_system_settings(current_user="admin")
+            response = await get_system_settings(current_user=_mock_user("admin"))
 
             # Assert
             assert response.success is True
@@ -80,7 +87,7 @@ class TestSystemRoutes:
             mock_get_settings.side_effect = Exception("Settings load error")
 
             # Execute
-            response = await get_system_settings(current_user="admin")
+            response = await get_system_settings(current_user=_mock_user("admin"))
 
             # Assert
             assert response.success is False
@@ -116,7 +123,7 @@ class TestSystemRoutes:
                 start_date="2025-01-01",
                 end_date="2025-12-31",
                 strategy="ENSEMBLE",
-                current_user="admin",
+                current_user=_mock_user("admin"),
                 db=mock_db,
             )
 
@@ -158,7 +165,7 @@ class TestSystemRoutes:
                 start_date="invalid",
                 end_date="2025-12-31",
                 strategy=None,
-                current_user="admin",
+                current_user=_mock_user("admin"),
                 db=mock_db,
             )
 
@@ -211,7 +218,7 @@ class TestSystemRoutes:
 
             response = await trigger_rebalancing(
                 rebalancing_type="MANUAL",
-                current_user="user123",
+                current_user=_mock_user("user123"),
                 db=mock_db,
             )
 
@@ -235,7 +242,7 @@ class TestSystemRoutes:
 
             response = await trigger_rebalancing(
                 rebalancing_type="MANUAL",
-                current_user="admin",
+                current_user=_mock_user("admin"),
                 db=mock_db,
             )
 
@@ -262,7 +269,7 @@ class TestSystemRoutes:
 
             response = await trigger_rebalancing(
                 rebalancing_type="MANUAL",
-                current_user="admin",
+                current_user=_mock_user("admin"),
                 db=mock_db,
             )
 
@@ -281,7 +288,7 @@ class TestSystemRoutes:
 
             response = await trigger_rebalancing(
                 rebalancing_type="EMERGENCY",
-                current_user="admin",
+                current_user=_mock_user("admin"),
                 db=mock_db,
             )
 
@@ -334,7 +341,7 @@ class TestSystemRoutes:
                 request=_make_request(),
                 tickers="005930,000660",
                 force_refresh=False,
-                current_user="analyst",
+                current_user=_mock_user("analyst"),
                 db=mock_db,
             )
 
@@ -402,7 +409,7 @@ class TestSystemRoutes:
                 request=_make_request(),
                 tickers="005930, 000660 , 360750",
                 force_refresh=False,
-                current_user="admin",
+                current_user=_mock_user("admin"),
                 db=mock_db,
             )
 
@@ -434,7 +441,7 @@ class TestSystemRoutes:
                 request=_make_request(),
                 tickers="005930",
                 force_refresh=False,
-                current_user="admin",
+                current_user=_mock_user("admin"),
                 db=mock_db,
             )
 
@@ -501,7 +508,7 @@ class TestSystemRoutes:
             response = await get_audit_logs(
                 limit=50,
                 module=None,
-                current_user="admin",
+                current_user=_mock_user("admin"),
                 db=mock_db,
             )
 

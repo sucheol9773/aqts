@@ -192,7 +192,7 @@ async def trigger_rebalancing(
 
         # ── 1. 사용자 프로필 조회 ──
         profile_mgr = InvestorProfileManager(db)
-        profile = await profile_mgr.get_profile(current_user)
+        profile = await profile_mgr.get_profile(current_user.id)
         if not profile:
             return APIResponse(
                 success=False,
