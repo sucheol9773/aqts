@@ -949,10 +949,10 @@ class OrderExecutor:
                     """
                     INSERT INTO orders (
                         order_id, ticker, market, side, quantity,
-                        filled_qty, avg_price, status, created_at, error_message
+                        filled_quantity, filled_price, status, created_at, error_message
                     ) VALUES (
                         :order_id, :ticker, :market, :side, :quantity,
-                        :filled_qty, :avg_price, :status, :created_at, :error_message
+                        :filled_quantity, :filled_price, :status, :created_at, :error_message
                     )
                 """
                 )
@@ -965,8 +965,8 @@ class OrderExecutor:
                         "market": result.market.value,
                         "side": result.side.value,
                         "quantity": result.quantity,
-                        "filled_qty": result.filled_quantity,
-                        "avg_price": result.avg_price,
+                        "filled_quantity": result.filled_quantity,
+                        "filled_price": result.avg_price,
                         "status": result.status.value,
                         "created_at": result.executed_at,
                         "error_message": result.error_message,

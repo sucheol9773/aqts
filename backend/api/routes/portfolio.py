@@ -46,13 +46,13 @@ async def get_portfolio_summary(
             query = text(
                 """
                 SELECT ticker, market,
-                       SUM(CASE WHEN side = 'BUY' THEN filled_qty ELSE -filled_qty END) AS net_qty,
-                       SUM(CASE WHEN side = 'BUY' THEN filled_qty * avg_price ELSE 0 END) AS total_cost,
-                       SUM(CASE WHEN side = 'BUY' THEN filled_qty ELSE 0 END) AS total_bought
+                       SUM(CASE WHEN side = 'BUY' THEN filled_quantity ELSE -filled_quantity END) AS net_qty,
+                       SUM(CASE WHEN side = 'BUY' THEN filled_quantity * filled_price ELSE 0 END) AS total_cost,
+                       SUM(CASE WHEN side = 'BUY' THEN filled_quantity ELSE 0 END) AS total_bought
                 FROM orders
                 WHERE status IN ('FILLED', 'PARTIAL')
                 GROUP BY ticker, market
-                HAVING SUM(CASE WHEN side = 'BUY' THEN filled_qty ELSE -filled_qty END) > 0
+                HAVING SUM(CASE WHEN side = 'BUY' THEN filled_quantity ELSE -filled_quantity END) > 0
             """
             )
             result = await db.execute(query)
@@ -125,13 +125,13 @@ async def get_positions(
             query = text(
                 """
                 SELECT ticker, market,
-                       SUM(CASE WHEN side = 'BUY' THEN filled_qty ELSE -filled_qty END) AS net_qty,
-                       SUM(CASE WHEN side = 'BUY' THEN filled_qty * avg_price ELSE 0 END) AS total_cost,
-                       SUM(CASE WHEN side = 'BUY' THEN filled_qty ELSE 0 END) AS total_bought
+                       SUM(CASE WHEN side = 'BUY' THEN filled_quantity ELSE -filled_quantity END) AS net_qty,
+                       SUM(CASE WHEN side = 'BUY' THEN filled_quantity * filled_price ELSE 0 END) AS total_cost,
+                       SUM(CASE WHEN side = 'BUY' THEN filled_quantity ELSE 0 END) AS total_bought
                 FROM orders
                 WHERE status IN ('FILLED', 'PARTIAL')
                 GROUP BY ticker, market
-                HAVING SUM(CASE WHEN side = 'BUY' THEN filled_qty ELSE -filled_qty END) > 0
+                HAVING SUM(CASE WHEN side = 'BUY' THEN filled_quantity ELSE -filled_quantity END) > 0
             """
             )
             result = await db.execute(query)
@@ -198,12 +198,12 @@ async def get_performance(
                 SELECT
                     COALESCE(SUM(
                         CASE WHEN side = 'SELL'
-                             THEN filled_qty * avg_price
-                             ELSE -filled_qty * avg_price
+                             THEN filled_quantity * filled_price
+                             ELSE -filled_quantity * filled_price
                         END
                     ), 0) AS net_pnl,
                     COUNT(*) AS trade_count,
-                    COUNT(CASE WHEN side = 'SELL' AND avg_price > 0 THEN 1 END) AS sell_count
+                    COUNT(CASE WHEN side = 'SELL' AND filled_price > 0 THEN 1 END) AS sell_count
                 FROM orders
                 WHERE status IN ('FILLED', 'PARTIAL')
                   AND created_at >= NOW() - MAKE_INTERVAL(days => :days)
@@ -265,8 +265,8 @@ async def get_value_history(
                 """
                 SELECT DATE(created_at) AS trade_date,
                        SUM(CASE WHEN side = 'BUY'
-                                THEN -filled_qty * avg_price
-                                ELSE filled_qty * avg_price END) AS daily_flow
+                                THEN -filled_quantity * filled_price
+                                ELSE filled_quantity * filled_price END) AS daily_flow
                 FROM orders
                 WHERE status IN ('FILLED', 'PARTIAL')
                   AND created_at >= NOW() - MAKE_INTERVAL(days => :days)

@@ -353,7 +353,7 @@ async def handle_market_close() -> dict:
                 """
                 SELECT side,
                        COUNT(*) AS cnt,
-                       COALESCE(SUM(filled_qty * avg_price), 0) AS total_amount
+                       COALESCE(SUM(filled_quantity * filled_price), 0) AS total_amount
                 FROM orders
                 WHERE DATE(created_at) = :today
                   AND status IN ('FILLED', 'PARTIAL')
@@ -556,7 +556,7 @@ async def handle_post_market() -> dict:
             today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             query = text(
                 """
-                SELECT ticker, side, filled_qty, avg_price, status, created_at
+                SELECT ticker, side, filled_quantity, filled_price, status, created_at
                 FROM orders
                 WHERE DATE(created_at) = :today
                   AND status IN ('FILLED', 'PARTIAL')

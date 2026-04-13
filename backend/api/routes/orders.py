@@ -456,7 +456,7 @@ async def get_orders(
                 query = text(
                     """
                     SELECT order_id, ticker, market, side, quantity,
-                           filled_qty, avg_price, status, created_at, error_message
+                           filled_quantity, filled_price, status, created_at, error_message
                     FROM orders
                     WHERE status = :status
                     ORDER BY created_at DESC
@@ -468,7 +468,7 @@ async def get_orders(
                 query = text(
                     """
                     SELECT order_id, ticker, market, side, quantity,
-                           filled_qty, avg_price, status, created_at, error_message
+                           filled_quantity, filled_price, status, created_at, error_message
                     FROM orders
                     ORDER BY created_at DESC
                     LIMIT :limit
@@ -515,7 +515,7 @@ async def get_order(
         query = text(
             """
             SELECT order_id, ticker, market, side, quantity,
-                   filled_qty, avg_price, status, created_at, error_message
+                   filled_quantity, filled_price, status, created_at, error_message
             FROM orders
             WHERE order_id = :order_id
         """

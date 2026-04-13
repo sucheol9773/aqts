@@ -367,3 +367,28 @@ gcloud compute ssh aqts-server --zone=asia-northeast3-a \
 
 **문제**: FRED/ECOS 병렬 수집 시 한쪽 예외가 다른 쪽을 취소 → 전체 수집 실패 및 이벤트루프 freeze 가능성.
 **해결**: `return_exceptions=True` 추가, 예외 발생 시 빈 리스트 대체 + error 로깅. 4건 테스트 추가.
+
+### 6.5 orders 테이블 SQL 컬럼명 불일치 수정 (filled_qty/avg_price → filled_quantity/filled_price)
+
+**문제**: `orders` 테이블의 실제 스키마는 `filled_quantity` (integer), `filled_price` (numeric(18,4)) 이지만, 다수의 SQL 쿼리에서 존재하지 않는 `filled_qty`, `avg_price` 컬럼을 참조. 15:30 MARKET_CLOSE 핸들러에서 `column "filled_qty" does not exist` 에러로 거래 통계 조회 실패. 같은 이유로 주문 저장(INSERT), 포트폴리오 조회, 주문 이력 조회도 모두 실패 상태였음.
+
+**근본 원인**: 초기 마이그레이션(`001_initial_schema.py`)은 처음부터 `filled_quantity`/`filled_price`로 정의했으나, SQL raw query 작성 시 Python `OrderResult` dataclass의 필드명(`avg_price`)이나 KIS API 응답 키(`filled_qty`)와 혼동하여 잘못된 컬럼명을 사용.
+
+**영향 범위 및 수정 내역**:
+
+| 파일 | 수정 위치 | 변경 내용 |
+|---|---|---|
+| `core/scheduler_handlers.py` | L356, L559 | SELECT 쿼리 `filled_qty` → `filled_quantity`, `avg_price` → `filled_price` |
+| `core/order_executor/executor.py` | L950-969 | INSERT INTO orders 컬럼명 및 파라미터 키 수정 |
+| `api/routes/portfolio.py` | L49-55, L128-134, L201-206, L268-269 | 4개 SELECT 쿼리 컬럼명 수정 |
+| `api/routes/orders.py` | L459, L471, L518 | 3개 SELECT 쿼리 컬럼명 수정 |
+
+**변경하지 않은 항목** (SQL 컬럼이 아닌 Python/API 레벨):
+
+- `OrderResult.avg_price` — Python dataclass 필드명 (executor.py L120)
+- `PositionInfo.avg_price` — Pydantic 스키마 (schemas/portfolio.py)
+- `api_result.get("filled_qty")` — KIS API 응답 파싱 (executor.py L538, L635)
+- `positions_data[].avg_price` — KIS 잔고 조회 결과 딕셔너리 키 (scheduler_handlers.py L330)
+- `portfolio_holdings.avg_price` — 별도 테이블의 올바른 컬럼명 (001_initial_schema.py L203)
+
+**검증**: ruff 0 errors, black 0 reformats, pytest 4002 passed / 0 failed.
