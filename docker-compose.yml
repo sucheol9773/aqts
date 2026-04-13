@@ -1,3 +1,14 @@
+# ── 공통 logging 정책 ──────────────────────────────────────
+# Docker 기본 json-file 드라이버는 컨테이너 재생성 시 로그가 유실된다.
+# max-size + max-file 으로 디스크 사용량을 제한하면서 로그를 보존한다.
+# e2-standard-2 (50 GB boot disk) 기준: 전체 서비스 합계 약 2 GB 상한.
+# x-logging 은 YAML anchor 로, 각 서비스에서 *default-logging 으로 참조.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
 services:
   # ══════════════════════════════════════
   # PostgreSQL + TimescaleDB
@@ -6,6 +17,7 @@ services:
     image: timescale/timescaledb:2.14.2-pg16
     container_name: aqts-postgres
     restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_DB: ${DB_NAME:-aqts}
       POSTGRES_USER: ${DB_USER:-aqts_user}
@@ -41,6 +53,7 @@ services:
     image: mongo:7.0.9
     container_name: aqts-mongodb
     restart: unless-stopped
+    logging: *default-logging
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-aqts_user}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?MONGO_PASSWORD is required}
@@ -64,6 +77,7 @@ services:
     image: redis:7.2.5-alpine
     container_name: aqts-redis
     restart: unless-stopped
+    logging: *default-logging
     command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     ports:
       - "127.0.0.1:${REDIS_PORT:-6379}:6379"
@@ -86,6 +100,7 @@ services:
     image: ghcr.io/${IMAGE_NAMESPACE:?IMAGE_NAMESPACE is required}/aqts-backend:${IMAGE_TAG:-latest}
     container_name: aqts-backend
     restart: unless-stopped
+    logging: *default-logging
     env_file:
       - .env
     environment:
@@ -113,6 +128,11 @@ services:
     image: ghcr.io/${IMAGE_NAMESPACE:?IMAGE_NAMESPACE is required}/aqts-backend:${IMAGE_TAG:-latest}
     container_name: aqts-scheduler
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "10"
     env_file:
       - .env
     environment:
@@ -154,6 +174,7 @@ services:
     image: prom/prometheus:v2.53.0
     container_name: aqts-prometheus
     restart: unless-stopped
+    logging: *default-logging
     volumes:
       - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./monitoring/prometheus/rules:/etc/prometheus/rules:ro
@@ -185,6 +206,7 @@ services:
     image: prom/alertmanager:v0.27.0
     container_name: aqts-alertmanager
     restart: unless-stopped
+    logging: *default-logging
     # ── 환경변수 → 템플릿 렌더링 ─────────────────────────────────
     # alertmanager 바이너리는 환경변수를 네이티브로 치환하지 않으므로
     # entrypoint 에서 sed 로 ${TELEGRAM_*} 플레이스홀더를 치환한 뒤
@@ -234,6 +256,7 @@ services:
     image: timescale/timescaledb:2.14.2-pg16
     container_name: aqts-db-backup
     restart: unless-stopped
+    logging: *default-logging
     entrypoint: ["/bin/bash", "/scripts/backup_cron.sh"]
     env_file:
       - .env
@@ -263,6 +286,7 @@ services:
     image: grafana/grafana:11.1.0
     container_name: aqts-grafana
     restart: unless-stopped
+    logging: *default-logging
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
@@ -286,6 +310,7 @@ services:
     image: otel/opentelemetry-collector-contrib:0.102.0
     container_name: aqts-otel-collector
     restart: unless-stopped
+    logging: *default-logging
     command: ["--config=/etc/otel-collector-config.yml"]
     volumes:
       - ./monitoring/otel-collector/otel-collector-config.yml:/etc/otel-collector-config.yml:ro
@@ -305,6 +330,7 @@ services:
     image: jaegertracing/all-in-one:1.57
     container_name: aqts-jaeger
     restart: unless-stopped
+    logging: *default-logging
     environment:
       COLLECTOR_OTLP_ENABLED: "true"
     ports:

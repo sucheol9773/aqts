@@ -278,7 +278,8 @@ INITIAL_CAPITAL_KRW=10000000
 | 환율 수집 배포 검증 | P2 | DB 영속화 코드 완료, 배포 후 `exchange_rates` 테이블 데이터 확인 필요 |
 | NewsCollector 자동 수집 검증 | P2 | 04-13(월) 08:30 KST handle_pre_market 실행 시 검증 |
 | 경제지표 자동 수집 검증 | P2 | 04-13(월) 08:30 KST FRED 9개 지표 수집 성공, DB 저장 실패 → 스키마 불일치 수정 완료 (아래 §8.1 참조) |
-| ECOS API 키 설정 | P3 | 한국은행 API 키 발급 후 서버 .env에 추가하면 자동 동작 |
+| ECOS API 키 설정 | ~~P3~~ | ✅ 2026-04-13 적용 완료, ECOS 4/4 활성 지표 수집 정상 (GDP 비활성화) |
+| Docker 로그 영속화 | P1 | `docker-compose.yml` logging 설정 추가 — scheduler 100m×10, 나머지 50m×5 |
 | ~~서버 .env CORS 변수명 변경~~ | ~~P2~~ | ✅ 2026-04-11 적용 완료 |
 | ~~서버 .env AQTS_REVOCATION_BACKEND 추가~~ | ~~P1~~ | ✅ 2026-04-11 적용 완료 |
 
