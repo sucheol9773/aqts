@@ -176,7 +176,7 @@ class TestAlertsRouteE2E(unittest.TestCase):
         import asyncio
 
         manager = AlertManager()
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             manager.create_and_persist_alert(
                 alert_type=AlertType.SYSTEM_ERROR,
                 level=AlertLevel.ERROR,
@@ -205,8 +205,7 @@ class TestAlertsRouteE2E(unittest.TestCase):
         import asyncio
 
         manager = AlertManager()
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(
+        asyncio.run(
             manager.create_and_persist_alert(
                 alert_type=AlertType.SYSTEM_ERROR,
                 level=AlertLevel.ERROR,
@@ -214,7 +213,7 @@ class TestAlertsRouteE2E(unittest.TestCase):
                 message="",
             )
         )
-        loop.run_until_complete(
+        asyncio.run(
             manager.create_and_persist_alert(
                 alert_type=AlertType.DAILY_REPORT,
                 level=AlertLevel.INFO,
@@ -244,9 +243,8 @@ class TestAlertsRouteE2E(unittest.TestCase):
         import asyncio
 
         manager = AlertManager()
-        loop = asyncio.get_event_loop()
         for lv in (AlertLevel.ERROR, AlertLevel.ERROR, AlertLevel.INFO):
-            loop.run_until_complete(
+            asyncio.run(
                 manager.create_and_persist_alert(
                     alert_type=AlertType.SYSTEM_ERROR,
                     level=lv,
@@ -276,7 +274,7 @@ class TestAlertsRouteE2E(unittest.TestCase):
         fake_collection = _FakeMongoCollection()
         manager.set_collection(fake_collection)
 
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             manager.create_and_persist_alert(
                 alert_type=AlertType.SYSTEM_ERROR,
                 level=AlertLevel.CRITICAL,
@@ -308,8 +306,7 @@ class TestAlertsRouteE2E(unittest.TestCase):
         fake_collection = _FakeMongoCollection()
         manager.set_collection(fake_collection)
 
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(
+        asyncio.run(
             manager.create_and_persist_alert(
                 alert_type=AlertType.SYSTEM_ERROR,
                 level=AlertLevel.ERROR,
@@ -317,7 +314,7 @@ class TestAlertsRouteE2E(unittest.TestCase):
                 message="",
             )
         )
-        loop.run_until_complete(
+        asyncio.run(
             manager.create_and_persist_alert(
                 alert_type=AlertType.DAILY_REPORT,
                 level=AlertLevel.INFO,
@@ -341,7 +338,7 @@ class TestAlertsRouteE2E(unittest.TestCase):
         import asyncio
 
         manager = AlertManager()
-        alert = asyncio.get_event_loop().run_until_complete(
+        alert = asyncio.run(
             manager.create_and_persist_alert(
                 alert_type=AlertType.SYSTEM_ERROR,
                 level=AlertLevel.ERROR,

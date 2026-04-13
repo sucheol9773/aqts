@@ -21,7 +21,6 @@ from core.health_checker import (
 )
 
 
-@pytest.mark.asyncio
 @pytest.mark.smoke
 class TestHealthChecker:
     """HealthChecker 클래스 종합 테스트"""

@@ -11,7 +11,6 @@ MFA (TOTP) 테스트
 import pytest
 
 
-@pytest.mark.asyncio
 class TestTOTPMechanics:
     """TOTP 기본 기능"""
 
@@ -58,7 +57,6 @@ class TestTOTPMechanics:
         assert "AQTS" in uri  # 발급자명
 
 
-@pytest.mark.asyncio
 class TestAuthServiceAuthenticate:
     """AuthService.authenticate() 테스트"""
 
