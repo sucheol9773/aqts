@@ -68,8 +68,8 @@ class KISTokenManager:
         timeout = self._settings.api_timeout
 
         @retry(
-            stop=stop_after_attempt(self._settings.api_retry_count),
-            wait=wait_exponential(multiplier=1, min=2, max=10),
+            stop=stop_after_attempt(self._settings.token_retry_count),
+            wait=wait_exponential(multiplier=2, min=2, max=self._settings.token_retry_max_wait),
         )
         async def _do_issue():
             async with httpx.AsyncClient(timeout=timeout) as client:

@@ -106,6 +106,14 @@ class KISSettings(BaseSettings):
     token_refresh_interval: int = Field(default=3600, description="토큰 갱신 주기 (초)")
     api_timeout: int = Field(default=10, description="API 요청 타임아웃 (초)")
     api_retry_count: int = Field(default=3, description="API 재시도 횟수")
+    token_retry_count: int = Field(
+        default=5,
+        description="토큰 발급 재시도 횟수 (EGW00133 1분 제한 대응)",
+    )
+    token_retry_max_wait: int = Field(
+        default=60,
+        description="토큰 발급 재시도 최대 대기 시간 (초)",
+    )
 
     # ── WebSocket 보안 예외 설정 ──
     # 단일 소스: pydantic 필드로 선언, validate_websocket_security()에서 직접 참조.

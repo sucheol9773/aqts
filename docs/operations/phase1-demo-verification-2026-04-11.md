@@ -440,3 +440,25 @@ gcloud compute ssh aqts-server --zone=asia-northeast3-a \
 
 **문제**: `economic_indicators` 테이블의 타임스탬프 컬럼은 `time`이지만, 검증 스크립트에서 `collected_at`으로 참조하여 항상 0건으로 조회됨 (WARN 판정).
 **해결**: `collected_at::date` → `time::date`로 수정.
+
+### 6.10 KIS 토큰 발급 재시도 백오프 강화 (EGW00133 대응)
+
+**문제**: KIS API 토큰 발급의 tenacity 재시도가 `max=10`(초)으로 설정되어 있었으나, EGW00133 에러는 1분당 1회 발급 제한이므로 3회 × 최대 10초 대기로는 모든 재시도가 실패할 수 있었다. 04/13 PRE_MARKET에서 OHLCV 수집 지연의 간접 원인.
+
+**수정**:
+
+- `config/settings.py`: `token_retry_count=5`, `token_retry_max_wait=60` 신규 설정 추가. 기존 `api_retry_count`/`api_timeout`은 REST API 호출 전용으로 유지.
+- `kis_client.py::_issue_token()`: `stop_after_attempt(api_retry_count)` → `stop_after_attempt(token_retry_count)`, `wait_exponential(max=10)` → `wait_exponential(multiplier=2, max=token_retry_max_wait)`.
+- 재시도 대기 시간: 4초 → 8초 → 16초 → 32초 → 60초 (총 ~120초, 1분 제한 2회 커버).
+
+**기존 방어 레이어와의 관계**: 이 변경은 토큰 발급 자체의 tenacity 재시도를 강화한 것이다. `kis_recovery.py`의 75초 쿨다운 복구 경로는 이 재시도가 모두 실패한 이후 작동하는 상위 레이어이며, 변경 없이 유지된다.
+
+### 6.11 Scheduler freeze (Redis SCAN) 관찰 종료
+
+**결론**: 실질적 위험 없음. 관찰 종료.
+
+**분석 결과**:
+
+- Redis SCAN은 `scheduler_idempotency.py::load_executed_for_date()`에서 스케줄러 부팅 시 1회만 호출 (async, non-blocking).
+- 일일 최대 5개 키 (`scheduler:executed:{YYYY-MM-DD}:{EVENT_TYPE}`), TTL 자동 만료 — 키 누적 위험 없음.
+- 기존에 "freeze"로 보고된 현상은 스케줄러 루프의 긴 sleep 경로로 인한 heartbeat stale이었으며, `scheduler_heartbeat.py`의 30초 단위 chunk sleep으로 이미 해결 완료.

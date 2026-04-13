@@ -28,6 +28,8 @@ class TestKISTokenExpiry(unittest.IsolatedAsyncioTestCase):
         settings.kis.app_secret = "test_app_secret"
         settings.kis.api_timeout = 10
         settings.kis.api_retry_count = 1
+        settings.kis.token_retry_count = 1
+        settings.kis.token_retry_max_wait = 60
         return settings
 
     @patch("core.data_collector.kis_client.get_settings")

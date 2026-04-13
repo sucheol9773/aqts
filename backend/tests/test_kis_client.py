@@ -35,6 +35,8 @@ def _mock_kis_settings(trading_mode=TradingMode.DEMO):
     mock.websocket_url = "ws://mock.api.com:31000"
     mock.api_timeout = 10
     mock.api_retry_count = 1
+    mock.token_retry_count = 1
+    mock.token_retry_max_wait = 60
     return mock
 
 
