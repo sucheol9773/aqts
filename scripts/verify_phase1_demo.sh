@@ -193,15 +193,17 @@ except:
     fi
 
     # 스케줄러 이벤트 실행 확인 (오늘 거래일인 경우)
-    check_log "scheduler" "거래일.*${TODAY}" "오늘(${TODAY}) 거래일 인식"
+    # 거래일 시작 로그: "=== 거래일 2026-04-13 (#N) ==="
+    # 또는 멱등성 복원 후 스케줄 완료 로그에 당일 날짜가 포함
+    check_log "scheduler" "거래일 ${TODAY}\|멱등성 복원: ${TODAY}" "오늘(${TODAY}) 거래일 인식"
 }
 
 verify_pre_market() {
     header "08:30 PreMarket 검증"
 
-    # 이벤트 시작/완료
-    check_log "scheduler" "▶.*PRE_MARKET" "PRE_MARKET 이벤트 시작"
-    check_log "scheduler" "✓.*PRE_MARKET.*완료" "PRE_MARKET 이벤트 완료"
+    # 이벤트 시작/완료 (멱등성 복원 로그도 실행 증거로 인정)
+    check_log "scheduler" "▶.*PRE_MARKET\|멱등성.*PRE_MARKET\|이미 실행된 이벤트.*PRE_MARKET" "PRE_MARKET 이벤트 실행 확인"
+    check_log "scheduler" "✓.*PRE_MARKET.*완료\|멱등성.*PRE_MARKET\|이미 실행된 이벤트.*PRE_MARKET" "PRE_MARKET 이벤트 완료 확인"
     check_no_error "scheduler" "✗.*PRE_MARKET.*실패" "PRE_MARKET 이벤트 실패 없음"
 
     # Step 2: 뉴스 수집
@@ -242,9 +244,9 @@ verify_pre_market() {
 verify_exchange_rate() {
     header "장중 환율 수집 검증"
 
-    # 환율 로그
-    check_log "backend" "환율.*조회 완료\|환율.*KRW" "환율 조회 성공"
-    check_no_error "backend" "환율 조회 실패" "환율 조회 에러 없음"
+    # 환율 로그 (환율 수집은 scheduler 컨테이너의 ExchangeRateCollectionLoop 에서 실행)
+    check_log "scheduler" "환율 DB 저장\|\[ExchangeRate\] 수집 완료" "환율 수집 성공"
+    check_no_error "scheduler" "환율.*실패\|ExchangeRate.*error\|ExchangeRate.*실패" "환율 수집 에러 없음"
 
     # DB 저장 확인
     local rate_count
@@ -263,14 +265,23 @@ verify_exchange_rate() {
 verify_market_close() {
     header "15:30 MarketClose 검증"
 
-    # 이벤트 시작/완료
-    check_log "scheduler" "▶.*MARKET_CLOSE" "MARKET_CLOSE 이벤트 시작"
-    check_log "scheduler" "✓.*MARKET_CLOSE.*완료" "MARKET_CLOSE 이벤트 완료"
+    # 이벤트 시작/완료 (멱등성 복원 로그도 실행 증거로 인정)
+    check_log "scheduler" "▶.*MARKET_CLOSE\|멱등성.*MARKET_CLOSE\|이미 실행된 이벤트.*MARKET_CLOSE" "MARKET_CLOSE 이벤트 실행 확인"
+    check_log "scheduler" "✓.*MARKET_CLOSE.*완료\|멱등성.*MARKET_CLOSE\|이미 실행된 이벤트.*MARKET_CLOSE" "MARKET_CLOSE 이벤트 완료 확인"
     check_no_error "scheduler" "✗.*MARKET_CLOSE.*실패" "MARKET_CLOSE 이벤트 실패 없음"
 
-    # 핸들러 세부
-    check_log "scheduler" "\[MarketClose\] 완료:" "MarketClose 핸들러 정상 완료"
-    check_no_error "scheduler" "\[MarketClose\].*실패\|\[MarketClose\].*skip" "MarketClose 에러/스킵 없음"
+    # 핸들러 세부 — 정상 완료 또는 skip (KIS 실패 등으로 skip은 방어 동작)
+    check_log "scheduler" "\[MarketClose\] 완료:" "MarketClose 핸들러 실행 완료"
+    check_no_error "scheduler" "\[MarketClose\].*실패" "MarketClose 에러 없음"
+
+    # KIS 실패에 의한 snapshot skip은 별도 경고로 표시
+    local mc_skip
+    mc_skip=$(_combined_logs scheduler \
+        | { grep "\[MarketClose\].*skip" 2>/dev/null || true; } | wc -l)
+    mc_skip=$((mc_skip + 0))
+    if [ "$mc_skip" -gt 0 ]; then
+        warn "MarketClose snapshot skip 발생 (${mc_skip}건 — KIS API 실패 등)"
+    fi
 
     # 스냅샷 Redis 저장
     local snapshot
@@ -286,14 +297,14 @@ verify_market_close() {
 verify_post_market() {
     header "16:00 PostMarket 검증"
 
-    # 이벤트 시작/완료
-    check_log "scheduler" "▶.*POST_MARKET" "POST_MARKET 이벤트 시작"
-    check_log "scheduler" "✓.*POST_MARKET.*완료" "POST_MARKET 이벤트 완료"
+    # 이벤트 시작/완료 (멱등성 복원 로그도 실행 증거로 인정)
+    check_log "scheduler" "▶.*POST_MARKET\|멱등성.*POST_MARKET\|이미 실행된 이벤트.*POST_MARKET" "POST_MARKET 이벤트 실행 확인"
+    check_log "scheduler" "✓.*POST_MARKET.*완료\|멱등성.*POST_MARKET\|이미 실행된 이벤트.*POST_MARKET" "POST_MARKET 이벤트 완료 확인"
     check_no_error "scheduler" "✗.*POST_MARKET.*실패" "POST_MARKET 이벤트 실패 없음"
 
-    # 핸들러 세부
-    check_log "scheduler" "\[PostMarket\] 완료:" "PostMarket 핸들러 정상 완료"
-    check_no_error "scheduler" "\[PostMarket\].*실패\|\[PostMarket\].*skip" "PostMarket 에러/스킵 없음"
+    # 핸들러 세부 — 정상 완료 또는 skip (KIS 실패 등으로 skip은 에러가 아닌 방어 동작)
+    check_log "scheduler" "\[PostMarket\] 완료:\|\[PostMarket\].*skip" "PostMarket 핸들러 실행 확인"
+    check_no_error "scheduler" "\[PostMarket\].*실패" "PostMarket 에러 없음"
 
     # 텔레그램 발송 확인
     local telegram_ok

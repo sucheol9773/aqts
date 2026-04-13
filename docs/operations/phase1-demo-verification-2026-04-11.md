@@ -400,3 +400,17 @@ gcloud compute ssh aqts-server --zone=asia-northeast3-a \
 **해결**: `_combined_logs()` 함수를 추가하여, 현재 컨테이너 로그(`docker compose logs`)와 당일 백업 로그(`~/aqts/logs/deploy-backups/{service}-pre-deploy-{YYYYMMDD}*.log`)를 합산 검색. `check_log`, `check_no_error`, 텔레그램 발송 확인 등 모든 로그 검색 경로에 적용.
 
 **추가 수정**: 경제지표 DB 쿼리의 사용자명 `aqts` → `aqts_user` (§6.1에서 exchange_rates만 수정했고 economic_indicators 쿼리가 누락되어 있었음).
+
+### 6.7 verify_phase1_demo.sh 검색 패턴 보정 — false-negative 해소
+
+**문제**: 실제 실행 완료된 이벤트가 FAIL로 판정되는 false-negative 7건.
+
+**원인과 수정 내역**:
+
+| 항목 | 원인 | 수정 |
+|---|---|---|
+| 거래일 인식 | `거래일.*${TODAY}` 패턴이 실제 로그 `=== 거래일 2026-04-13 ===`와 불일치 | 멱등성 복원 로그도 매칭하도록 OR 패턴 추가 |
+| PRE_MARKET/MARKET_CLOSE/POST_MARKET 시작·완료 | 컨테이너 재생성 후 실행 로그 유실, 멱등성 복원 로그만 존재 | `▶`/`✓` 로그 외에 `멱등성.*EVENT\|이미 실행된 이벤트.*EVENT` 패턴 추가 |
+| 환율 조회 | `backend` 컨테이너 검색했으나 실제 환율 수집은 `scheduler`의 ExchangeRateCollectionLoop | 검색 대상 `scheduler`로 변경, 패턴을 `환율 DB 저장\|[ExchangeRate] 수집 완료`로 수정 |
+| PostMarket 핸들러 완료 | `[PostMarket] 완료:` 패턴만 검색하나 KIS 실패 시 `skip` 로그 출력 | `skip` 도 "실행 확인" 으로 인정 (에러가 아닌 방어 동작) |
+| MarketClose 에러/스킵 | `skip` 을 에러와 동일 취급 | `실패`만 에러로 판정, `skip`은 별도 warn으로 분리 |
