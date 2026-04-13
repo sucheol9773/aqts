@@ -414,3 +414,8 @@ gcloud compute ssh aqts-server --zone=asia-northeast3-a \
 | 환율 조회 | `backend` 컨테이너 검색했으나 실제 환율 수집은 `scheduler`의 ExchangeRateCollectionLoop | 검색 대상 `scheduler`로 변경, 패턴을 `환율 DB 저장\|[ExchangeRate] 수집 완료`로 수정 |
 | PostMarket 핸들러 완료 | `[PostMarket] 완료:` 패턴만 검색하나 KIS 실패 시 `skip` 로그 출력 | `skip` 도 "실행 확인" 으로 인정 (에러가 아닌 방어 동작) |
 | MarketClose 에러/스킵 | `skip` 을 에러와 동일 취급 | `실패`만 에러로 판정, `skip`은 별도 warn으로 분리 |
+
+### 6.8 verify_phase1_demo.sh 경제지표 DB 쿼리 컬럼명 수정 (collected_at → time)
+
+**문제**: `economic_indicators` 테이블의 타임스탬프 컬럼은 `time`이지만, 검증 스크립트에서 `collected_at`으로 참조하여 항상 0건으로 조회됨 (WARN 판정).
+**해결**: `collected_at::date` → `time::date`로 수정.

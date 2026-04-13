@@ -217,7 +217,7 @@ verify_pre_market() {
     # DB 저장 확인 (TimescaleDB)
     local econ_count
     econ_count=$(docker exec aqts-postgres bash -c \
-        "psql -U aqts_user -d aqts -t -A -c \"SELECT count(*) FROM economic_indicators WHERE collected_at::date = '${TODAY}'\"" \
+        "psql -U aqts_user -d aqts -t -A -c \"SELECT count(*) FROM economic_indicators WHERE time::date = '${TODAY}'\"" \
         </dev/null 2>/dev/null || echo "0")
     econ_count=$(echo "$econ_count" | tr -d '[:space:]')
 
