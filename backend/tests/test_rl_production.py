@@ -293,10 +293,8 @@ class TestRLInferenceService:
 class TestSchedulerRLIntegration:
     """스케줄러 RL 통합 테스트"""
 
-    def test_run_rl_inference_no_model(self):
+    async def test_run_rl_inference_no_model(self):
         """champion 모델 없을 때 graceful skip"""
-        import asyncio
-
         from core.scheduler_handlers import _run_rl_inference
 
         mock_session = MagicMock()
@@ -305,15 +303,13 @@ class TestSchedulerRLIntegration:
             "core.rl.inference.RLInferenceService.load_model",
             return_value=False,
         ):
-            result = asyncio.get_event_loop().run_until_complete(_run_rl_inference(mock_session, {}))
+            result = await _run_rl_inference(mock_session, {})
 
         assert result["enabled"] is False
         assert "skip_reason" in result
 
-    def test_run_rl_inference_import_error(self):
+    async def test_run_rl_inference_import_error(self):
         """RL 모듈 없을 때 graceful degradation"""
-        import asyncio
-
         from core.scheduler_handlers import _run_rl_inference
 
         mock_session = MagicMock()
@@ -326,7 +322,7 @@ class TestSchedulerRLIntegration:
             pass
 
         # 직접 호출은 정상 경로만 테스트
-        result = asyncio.get_event_loop().run_until_complete(_run_rl_inference(mock_session, {}))
+        result = await _run_rl_inference(mock_session, {})
         # 모델이 없으므로 skip
         assert result.get("enabled", False) is False
 
