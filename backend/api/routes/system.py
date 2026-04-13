@@ -191,7 +191,7 @@ async def trigger_rebalancing(
         triggered_at = datetime.now(timezone.utc)
 
         # ── 1. 사용자 프로필 조회 ──
-        profile_mgr = InvestorProfileManager(db)
+        profile_mgr = InvestorProfileManager()
         profile = await profile_mgr.get_profile(current_user.id)
         if not profile:
             return APIResponse(

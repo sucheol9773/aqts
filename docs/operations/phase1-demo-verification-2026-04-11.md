@@ -578,3 +578,13 @@ Phase 1 DEMO 검증 완료 후, 미완성 API wiring 4건에 대해 순차적으
 - `api/routes/orders.py`: audit description `user {current_user}` → `user {current_user.username}` (1건)
 
 **검증**: ruff 0 errors, black 0 reformatted, pytest 4013 passed (233.94s).
+
+### 7.8 InvestorProfileManager 생성자 인자 전달 버그 수정 (2026-04-14)
+
+**증상**: `POST /api/system/rebalancing` 호출 시 `InvestorProfileManager() takes no arguments` TypeError 발생.
+
+**근본 원인**: `system.py:194`에서 `InvestorProfileManager(db)`로 DB 세션을 인자로 전달했으나, `InvestorProfileManager` 클래스에는 `__init__`이 정의되어 있지 않음. 다른 라우트(`profile.py`, `market.py`)에서는 `InvestorProfileManager()`로 정상 호출.
+
+**수정**: `InvestorProfileManager(db)` → `InvestorProfileManager()`
+
+**검증**: ruff 0 errors, black 0 reformatted, test_system_routes 15 passed.
