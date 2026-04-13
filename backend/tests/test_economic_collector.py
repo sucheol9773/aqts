@@ -170,7 +170,12 @@ async def test_ecos_series_mapping():
     assert EconomicIndicatorType.BOK_BASE_RATE in ECOS_SERIES_MAP
     assert ECOS_SERIES_MAP[EconomicIndicatorType.BOK_BASE_RATE]["stat_code"] == "722Y001"
     assert ECOS_SERIES_MAP[EconomicIndicatorType.KR_CPI]["stat_code"] == "901Y009"
-    assert ECOS_SERIES_MAP[EconomicIndicatorType.KR_GDP]["stat_code"] == "111Y002"
+    assert ECOS_SERIES_MAP[EconomicIndicatorType.KR_UNEMPLOYMENT]["stat_code"] == "901Y027"
+    assert ECOS_SERIES_MAP[EconomicIndicatorType.KR_UNEMPLOYMENT]["item_code"] == "I61BC"
+    assert ECOS_SERIES_MAP[EconomicIndicatorType.KR_CURRENT_ACCOUNT]["stat_code"] == "301Y017"
+    assert ECOS_SERIES_MAP[EconomicIndicatorType.KR_CURRENT_ACCOUNT]["item_code"] == "SA000"
+    # KR_GDP는 ECOS API에서 GDP 테이블 미제공으로 비활성화됨
+    assert EconomicIndicatorType.KR_GDP not in ECOS_SERIES_MAP
 
 
 @pytest.mark.asyncio
@@ -179,7 +184,8 @@ async def test_ecos_get_cycle():
     cycles = {
         EconomicIndicatorType.BOK_BASE_RATE: "M",
         EconomicIndicatorType.KR_CPI: "M",
-        EconomicIndicatorType.KR_GDP: "Q",
+        EconomicIndicatorType.KR_UNEMPLOYMENT: "M",
+        # KR_GDP 비활성화 — ECOS API에서 GDP 테이블 미제공
         EconomicIndicatorType.KR_CURRENT_ACCOUNT: "M",
     }
 
@@ -222,7 +228,7 @@ async def test_ecos_get_unit():
         EconomicIndicatorType.BOK_BASE_RATE: "%",
         EconomicIndicatorType.KR_CPI: "Index",
         EconomicIndicatorType.KR_UNEMPLOYMENT: "%",
-        EconomicIndicatorType.KR_GDP: "Billions of KRW",
+        # KR_GDP 비활성화 — ECOS API에서 GDP 테이블 미제공
         EconomicIndicatorType.KR_CURRENT_ACCOUNT: "Millions of USD",
     }
 
@@ -298,7 +304,7 @@ def test_all_indicators_mapped():
         EconomicIndicatorType.BOK_BASE_RATE,
         EconomicIndicatorType.KR_CPI,
         EconomicIndicatorType.KR_UNEMPLOYMENT,
-        EconomicIndicatorType.KR_GDP,
+        # KR_GDP 비활성화 — ECOS API에서 GDP 테이블 미제공
         EconomicIndicatorType.KR_CURRENT_ACCOUNT,
     }
 

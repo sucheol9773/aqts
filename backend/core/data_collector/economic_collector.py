@@ -51,16 +51,19 @@ ECOS_SERIES_MAP = {
         "item_code": "0",  # 지수
     },
     EconomicIndicatorType.KR_UNEMPLOYMENT: {
-        "stat_code": "902Y014",  # 경제활동별 인구 (실업률)
-        "item_code": "0",  # 실업률
+        "stat_code": "901Y027",  # 8.6.2. 경제활동인구 (실업률 % 포함)
+        "item_code": "I61BC",  # 실업률 (unit=%)
     },
-    EconomicIndicatorType.KR_GDP: {
-        "stat_code": "111Y002",  # 국민소득(GDP)
-        "item_code": "10101",  # 국내총생산 (실질, 계절조정)
-    },
+    # NOTE: KR_GDP 비활성화 — ECOS StatisticSearch API에서 GDP 통계표를 찾을 수 없음
+    # (111Y002=금융기관유동성, 200Y001~200Y004=INFO-200, StatisticTableList "GDP"=INFO-200)
+    # 2026-04-13 서버 검증 완료. ECOS API에 GDP 테이블이 추가되면 재활성화.
+    # EconomicIndicatorType.KR_GDP: {
+    #     "stat_code": "???",
+    #     "item_code": "???",
+    # },
     EconomicIndicatorType.KR_CURRENT_ACCOUNT: {
-        "stat_code": "721Y017",  # 국제수지 (경상수지)
-        "item_code": "0",  # 경상수지
+        "stat_code": "301Y017",  # 2.5.1.2. 경상수지(계절조정, BPM6)
+        "item_code": "SA000",  # 경상수지 (unit=백만달러)
     },
 }
 
@@ -490,7 +493,7 @@ class ECOSCollector:
             EconomicIndicatorType.BOK_BASE_RATE: "M",  # 월간
             EconomicIndicatorType.KR_CPI: "M",  # 월간
             EconomicIndicatorType.KR_UNEMPLOYMENT: "M",  # 월간
-            EconomicIndicatorType.KR_GDP: "Q",  # 분기
+            # KR_GDP: 비활성화 (ECOS API에서 GDP 테이블 미제공)
             EconomicIndicatorType.KR_CURRENT_ACCOUNT: "M",  # 월간
         }
         return cycles.get(indicator_type, "M")
@@ -530,7 +533,7 @@ class ECOSCollector:
             EconomicIndicatorType.BOK_BASE_RATE: "%",
             EconomicIndicatorType.KR_CPI: "Index",
             EconomicIndicatorType.KR_UNEMPLOYMENT: "%",
-            EconomicIndicatorType.KR_GDP: "Billions of KRW",
+            # KR_GDP: 비활성화 (ECOS API에서 GDP 테이블 미제공)
             EconomicIndicatorType.KR_CURRENT_ACCOUNT: "Millions of USD",
         }
         return units.get(indicator_type, "")

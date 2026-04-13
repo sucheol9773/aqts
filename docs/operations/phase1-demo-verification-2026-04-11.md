@@ -48,12 +48,26 @@
 - `handle_pre_market()` 스텝 3에 `EconomicCollectorService.collect_and_store()` 연결
 - `_store_to_db()` 주석 해제 → TimescaleDB 영속화 활성화
 - FRED API 키 설정 완료 (미국 지표 9개: GDP, CPI, 금리, VIX 등)
-- ECOS API 키 설정 완료 (한국 지표 5개: 기준금리, CPI, 실업률, GDP, 경상수지)
+- ECOS API 키 설정 완료 (한국 지표 4개 활성: 기준금리, CPI, 실업률, 경상수지 / GDP 비활성화)
 - **04-13 수동 검증**: FRED 9건 수집+DB 저장 성공, ECOS 0건 실패
-- **ECOS 버그 수정 (04-13)**:
+- **ECOS 1차 버그 수정 (04-13)**:
   1. 날짜 형식: 월간(`M`) 주기에 `%Y%m%d` 전송 → `%Y%m` 으로 수정 (ERROR-101)
   2. 응답 파싱: `data.get("stat_code")` → `data["StatisticSearch"]["row"]` 구조로 수정
   3. 검색 범위: 30일 → 월간 6개월, 분기 2년으로 확대
+  - 결과: 기준금리(722Y001), CPI(901Y009) 2건만 수집 성공, 나머지 3건 실패
+- **ECOS 2차 stat_code/item_code 수정 (04-13)**:
+  - `discover_ecos_codes.py` 스크립트로 서버에서 ECOS API 직접 탐색
+  - 실업률: `902Y014/0` → `901Y027/I61BC` (경제활동인구 테이블의 실업률% 항목)
+    - 변경 전: 902Y014/KR은 경제활동인구 수(천명)를 반환 — 실업률(%)이 아님
+    - 변경 후: 901Y027/I61BC → 202402=3.2%, 202403=3% 확인
+  - 경상수지: `721Y017/0` → `301Y017/SA000` (경상수지 계절조정, 백만달러)
+    - 변경 전: 721Y017 테이블에 StatisticItemList 항목 없음
+    - 변경 후: 301Y017/SA000 → 202405=9378.6 백만달러 확인
+  - GDP: **비활성화** — ECOS StatisticSearch API에서 GDP 테이블 발견 불가
+    - 111Y002 = 금융기관유동성(Lf), GDP와 무관
+    - 200Y001~200Y004, 111Y055~111Y056 모두 INFO-200(데이터 없음)
+    - StatisticTableList 검색("GDP","국민소득","성장률") 모두 INFO-200
+    - ECOS_SERIES_MAP에서 주석 처리, 테이블이 확인되면 재활성화 예정
 
 ### 2-4. 환율 — ⚠️ 캐시 히트 시 DB 미저장 버그 수정
 
