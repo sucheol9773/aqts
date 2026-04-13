@@ -1,25 +1,31 @@
 """
 포트폴리오 API 라우터
 
-포트폴리오 현황, 보유 종목, 성과 분석 엔드포인트를 제공합니다.
+포트폴리오 현황, 보유 종목, 성과 분석, 포트폴리오 구성 엔드포인트를 제공합니다.
 """
 
+import json
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Body, Depends, Query
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.middleware.rbac import require_viewer
+from api.middleware.rbac import require_operator, require_viewer
 from api.schemas.common import APIResponse
 from api.schemas.portfolio import (
+    ConstructionRequest,
+    ConstructionResponse,
     PerformanceResponse,
     PortfolioSummaryResponse,
     PositionResponse,
+    TargetAllocationResponse,
 )
+from config.constants import Market, RiskProfile
 from config.logging import logger
 from config.settings import get_settings
-from db.database import get_db_session
+from core.portfolio_manager.construction import PortfolioConstructionEngine
+from db.database import RedisManager, get_db_session
 
 router = APIRouter()
 
@@ -295,3 +301,156 @@ async def get_value_history(
     except Exception as e:
         logger.error(f"Value history error: {e}")
         return APIResponse(success=False, message=f"조회 실패: {str(e)}")
+
+
+# ══════════════════════════════════════
+# 포트폴리오 구성 엔드포인트
+# ══════════════════════════════════════
+
+
+@router.post("/construct", response_model=APIResponse[ConstructionResponse])
+async def construct_portfolio(
+    req: ConstructionRequest = Body(default=ConstructionRequest()),
+    current_user=Depends(require_operator),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """
+    포트폴리오 구성 (최적화)
+
+    Redis 캐시된 앙상블 시그널과 유니버스 정보를 기반으로
+    최적 포트폴리오를 구성합니다.
+
+    1. Redis에서 앙상블 시그널 조회 (MARKET_OPEN에서 생성)
+    2. DB에서 현재 포지션, 유니버스(섹터/마켓) 정보 조회
+    3. PortfolioConstructionEngine으로 최적화 실행
+    4. TargetPortfolio 반환
+    """
+    try:
+        settings = get_settings()
+
+        # ── 1. 위험 성향 파싱 ──
+        try:
+            risk_profile = RiskProfile(req.risk_profile)
+        except ValueError:
+            return APIResponse(
+                success=False,
+                message=f"유효하지 않은 risk_profile: {req.risk_profile}. " f"허용: {[r.value for r in RiskProfile]}",
+            )
+
+        seed_capital = req.seed_capital or float(settings.risk.initial_capital_krw)
+
+        # ── 2. Redis에서 앙상블 시그널 조회 ──
+        ensemble_signals: dict[str, float] = {}
+        try:
+            redis = RedisManager.get_client()
+            keys = await redis.keys("ensemble:latest:*")
+            for key in keys:
+                key_str = key if isinstance(key, str) else key.decode()
+                if key_str.endswith("_summary"):
+                    continue
+                ticker = key_str.split(":")[-1]
+                raw = await redis.get(key_str)
+                if raw:
+                    data = json.loads(raw)
+                    if "error" not in data and "ensemble_signal" in data:
+                        ensemble_signals[ticker] = float(data["ensemble_signal"])
+        except Exception as redis_err:
+            logger.warning(f"[Construct] Redis 시그널 조회 실패: {redis_err}")
+
+        if not ensemble_signals:
+            return APIResponse(
+                success=False,
+                message="앙상블 시그널이 없습니다. " "MARKET_OPEN 실행 또는 /api/ensemble/batch 호출이 필요합니다.",
+            )
+
+        # ── 3. 유니버스에서 섹터/마켓 정보 조회 ──
+        sector_info: dict[str, str] = {}
+        market_info: dict[str, Market] = {}
+        try:
+            query = text("SELECT ticker, sector, market FROM universe WHERE is_active = true")
+            result = await db.execute(query)
+            for row in result.fetchall():
+                ticker, sector, market = row
+                if sector:
+                    sector_info[ticker] = sector
+                try:
+                    market_info[ticker] = Market(market)
+                except ValueError:
+                    pass
+        except Exception as db_err:
+            logger.warning(f"[Construct] 유니버스 조회 실패: {db_err}")
+
+        # ── 4. 현재 포지션 조회 (비중 계산) ──
+        current_portfolio: dict[str, float] = {}
+        try:
+            pos_query = text(
+                """
+                SELECT ticker,
+                       SUM(CASE WHEN side = 'BUY' THEN filled_quantity * filled_price
+                                ELSE -filled_quantity * filled_price END) AS position_value
+                FROM orders
+                WHERE status IN ('FILLED', 'PARTIAL')
+                GROUP BY ticker
+                HAVING SUM(CASE WHEN side = 'BUY' THEN filled_quantity
+                                ELSE -filled_quantity END) > 0
+                """
+            )
+            result = await db.execute(pos_query)
+            total_pos_value = 0.0
+            pos_values: dict[str, float] = {}
+            for row in result.fetchall():
+                ticker, pos_val = row
+                pos_values[ticker] = float(pos_val)
+                total_pos_value += float(pos_val)
+
+            if total_pos_value > 0:
+                for ticker, val in pos_values.items():
+                    current_portfolio[ticker] = val / total_pos_value
+        except Exception as db_err:
+            logger.warning(f"[Construct] 포지션 조회 실패: {db_err}")
+
+        # ── 5. 포트폴리오 구성 엔진 실행 ──
+        engine = PortfolioConstructionEngine(risk_profile=risk_profile)
+        target = await engine.construct(
+            ensemble_signals=ensemble_signals,
+            current_portfolio=current_portfolio,
+            seed_capital=seed_capital,
+            method=req.method,
+            sector_info=sector_info if sector_info else None,
+            market_info=market_info if market_info else None,
+        )
+
+        # ── 6. 응답 변환 ──
+        allocations = [
+            TargetAllocationResponse(
+                ticker=a.ticker,
+                market=a.market.value,
+                target_weight=round(a.target_weight, 4),
+                current_weight=round(a.current_weight, 4),
+                signal_score=round(a.signal_score, 4),
+                sector=a.sector,
+            )
+            for a in target.allocations
+        ]
+
+        response = ConstructionResponse(
+            allocations=allocations,
+            total_value=round(target.total_value, 2),
+            cash_ratio=round(target.cash_ratio, 4),
+            stock_count=target.stock_count,
+            optimization_method=target.optimization_method,
+            generated_at=target.generated_at,
+            sector_weights={k: round(v, 4) for k, v in target.sector_weights.items()},
+            market_weights={k: round(v, 4) for k, v in target.market_weights.items()},
+        )
+
+        logger.info(
+            f"[Construct] 포트폴리오 구성 완료: "
+            f"method={req.method}, risk={req.risk_profile}, "
+            f"종목={target.stock_count}개, cash={target.cash_ratio:.1%}"
+        )
+
+        return APIResponse(success=True, data=response)
+    except Exception as e:
+        logger.error(f"[Construct] 포트폴리오 구성 실패: {e}")
+        return APIResponse(success=False, message=f"포트폴리오 구성 실패: {str(e)}")

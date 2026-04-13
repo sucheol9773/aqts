@@ -170,91 +170,121 @@ class TestSystemRoutes:
     # POST /rebalancing 엔드포인트 테스트
     # ══════════════════════════════════════
     async def test_trigger_rebalancing_success(self):
-        """POST /rebalancing 정상 트리거"""
+        """POST /rebalancing 실제 엔진 연결 — 정상 실행"""
         from api.routes.system import trigger_rebalancing
+        from core.portfolio_manager.rebalancing import RebalancingResult
+
+        mock_db = AsyncMock()
+
+        # 프로필 mock
+        mock_profile = MagicMock()
+        mock_profile.risk_profile = "BALANCED"
+        mock_profile.seed_amount = 50_000_000.0
+
+        # Redis mock
+        mock_redis = AsyncMock()
+        mock_redis.keys.return_value = ["ensemble:latest:005930"]
+        mock_redis.get.return_value = '{"ensemble_signal": 0.3, "regime": "SIDEWAYS"}'
+
+        # DB 실행 결과 mock (포지션 조회 + 유니버스 조회)
+        pos_result = MagicMock()
+        pos_result.fetchall.return_value = []
+        uni_result = MagicMock()
+        uni_result.fetchall.return_value = [("005930", "IT", "KRX")]
+        mock_db.execute.side_effect = [pos_result, uni_result]
+
+        # 리밸런싱 결과 mock
+        mock_rebal_result = RebalancingResult()
 
         with (
-            patch("api.routes.system.get_db_session") as mock_db_session,
             patch("api.routes.system.AuditLogger") as mock_audit,
+            patch("api.routes.system.InvestorProfileManager") as mock_pm,
+            patch("api.routes.system.RedisManager") as mock_rm,
+            patch("api.routes.system.RebalancingEngine") as mock_re,
         ):
+            mock_audit.return_value = AsyncMock()
+            mock_pm.return_value.get_profile = AsyncMock(return_value=mock_profile)
+            mock_rm.get_client.return_value = mock_redis
+            mock_re_instance = AsyncMock()
+            mock_re_instance.execute_scheduled_rebalancing.return_value = mock_rebal_result
+            mock_re.return_value = mock_re_instance
 
-            mock_db = AsyncMock()
-            mock_db_session.return_value = mock_db
-
-            mock_audit_instance = AsyncMock()
-            mock_audit.return_value = mock_audit_instance
-
-            # Execute
             response = await trigger_rebalancing(
                 rebalancing_type="MANUAL",
                 current_user="user123",
                 db=mock_db,
             )
 
-            # Assert
-            assert response.success is True
-            assert response.data["type"] == "MANUAL"
-            assert response.data["status"] == "queued"
-            assert response.data["user"] == "user123"
-            assert "triggered_at" in response.data
-            assert "리밸런싱이 요청되었습니다" in response.message
+        assert response.success is True
+        assert response.data["type"] == "MANUAL"
+        assert response.data["status"] == "completed"
+        assert "result" in response.data
 
-            # 감사 로그 호출 검증
-            mock_audit_instance.log.assert_called_once()
-            call_args = mock_audit_instance.log.call_args
-            assert call_args[1]["action_type"] == "REBALANCING_TRIGGERED"
-            assert call_args[1]["module"] == "portfolio_manager"
-
-    async def test_trigger_rebalancing_default_type(self):
-        """POST /rebalancing 기본 타입 MANUAL"""
+    async def test_trigger_rebalancing_no_profile(self):
+        """POST /rebalancing 프로필 없음 시 실패"""
         from api.routes.system import trigger_rebalancing
 
+        mock_db = AsyncMock()
+
         with (
-            patch("api.routes.system.get_db_session") as mock_db_session,
             patch("api.routes.system.AuditLogger") as mock_audit,
+            patch("api.routes.system.InvestorProfileManager") as mock_pm,
         ):
+            mock_audit.return_value = AsyncMock()
+            mock_pm.return_value.get_profile = AsyncMock(return_value=None)
 
-            mock_db = AsyncMock()
-            mock_db_session.return_value = mock_db
-
-            mock_audit_instance = AsyncMock()
-            mock_audit.return_value = mock_audit_instance
-
-            # Execute (type None)
             response = await trigger_rebalancing(
                 rebalancing_type="MANUAL",
                 current_user="admin",
                 db=mock_db,
             )
 
-            # Assert
-            assert response.success is True
-            assert response.data["type"] == "MANUAL"
+        assert response.success is False
+        assert "프로필" in response.message
+
+    async def test_trigger_rebalancing_no_signals(self):
+        """POST /rebalancing 시그널 없음 시 실패"""
+        from api.routes.system import trigger_rebalancing
+
+        mock_db = AsyncMock()
+        mock_profile = MagicMock()
+        mock_redis = AsyncMock()
+        mock_redis.keys.return_value = []
+
+        with (
+            patch("api.routes.system.AuditLogger") as mock_audit,
+            patch("api.routes.system.InvestorProfileManager") as mock_pm,
+            patch("api.routes.system.RedisManager") as mock_rm,
+        ):
+            mock_audit.return_value = AsyncMock()
+            mock_pm.return_value.get_profile = AsyncMock(return_value=mock_profile)
+            mock_rm.get_client.return_value = mock_redis
+
+            response = await trigger_rebalancing(
+                rebalancing_type="MANUAL",
+                current_user="admin",
+                db=mock_db,
+            )
+
+        assert response.success is False
+        assert "앙상블 시그널이 없습니다" in response.message
 
     async def test_trigger_rebalancing_exception(self):
         """POST /rebalancing 예외 처리"""
         from api.routes.system import trigger_rebalancing
 
-        with (
-            patch("api.routes.system.get_db_session") as mock_db_session,
-            patch("api.routes.system.AuditLogger") as mock_audit,
-        ):
-
+        with (patch("api.routes.system.AuditLogger") as mock_audit,):
             mock_db = AsyncMock()
-            mock_db_session.return_value = mock_db
-
             mock_audit_instance = AsyncMock()
             mock_audit_instance.log.side_effect = Exception("DB write error")
             mock_audit.return_value = mock_audit_instance
 
-            # Execute
             response = await trigger_rebalancing(
                 rebalancing_type="EMERGENCY",
                 current_user="admin",
                 db=mock_db,
             )
 
-            # Assert
             assert response.success is False
             assert "DB write error" in response.message
 

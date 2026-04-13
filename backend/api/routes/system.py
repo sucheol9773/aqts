@@ -5,6 +5,7 @@
 """
 
 import asyncio
+import json
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -17,12 +18,16 @@ from starlette.requests import Request
 from api.middleware.rate_limiter import RATE_PIPELINE, limiter
 from api.middleware.rbac import require_admin, require_operator, require_viewer
 from api.schemas.common import APIResponse
+from config.constants import Market
 from config.logging import logger
 from config.settings import get_settings
 from core.backtest_engine.engine import BacktestConfig, BacktestEngine
 from core.circuit_breaker import CircuitBreakerRegistry
 from core.pipeline import InvestmentDecisionPipeline
-from db.database import get_db_session
+from core.portfolio_manager.construction import PortfolioConstructionEngine
+from core.portfolio_manager.profile import InvestorProfileManager
+from core.portfolio_manager.rebalancing import RebalancingEngine
+from db.database import RedisManager, get_db_session
 from db.repositories.audit_log import AuditLogger
 
 router = APIRouter()
@@ -185,22 +190,109 @@ async def trigger_rebalancing(
 
         triggered_at = datetime.now(timezone.utc)
 
-        # 실제 RebalancingEngine 통합 시 아래처럼 사용:
-        # from core.portfolio_manager.profile import InvestorProfile
-        # profile = await fetch_user_profile(current_user)  # DB에서 조회
-        # construction_engine = PortfolioConstructionEngine(...)
-        # rebalancing_engine = RebalancingEngine(profile, construction_engine)
-        # result = await rebalancing_engine.execute_scheduled_rebalancing(...)
+        # ── 1. 사용자 프로필 조회 ──
+        profile_mgr = InvestorProfileManager(db)
+        profile = await profile_mgr.get_profile(current_user)
+        if not profile:
+            return APIResponse(
+                success=False,
+                message="투자자 프로필이 없습니다. 먼저 프로필을 생성해주세요.",
+            )
+
+        # ── 2. Redis에서 앙상블 시그널 조회 ──
+        ensemble_signals: dict[str, float] = {}
+        try:
+            redis = RedisManager.get_client()
+            keys = await redis.keys("ensemble:latest:*")
+            for key in keys:
+                key_str = key if isinstance(key, str) else key.decode()
+                if key_str.endswith("_summary"):
+                    continue
+                ticker = key_str.split(":")[-1]
+                raw = await redis.get(key_str)
+                if raw:
+                    data = json.loads(raw)
+                    if "error" not in data and "ensemble_signal" in data:
+                        ensemble_signals[ticker] = float(data["ensemble_signal"])
+        except Exception as redis_err:
+            logger.warning(f"[Rebalancing] Redis 시그널 조회 실패: {redis_err}")
+
+        if not ensemble_signals:
+            return APIResponse(
+                success=False,
+                message="앙상블 시그널이 없습니다. MARKET_OPEN 실행이 필요합니다.",
+            )
+
+        # ── 3. 현재 포지션 및 유니버스 정보 조회 ──
+        current_portfolio: dict[str, float] = {}
+        sector_info: dict[str, str] = {}
+        market_info: dict[str, Market] = {}
+
+        try:
+            # 현재 포지션
+            pos_query = text(
+                """
+                SELECT ticker,
+                       SUM(CASE WHEN side = 'BUY' THEN filled_quantity * filled_price
+                                ELSE -filled_quantity * filled_price END) AS position_value
+                FROM orders
+                WHERE status IN ('FILLED', 'PARTIAL')
+                GROUP BY ticker
+                HAVING SUM(CASE WHEN side = 'BUY' THEN filled_quantity
+                                ELSE -filled_quantity END) > 0
+                """
+            )
+            result = await db.execute(pos_query)
+            total_pos_value = 0.0
+            pos_values: dict[str, float] = {}
+            for row in result.fetchall():
+                ticker, pos_val = row
+                pos_values[ticker] = float(pos_val)
+                total_pos_value += float(pos_val)
+            if total_pos_value > 0:
+                for ticker, val in pos_values.items():
+                    current_portfolio[ticker] = val / total_pos_value
+
+            # 유니버스 정보
+            uni_query = text("SELECT ticker, sector, market FROM universe WHERE is_active = true")
+            result = await db.execute(uni_query)
+            for row in result.fetchall():
+                ticker, sector, market = row
+                if sector:
+                    sector_info[ticker] = sector
+                try:
+                    market_info[ticker] = Market(market)
+                except ValueError:
+                    pass
+        except Exception as db_err:
+            logger.warning(f"[Rebalancing] DB 조회 실패: {db_err}")
+
+        # ── 4. 리밸런싱 엔진 실행 ──
+        construction_engine = PortfolioConstructionEngine(
+            risk_profile=profile.risk_profile,
+        )
+        rebalancing_engine = RebalancingEngine(profile, construction_engine)
+
+        rebal_result = await rebalancing_engine.execute_scheduled_rebalancing(
+            ensemble_signals=ensemble_signals,
+            current_portfolio=current_portfolio,
+            seed_capital=profile.seed_amount,
+            sector_info=sector_info if sector_info else None,
+            market_info=market_info if market_info else None,
+        )
+
+        logger.info(f"[Rebalancing] 완료: type={rebalancing_type}, " f"orders={len(rebal_result.orders)}건")
 
         return APIResponse(
             success=True,
             data={
                 "type": rebalancing_type,
-                "status": "queued",
+                "status": "completed",
                 "triggered_at": triggered_at.isoformat(),
                 "user": current_user,
+                "result": rebal_result.to_dict(),
             },
-            message="리밸런싱이 요청되었습니다.",
+            message=f"리밸런싱 완료: {len(rebal_result.orders)}건 주문 생성",
         )
     except Exception as e:
         logger.error(f"Rebalancing error: {e}")

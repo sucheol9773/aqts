@@ -366,6 +366,93 @@ class TestPortfolioRoutes:
         assert len(resp.data) == 0
 
 
+class TestPortfolioConstructRoute:
+    """POST /api/portfolio/construct 엔드포인트 테스트"""
+
+    @pytest.mark.asyncio
+    async def test_construct_success(self, mock_user, mock_db):
+        """앙상블 시그널 기반 포트폴리오 구성 성공"""
+        from api.routes.portfolio import construct_portfolio
+        from api.schemas.portfolio import ConstructionRequest
+
+        # Redis mock: 앙상블 시그널 2종목
+        mock_redis = AsyncMock()
+        mock_redis.keys.return_value = [
+            "ensemble:latest:005930",
+            "ensemble:latest:000660",
+        ]
+        mock_redis.get.side_effect = [
+            '{"ensemble_signal": 0.35, "regime": "TRENDING_UP"}',
+            '{"ensemble_signal": -0.10, "regime": "SIDEWAYS"}',
+        ]
+
+        # DB mock: 유니버스 조회 + 빈 포지션
+        universe_result = MagicMock()
+        universe_result.fetchall.return_value = [
+            ("005930", "IT", "KRX"),
+            ("000660", "Semiconductor", "KRX"),
+        ]
+        position_result = MagicMock()
+        position_result.fetchall.return_value = []
+        mock_db.execute.side_effect = [universe_result, position_result]
+
+        with (
+            patch("api.routes.portfolio.RedisManager") as mock_rm,
+            patch("api.routes.portfolio.get_settings") as mock_settings,
+        ):
+            mock_rm.get_client.return_value = mock_redis
+            mock_settings.return_value.risk.initial_capital_krw = 50_000_000
+
+            req = ConstructionRequest(
+                method="mean_variance",
+                risk_profile="BALANCED",
+                seed_capital=50_000_000,
+            )
+            resp = await construct_portfolio(req=req, current_user=mock_user, db=mock_db)
+
+        assert resp.success is True
+        assert resp.data.optimization_method == "mean_variance"
+        assert resp.data.stock_count >= 0
+        assert 0.0 <= resp.data.cash_ratio <= 1.0
+
+    @pytest.mark.asyncio
+    async def test_construct_no_signals(self, mock_user, mock_db):
+        """앙상블 시그널 없을 때 실패 응답"""
+        from api.routes.portfolio import construct_portfolio
+        from api.schemas.portfolio import ConstructionRequest
+
+        mock_redis = AsyncMock()
+        mock_redis.keys.return_value = []
+
+        with (
+            patch("api.routes.portfolio.RedisManager") as mock_rm,
+            patch("api.routes.portfolio.get_settings") as mock_settings,
+        ):
+            mock_rm.get_client.return_value = mock_redis
+            mock_settings.return_value.risk.initial_capital_krw = 50_000_000
+
+            req = ConstructionRequest()
+            resp = await construct_portfolio(req=req, current_user=mock_user, db=mock_db)
+
+        assert resp.success is False
+        assert "앙상블 시그널이 없습니다" in resp.message
+
+    @pytest.mark.asyncio
+    async def test_construct_invalid_risk_profile(self, mock_user, mock_db):
+        """유효하지 않은 risk_profile 거부"""
+        from api.routes.portfolio import construct_portfolio
+        from api.schemas.portfolio import ConstructionRequest
+
+        with patch("api.routes.portfolio.get_settings") as mock_settings:
+            mock_settings.return_value.risk.initial_capital_krw = 50_000_000
+
+            req = ConstructionRequest(risk_profile="INVALID_PROFILE")
+            resp = await construct_portfolio(req=req, current_user=mock_user, db=mock_db)
+
+        assert resp.success is False
+        assert "유효하지 않은 risk_profile" in resp.message
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 3. Orders Routes (api/routes/orders.py)
 # ══════════════════════════════════════════════════════════════════════════════

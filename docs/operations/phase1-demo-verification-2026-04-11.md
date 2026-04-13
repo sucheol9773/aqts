@@ -478,3 +478,70 @@ gcloud compute ssh aqts-server --zone=asia-northeast3-a \
 - 연동 영향: `hyperopt/objective.py`의 `regime_series == regime_enum` 비교는 `DynamicRegime(str, Enum)`이므로 문자열 비교와 호환되어 영향 없음
 
 **검증**: 전체 pytest 4009 passed.
+
+---
+
+## 7. Phase 1 후속 개선 작업 (2026-04-14)
+
+Phase 1 DEMO 검증 완료 후, 미완성 API wiring 4건에 대해 순차적으로 개선 작업을 수행했습니다.
+
+### 7.1 Portfolio Construction API 엔드포인트 신규 추가
+
+**변경 전**: 포트폴리오 구성(최적화) API 없음. 프론트엔드에서 직접 `PortfolioConstructionEngine`을 호출할 방법이 없었음.
+
+**변경 후**: `POST /api/portfolio/construct` 엔드포인트 추가
+
+- 요청 파라미터: `method` (mean_variance / risk_parity / black_litterman), `risk_profile` (CONSERVATIVE / BALANCED / AGGRESSIVE / DIVIDEND), `seed_capital` (옵션)
+- 처리 흐름:
+  1. Redis `ensemble:latest:*` 키에서 앙상블 시그널 조회
+  2. DB `universe` 테이블에서 섹터/시장 정보 조회
+  3. DB `orders` 테이블에서 현재 포지션 비중 산출
+  4. `PortfolioConstructionEngine.construct()` 실행
+  5. `ConstructionResponse` (할당 목록, 현금 비중, 섹터/시장 가중치) 반환
+- RBAC: `require_operator` 적용 (CLAUDE.md RBAC Wiring Rule 준수)
+- 스키마: `ConstructionRequest`, `TargetAllocationResponse`, `ConstructionResponse` 3개 신규 추가
+
+**파일 변경**: `api/routes/portfolio.py`, `api/schemas/portfolio.py`
+
+### 7.2 Rebalancing Trigger API — stub에서 실제 엔진 연결
+
+**변경 전**: `POST /api/system/rebalancing`이 감사 로그만 기록하고 하드코딩된 더미 응답 반환 (stub 상태)
+
+**변경 후**: 실제 `RebalancingEngine` 연결
+
+- 처리 흐름:
+  1. `InvestorProfileManager.get_profile(current_user)` — 투자자 프로필 조회 (없으면 에러 반환)
+  2. Redis `ensemble:latest:*` 키에서 앙상블 시그널 조회 (없으면 에러 반환)
+  3. DB에서 현재 포지션 및 유니버스 정보 조회
+  4. `PortfolioConstructionEngine` + `RebalancingEngine` 인스턴스 생성
+  5. `execute_scheduled_rebalancing()` 실행
+  6. `rebal_result.to_dict()` 반환
+- RBAC: 기존 `require_operator` 유지
+
+**파일 변경**: `api/routes/system.py`
+
+### 7.3 Telegram 알림 파이프라인 Wiring 점검 — ✅ 정상
+
+코드 레벨 wiring 검증 결과, 파이프라인 전체 경로가 정상 연결되어 있음을 확인:
+
+- `AlertManager._dispatch_via_router()` → `NotificationRouter.dispatch()` → `TelegramChannelAdapter.send()` → `TelegramTransport.send_text()`
+- `main.py` lifespan에서 `set_notification_router()` 호출 및 `_alert_retry_loop` asyncio task 기동
+- 3단계 fallback: Telegram → File → Console
+- 관련 테스트: `test_alert_manager_dispatch_wiring.py`, `test_alert_retry_loop.py`
+
+### 7.4 Daily Report 생성 로직 POST_MARKET 연결 점검 — ✅ 정상
+
+- `handle_post_market()` → `DailyReporter.generate_report()` → `send_telegram_report()` 전체 경로 연결 확인
+- `register_pipeline_handlers(scheduler)`에서 POST_MARKET 핸들러 정상 등록
+- 3단계 안전 검증: 스냅샷 읽기 실패 / 빈 스냅샷 / 상태 불일치 체크
+- Redis `report:daily:{날짜}` 키로 90일 보관
+- Phase 1 서버에서 daily report 0건 이유: POST_MARKET이 아직 한 번도 정상 실행되지 않음 (스냅샷 데이터 부재). 코드 wiring 결손 아님.
+
+### 7.5 테스트 변경 사항
+
+| 파일 | 변경 내용 |
+|------|-----------|
+| `tests/test_coverage_api_routes_v2.py` | `TestPortfolioConstructRoute` 클래스 추가 (3개 테스트) |
+| `tests/test_system_routes.py` | 리밸런싱 stub 테스트 3개 → 실제 엔진 테스트 4개로 교체 |
+
+**검증**: ruff 0 errors, black 0 reformatted, doc-sync PASSED, 전체 pytest 4012 passed.
