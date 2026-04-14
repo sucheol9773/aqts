@@ -586,3 +586,53 @@ class TestEdgeCases:
 
         notice = RealtimeExecutionNotice(fields, is_overseas=False)
         assert notice.filled_qty == 0
+
+
+# ══════════════════════════════════════════════════════════════════
+# RealtimeManager 체결 통보 Wiring 테스트
+# ══════════════════════════════════════════════════════════════════
+
+
+class TestRealtimeManagerExecNoticeWiring:
+    """RealtimeManager.start()에서 체결 통보가 구독되는지 검증"""
+
+    @pytest.mark.asyncio
+    async def test_exec_notice_subscribed_on_start(self):
+        """start() 호출 시 subscribe_exec_notice()가 호출된다."""
+        mock_ws = AsyncMock()
+        mock_ws.connect = AsyncMock(return_value=True)
+        mock_ws.subscribe_batch = AsyncMock(return_value=1)
+        mock_ws.subscribe_exec_notice = AsyncMock()
+
+        with patch(
+            "core.data_collector.kis_websocket.KISRealtimeClient",
+            return_value=mock_ws,
+        ):
+            from core.data_collector.realtime_manager import RealtimeManager
+
+            mgr = RealtimeManager()
+            result = await mgr.start(["005930"])
+
+        assert result is True
+        mock_ws.subscribe_exec_notice.assert_called_once()
+        # on_exec_notice 콜백이 등록되었는지 확인
+        assert mock_ws.on_exec_notice is not None
+
+    @pytest.mark.asyncio
+    async def test_exec_notice_failure_does_not_block_start(self):
+        """subscribe_exec_notice() 실패 시에도 start()는 성공한다."""
+        mock_ws = AsyncMock()
+        mock_ws.connect = AsyncMock(return_value=True)
+        mock_ws.subscribe_batch = AsyncMock(return_value=1)
+        mock_ws.subscribe_exec_notice = AsyncMock(side_effect=RuntimeError("HTS ID missing"))
+
+        with patch(
+            "core.data_collector.kis_websocket.KISRealtimeClient",
+            return_value=mock_ws,
+        ):
+            from core.data_collector.realtime_manager import RealtimeManager
+
+            mgr = RealtimeManager()
+            result = await mgr.start(["005930"])
+
+        assert result is True  # 실패해도 시세 수신은 정상

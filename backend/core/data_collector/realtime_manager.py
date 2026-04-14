@@ -156,6 +156,20 @@ class RealtimeManager:
         subscribed = await self._ws_client.subscribe_batch(tickers)
         self._running = True
 
+        # ── 체결 통보 구독 (dual safety net) ──
+        # WebSocket 연결이 성공한 시점에서만 체결 통보를 구독한다.
+        # 실패해도 시세 수신에는 영향 없음 (best-effort).
+        try:
+            from core.order_executor.ws_execution_handler import (
+                handle_execution_notice,
+            )
+
+            self._ws_client.on_exec_notice = handle_execution_notice
+            await self._ws_client.subscribe_exec_notice()
+            logger.info("[RealtimeManager] 체결 통보 구독 완료 (dual safety net)")
+        except Exception as e:
+            logger.warning(f"[RealtimeManager] 체결 통보 구독 실패 (폴링 폴백): {e}")
+
         logger.info(f"[RealtimeManager] Started: " f"{subscribed}/{len(tickers)} tickers subscribed")
         return True
 

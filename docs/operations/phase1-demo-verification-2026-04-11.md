@@ -1130,7 +1130,7 @@ KIS WebSocket → 체결 통보 push (H0STCNI0/H0STCNI9)
 | DB 갱신 핸들러 | `core/order_executor/ws_execution_handler.py` | **신규**. 체결 콜백 → DB 갱신 브릿지 |
 | 설정 | `config/settings.py` | KISSettings에 `hts_id` 필드 추가 |
 | 환경변수 | `.env.example` | `KIS_HTS_ID=` 추가 |
-| 테스트 | `tests/test_ws_execution_notice.py` | **신규**. 27건 단위 테스트 |
+| 테스트 | `tests/test_ws_execution_notice.py` | **신규**. 29건 단위 테스트 (파싱 + 복호화 + 핸들러 + wiring) |
 
 #### 설계 상세
 
@@ -1142,9 +1142,19 @@ KIS WebSocket → 체결 통보 push (H0STCNI0/H0STCNI9)
 - **상태 결정**: filled_qty >= order_qty → FILLED, filled_qty > 0 → PARTIAL
 - **재연결**: 재연결 시 체결 통보 구독 상태 자동 복구
 
+#### Wiring (정의 ≠ 적용 원칙 준수)
+
+`RealtimeManager.start()`에서 WebSocket 연결 성공 후 체결 통보 구독을 수행한다:
+1. `on_exec_notice = handle_execution_notice` 콜백 등록
+2. `subscribe_exec_notice()` 호출 (국내 + 해외 TR_ID)
+3. 실패해도 시세 수신에 영향 없음 (best-effort, 폴링 폴백 유지)
+
+wiring 검증 테스트:
+- `test_exec_notice_subscribed_on_start`: start() 시 subscribe 호출 확인
+- `test_exec_notice_failure_does_not_block_start`: 실패 시 start() 정상 반환 확인
+
 #### 미구현 (후속)
 
-- `main.py` lifespan wiring (subscribe_exec_notice 호출 + handle_execution_notice 콜백 등록)
 - Prometheus 메트릭 (`exec_notices_processed` 카운터 노출)
 
 ---
