@@ -17,19 +17,18 @@ KRX 장 시간에 맞춰 DEMO 모드 파이프라인을 자동 실행합니다.
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta
 from enum import Enum
 from typing import Awaitable, Callable, Optional
 
 from loguru import logger
 
 from config.settings import TradingMode, get_settings
+from core.utils.timezone import KST
 
 # ══════════════════════════════════════
 # 한국 시간대 및 거래일 관리
 # ══════════════════════════════════════
-
-KST = timezone(timedelta(hours=9))
 
 # 2026년 한국 공휴일 (매년 갱신 필요)
 KR_HOLIDAYS_2026 = {

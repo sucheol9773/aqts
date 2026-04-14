@@ -23,6 +23,7 @@ from api.schemas.users import (
     UserUpdateRequest,
 )
 from config.logging import logger
+from core.utils.timezone import to_kst_iso
 from db.database import get_db_session
 from db.models.user import Role, User
 from db.repositories.audit_log import AuditLogger
@@ -51,9 +52,9 @@ async def list_users(
                 is_active=u.is_active,
                 is_locked=u.is_locked,
                 totp_enabled=u.totp_enabled,
-                created_at=u.created_at.isoformat(),
-                updated_at=u.updated_at.isoformat(),
-                last_login_at=u.last_login_at.isoformat() if u.last_login_at else None,
+                created_at=to_kst_iso(u.created_at),
+                updated_at=to_kst_iso(u.updated_at),
+                last_login_at=to_kst_iso(u.last_login_at),
             )
             for u in users
         ]
@@ -90,9 +91,9 @@ async def get_user(
             is_active=user.is_active,
             is_locked=user.is_locked,
             totp_enabled=user.totp_enabled,
-            created_at=user.created_at.isoformat(),
-            updated_at=user.updated_at.isoformat(),
-            last_login_at=user.last_login_at.isoformat() if user.last_login_at else None,
+            created_at=to_kst_iso(user.created_at),
+            updated_at=to_kst_iso(user.updated_at),
+            last_login_at=to_kst_iso(user.last_login_at),
         )
 
         return APIResponse(success=True, data=response_data, message="User retrieved")
@@ -154,8 +155,8 @@ async def create_user(
             is_active=user.is_active,
             is_locked=user.is_locked,
             totp_enabled=user.totp_enabled,
-            created_at=user.created_at.isoformat(),
-            updated_at=user.updated_at.isoformat(),
+            created_at=to_kst_iso(user.created_at),
+            updated_at=to_kst_iso(user.updated_at),
             last_login_at=None,
         )
 
@@ -233,9 +234,9 @@ async def update_user(
             is_active=user.is_active,
             is_locked=user.is_locked,
             totp_enabled=user.totp_enabled,
-            created_at=user.created_at.isoformat(),
-            updated_at=user.updated_at.isoformat(),
-            last_login_at=user.last_login_at.isoformat() if user.last_login_at else None,
+            created_at=to_kst_iso(user.created_at),
+            updated_at=to_kst_iso(user.updated_at),
+            last_login_at=to_kst_iso(user.last_login_at),
         )
 
         return APIResponse(

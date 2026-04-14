@@ -19,6 +19,7 @@ from api.middleware.rbac import require_operator, require_viewer
 from api.schemas.common import APIResponse
 from config.logging import logger
 from core.dry_run.engine import get_dry_run_engine
+from core.utils.timezone import to_kst_iso
 
 router = APIRouter()
 
@@ -50,7 +51,7 @@ async def start_dry_run(current_user=Depends(require_operator)):
         data={
             "session_id": session.session_id,
             "status": session.status.value,
-            "started_at": session.started_at.isoformat(),
+            "started_at": to_kst_iso(session.started_at),
         },
         message="드라이런 세션이 시작되었습니다",
     )

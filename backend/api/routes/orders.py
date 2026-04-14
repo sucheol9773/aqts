@@ -39,6 +39,7 @@ from core.order_executor.order_state_machine import (
     parse_order_status,
 )
 from core.order_executor.quote_provider_kis import get_kis_quote_provider
+from core.utils.timezone import to_kst
 from db.database import get_db_session
 from db.repositories.audit_log import AuditLogger, AuditWriteFailure
 
@@ -129,7 +130,7 @@ def _order_result_to_response(
         order_type=order_type,
         status=result.status.value,
         filled_price=result.avg_price if result.avg_price > 0 else None,
-        filled_at=result.executed_at if result.status == OrderStatus.FILLED else None,
+        filled_at=to_kst(result.executed_at) if result.status == OrderStatus.FILLED else None,
         reason=reason,
     )
 
@@ -489,7 +490,7 @@ async def get_orders(
                         order_type="MARKET",  # orders 테이블에 order_type 미저장 → 기본값
                         status=row[7],
                         filled_price=float(row[6]) if row[6] and float(row[6]) > 0 else None,
-                        filled_at=row[8] if row[7] == "FILLED" else None,
+                        filled_at=to_kst(row[8]) if row[7] == "FILLED" else None,
                         reason=row[9] if row[9] else None,
                     )
                 )
@@ -540,7 +541,7 @@ async def get_order(
             order_type="MARKET",
             status=row[7],
             filled_price=float(row[6]) if row[6] and float(row[6]) > 0 else None,
-            filled_at=row[8] if row[7] == "FILLED" else None,
+            filled_at=to_kst(row[8]) if row[7] == "FILLED" else None,
             reason=row[9] if row[9] else None,
         )
         return APIResponse(success=True, data=order)

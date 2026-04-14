@@ -1062,3 +1062,42 @@ KIS WebSocket `H0STCNI0`(국내) / `H0STCNI9`(해외) 체결 통보 수신 시 D
 | `test_reconcile_updates_filled_orders` | 체결 건 DB 갱신 |
 | `test_reconcile_handles_processing_error` | 예외 시 errors 카운트 증가 |
 | `test_reconcile_market_batch_optimization` | 같은 마켓 → API 1회 호출 |
+
+### 10.10 시간대 통일 — UTC/KST 혼용 해소 (2026-04-14)
+
+#### 문제
+
+API 응답, Redis 키, 스케줄러 핸들러 결과에서 UTC와 KST가 혼용되어 사용자에게 혼란을 주었다. 특히 주문 체결 시간, 감사 로그, 포트폴리오 거래 이력 등이 UTC로 반환되어 한국 시간과 9시간 차이가 있었다. Redis 스냅샷 키(`portfolio:snapshot:YYYY-MM-DD`)도 UTC 날짜 기준이라 장중 날짜 불일치가 발생할 수 있었다.
+
+#### 해결: KST 변환 유틸리티 단일 진입점
+
+**시간대 정책**: DB 저장은 UTC 유지 (국제 표준), 사용자 노출(API 응답, Telegram, Redis 상태)은 KST 변환.
+
+`core/utils/timezone.py` 모듈을 신규 생성하여 KST 변환 함수를 단일 진입점으로 제공한다:
+- `KST`: `timezone(timedelta(hours=9))` 상수
+- `to_kst(dt)`: datetime → KST 변환 (None/date 안전 처리)
+- `to_kst_iso(dt)`: datetime → KST ISO 문자열 변환
+- `now_kst()`: 현재 KST 시각
+- `today_kst_str(fmt)`: KST 기준 오늘 날짜 문자열
+
+#### 변경 범위
+
+| 카테고리 | 파일 | 변경 내용 |
+|---|---|---|
+| 유틸리티 | `core/utils/timezone.py` | **신규**. KST 변환 함수 5개 |
+| API 라우트 | `api/routes/system.py` | `updated_at`, 감사 로그 `time`, 분산 락 시간 → KST |
+| API 라우트 | `api/routes/orders.py` | `filled_at` → `to_kst()` 변환 |
+| API 라우트 | `api/routes/users.py` | `created_at`, `updated_at`, `last_login_at` → `to_kst_iso()` |
+| API 라우트 | `api/routes/profile.py` | `created_at`, `updated_at` → `to_kst_iso()` |
+| API 라우트 | `api/routes/market.py` | `fetched_at`, 경제지표 `date` → `to_kst_iso()` |
+| API 라우트 | `api/routes/portfolio.py` | `updated_at`, 거래 이력 `date` → KST |
+| API 라우트 | `api/routes/dry_run.py` | `started_at` → `to_kst_iso()` |
+| 스케줄러 | `core/scheduler_handlers.py` | Redis 스냅샷 키, 핸들러 응답 시간 → KST |
+| 중복 제거 | `core/daily_reporter.py` | 로컬 `KST` 정의 → `core.utils.timezone.KST` import |
+| 중복 제거 | `core/trading_scheduler.py` | 동일 |
+| 중복 제거 | `core/market_calendar.py` | 동일 |
+| 중복 제거 | `core/scheduler_idempotency.py` | 동일 |
+| 중복 제거 | `core/order_executor/settlement_poller.py` | 로컬 `kst` 변수 → `now_kst()` |
+| 테스트 | `tests/test_timezone_utils.py` | **신규**. 17건 단위 테스트 |
+
+#### 테스트 (4077 passed)

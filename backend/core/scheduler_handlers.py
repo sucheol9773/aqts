@@ -18,7 +18,7 @@ TradingScheduler에 등록할 이벤트 핸들러 모음.
 """
 
 import json
-from datetime import datetime, timezone
+from datetime import timedelta
 
 from config.logging import logger
 from core.data_collector.daily_collector import (
@@ -26,6 +26,7 @@ from core.data_collector.daily_collector import (
 )
 from core.data_collector.news_collector import NewsCollectorService
 from core.strategy_ensemble.runner import DynamicEnsembleRunner
+from core.utils.timezone import now_kst, today_kst_str
 from db.database import RedisManager, async_session_factory
 
 
@@ -123,7 +124,7 @@ async def handle_market_open() -> dict:
     """
     result = {
         "message": "장 시작 — 동적 앙상블 + RL 추론 + 실시간 시세",
-        "market_open_time": datetime.now(timezone.utc).isoformat(),
+        "market_open_time": now_kst().isoformat(),
     }
 
     try:
@@ -196,7 +197,7 @@ async def handle_midday_check() -> dict:
     """
     result = {
         "message": "중간 점검 — 포지션 모니터링",
-        "check_time": datetime.now(timezone.utc).isoformat(),
+        "check_time": now_kst().isoformat(),
     }
 
     # ── 1. 현재 포지션 조회 (KIS API) ──
@@ -297,7 +298,7 @@ async def handle_market_close() -> dict:
     await _stop_realtime_quotes()
     result = {
         "message": "장 마감 처리",
-        "close_time": datetime.now(timezone.utc).isoformat(),
+        "close_time": now_kst().isoformat(),
     }
 
     portfolio_value_end = 0.0
@@ -348,7 +349,7 @@ async def handle_market_close() -> dict:
         async with async_session_factory() as session:
             from sqlalchemy import text
 
-            today_date = datetime.now(timezone.utc).date()
+            today_date = now_kst().date()
             query = text(
                 """
                 SELECT side,
@@ -387,7 +388,7 @@ async def handle_market_close() -> dict:
     else:
         try:
             redis = RedisManager.get_client()
-            today_key = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            today_key = today_kst_str()
 
             snapshot = {
                 "date": today_key,
@@ -395,7 +396,7 @@ async def handle_market_close() -> dict:
                 "cash_balance": cash_balance,
                 "positions_count": len(positions_data),
                 "positions": positions_data,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": now_kst().isoformat(),
             }
 
             await redis.set(
@@ -452,7 +453,7 @@ async def handle_post_market() -> dict:
     """
     result = {
         "message": "마감 후 처리 — 일일 리포트",
-        "post_market_time": datetime.now(timezone.utc).isoformat(),
+        "post_market_time": now_kst().isoformat(),
     }
 
     # ── 1. 금일 스냅샷에서 종가 데이터 조회 ──
@@ -464,7 +465,7 @@ async def handle_post_market() -> dict:
 
     try:
         redis = RedisManager.get_client()
-        today_key = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today_key = today_kst_str()
 
         # 금일 마감 스냅샷
         snapshot_raw = await redis.get(f"portfolio:snapshot:{today_key}")
@@ -480,9 +481,7 @@ async def handle_post_market() -> dict:
         # 를 "없음" 과 동일하게 취급해야 한다. 2026-04-08 회귀에서 전일 키가
         # 전부 0 으로 오염된 채 존재하여 start=0 → -100% 에 준하는 리포트가
         # 발사된 사례가 있다.
-        from datetime import timedelta
-
-        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+        yesterday = (now_kst() - timedelta(days=1)).strftime("%Y-%m-%d")
         prev_raw = await redis.get(f"portfolio:snapshot:{yesterday}")
 
         prev_portfolio_value = 0.0
@@ -571,7 +570,7 @@ async def handle_post_market() -> dict:
         async with async_session_factory() as session:
             from sqlalchemy import text
 
-            today_date = datetime.now(timezone.utc).date()
+            today_date = now_kst().date()
             query = text(
                 """
                 SELECT ticker, side, filled_quantity, filled_price, status, created_at
@@ -677,7 +676,7 @@ async def handle_post_market() -> dict:
         # ── 5. 리포트 Redis 저장 ──
         try:
             redis = RedisManager.get_client()
-            today_key = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            today_key = today_kst_str()
             await redis.set(
                 f"report:daily:{today_key}",
                 json.dumps(report.to_dict()),
@@ -950,7 +949,7 @@ async def _cache_ensemble_results(
         # 전체 요약도 저장
         summary_key = "ensemble:latest:_summary"
         summary = {
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": now_kst().isoformat(),
             "total_tickers": len(results),
             "tickers": list(results.keys()),
         }

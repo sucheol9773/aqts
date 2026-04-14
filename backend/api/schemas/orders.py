@@ -45,7 +45,7 @@ class OrderResponse(BaseModel):
     order_type: str = Field(..., description="주문 유형 (MARKET, LIMIT, TWAP, VWAP)")
     status: str = Field(..., description="주문 상태 (PENDING, SUBMITTED, PARTIAL, FILLED, CANCELLED, FAILED)")
     filled_price: Optional[float] = Field(default=None, description="체결 단가")
-    filled_at: Optional[datetime] = Field(default=None, description="체결 시간 (UTC)")
+    filled_at: Optional[datetime] = Field(default=None, description="체결 시간 (KST)")
     reason: Optional[str] = Field(default=None, description="주문 사유")
 
 

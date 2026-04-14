@@ -14,18 +14,17 @@ Telegram으로 발송합니다.
 """
 
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime
 from typing import Optional
 
 from loguru import logger
 
 from config.settings import get_settings
+from core.utils.timezone import KST
 
 # ══════════════════════════════════════
 # 일일 리포트 데이터 구조
 # ══════════════════════════════════════
-
-KST = timezone(timedelta(hours=9))
 
 
 @dataclass

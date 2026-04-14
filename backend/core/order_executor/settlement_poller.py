@@ -15,7 +15,7 @@ DB를 업데이트한다.
 """
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import text
@@ -28,6 +28,7 @@ from core.order_executor.order_state_machine import (
     is_terminal_order_state,
     parse_order_status,
 )
+from core.utils.timezone import now_kst
 from db.database import async_session_factory
 
 # 폴링 설정
@@ -217,8 +218,7 @@ async def poll_after_execution(
         interval: 폴링 간격 (초)
         max_retries: 최대 폴링 횟수
     """
-    kst = timezone(timedelta(hours=9))
-    today_str = datetime.now(kst).strftime("%Y%m%d")
+    today_str = now_kst().strftime("%Y%m%d")
 
     for attempt in range(1, max_retries + 1):
         await asyncio.sleep(interval)
@@ -279,8 +279,7 @@ async def reconcile_all_submitted(
     if kis_client is None:
         kis_client = KISClient()
 
-    kst = timezone(timedelta(hours=9))
-    today_str = datetime.now(kst).strftime("%Y%m%d")
+    today_str = now_kst().strftime("%Y%m%d")
 
     stats = {"checked": 0, "updated": 0, "errors": 0}
 

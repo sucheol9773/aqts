@@ -7,7 +7,6 @@
 import asyncio
 import json
 import uuid
-from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import pandas as pd
@@ -33,6 +32,7 @@ from core.portfolio_manager.construction import PortfolioConstructionEngine
 from core.portfolio_manager.profile import InvestorProfile, InvestorProfileManager
 from core.portfolio_manager.rebalancing import RebalancingEngine
 from core.scheduler_idempotency import is_executed, mark_executed
+from core.utils.timezone import now_kst, to_kst_iso
 from db.database import RedisManager, async_session_factory, get_db_session
 from db.repositories.audit_log import AuditLogger
 
@@ -188,7 +188,7 @@ async def _update_rebalancing_status(
         payload = {
             "task_id": task_id,
             "status": status,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": now_kst().isoformat(),
             **kwargs,
         }
         await redis.set(
@@ -328,7 +328,7 @@ async def trigger_rebalancing(
         redis = RedisManager.get_client()
         lock_acquired = await redis.set(
             REBALANCING_LOCK_KEY,
-            f"{current_user.username}:{datetime.now(timezone.utc).isoformat()}",
+            f"{current_user.username}:{now_kst().isoformat()}",
             nx=True,
             ex=REBALANCING_LOCK_TTL,
         )
@@ -434,8 +434,8 @@ async def trigger_rebalancing(
                 logger.warning(f"[Rebalancing] DB 조회 실패: {db_err}")
 
             # ── 4. 백그라운드 태스크 생성 → 즉시 202 반환 ──
-            now_kst = datetime.now(timezone(timedelta(hours=9)))
-            task_id = f"{now_kst.strftime('%Y%m%d')}_{uuid.uuid4().hex[:8]}"
+            kst_now = now_kst()
+            task_id = f"{kst_now.strftime('%Y%m%d')}_{uuid.uuid4().hex[:8]}"
 
             await _update_rebalancing_status(
                 task_id,
@@ -661,7 +661,7 @@ async def get_audit_logs(
             logs.append(
                 {
                     "id": row[0],
-                    "time": row[1].isoformat() if row[1] else None,
+                    "time": to_kst_iso(row[1]),
                     "action_type": row[2],
                     "module": row[3],
                     "description": row[4],

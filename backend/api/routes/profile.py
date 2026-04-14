@@ -13,6 +13,7 @@ from api.schemas.profile import ProfileResponse, ProfileUpdateRequest
 from config.constants import InvestmentGoal, InvestmentStyle, RiskProfile
 from config.logging import logger
 from core.portfolio_manager.profile import InvestorProfileManager
+from core.utils.timezone import to_kst_iso
 
 router = APIRouter()
 
@@ -25,8 +26,8 @@ def _profile_to_response(profile) -> ProfileResponse:
         investment_goal=profile.investment_goal,
         initial_capital=profile.seed_amount,
         max_loss_tolerance=profile.loss_tolerance,
-        created_at=profile.created_at.isoformat() if profile.created_at else None,
-        updated_at=profile.updated_at.isoformat() if profile.updated_at else None,
+        created_at=to_kst_iso(profile.created_at),
+        updated_at=to_kst_iso(profile.updated_at),
     )
 
 

@@ -28,7 +28,8 @@ from enum import Enum
 # ══════════════════════════════════════
 # 시간대 정의
 # ══════════════════════════════════════
-KST = timezone(timedelta(hours=9))
+from core.utils.timezone import KST
+
 EST = timezone(timedelta(hours=-5))
 EDT = timezone(timedelta(hours=-4))
 

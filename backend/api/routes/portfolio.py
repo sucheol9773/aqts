@@ -5,7 +5,6 @@
 """
 
 import json
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Body, Depends, Query
 from sqlalchemy import text
@@ -25,6 +24,7 @@ from config.constants import Market, RiskProfile
 from config.logging import logger
 from config.settings import get_settings
 from core.portfolio_manager.construction import PortfolioConstructionEngine
+from core.utils.timezone import now_kst, to_kst_iso
 from db.database import RedisManager, get_db_session
 
 router = APIRouter()
@@ -106,7 +106,7 @@ async def get_portfolio_summary(
             realized_pnl=0.0,
             position_count=len(positions),
             positions=positions,
-            updated_at=datetime.now(timezone.utc),
+            updated_at=now_kst(),
         )
         return APIResponse(success=True, data=summary)
     except Exception as e:
@@ -289,7 +289,7 @@ async def get_value_history(
                 cumulative += float(daily_flow)
                 history.append(
                     {
-                        "date": trade_date.isoformat() if trade_date else None,
+                        "date": to_kst_iso(trade_date),
                         "value": round(cumulative, 2),
                         "daily_change": round(float(daily_flow), 2),
                     }

@@ -16,6 +16,7 @@ from core.data_collector.economic_collector import EconomicCollectorService
 from core.portfolio_manager.exchange_rate import ExchangeRateManager
 from core.portfolio_manager.profile import InvestorProfileManager
 from core.portfolio_manager.universe import UniverseManager
+from core.utils.timezone import to_kst_iso
 
 router = APIRouter()
 
@@ -37,7 +38,7 @@ async def get_exchange_rate(current_user=Depends(require_viewer)):
                 "currency_pair": rate_data.pair,
                 "rate": rate_data.rate,
                 "source": rate_data.source,
-                "fetched_at": rate_data.fetched_at.isoformat(),
+                "fetched_at": to_kst_iso(rate_data.fetched_at),
             },
         )
     except Exception as e:
@@ -142,7 +143,7 @@ async def get_economic_indicators(
                         {
                             "indicator": item.indicator_name,
                             "value": item.value,
-                            "date": item.time.isoformat() if item.time else None,
+                            "date": to_kst_iso(item.time),
                             "source": "FRED",
                             "country": "US",
                         }
@@ -158,7 +159,7 @@ async def get_economic_indicators(
                         {
                             "indicator": item.indicator_name,
                             "value": item.value,
-                            "date": item.time.isoformat() if item.time else None,
+                            "date": to_kst_iso(item.time),
                             "source": "ECOS",
                             "country": "KR",
                         }

@@ -28,15 +28,13 @@ Scheduler Idempotency — 같은 거래일에 동일 이벤트가 두 번 실행
 
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta
 from typing import Optional
 
 from loguru import logger
 
+from core.utils.timezone import KST
 from db.database import RedisManager
-
-# KST = UTC+9, 한국 거래일 기준
-KST = timezone(timedelta(hours=9))
 
 # Redis 키 prefix — 다른 scheduler 키와 구분
 KEY_PREFIX = "scheduler:executed"
