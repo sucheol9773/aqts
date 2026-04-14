@@ -557,9 +557,9 @@ class RebalancingEngine:
         """
         if self.profile.investment_style == InvestmentStyle.DISCRETIONARY:
             logger.info(f"Auto-executing rebalancing orders for {self.profile.user_id}")
-            await self._execute_orders(result.orders)
-            # 체결 완료 알림
-            await self._send_rebalancing_completed_notification(result)
+            order_results = await self._execute_orders(result.orders)
+            # 체결 완료 알림 (실제 주문 결과 반영)
+            await self._send_rebalancing_completed_notification(result, order_results)
         else:
             await self._send_rebalancing_recommendation(result)
 
@@ -613,10 +613,12 @@ class RebalancingEngine:
                     results.append(result)
                     logger.info(f"Rebalancing order executed: {label} {order.ticker} x{order.quantity}")
                 except Exception as e:
-                    logger.error(f"Rebalancing order failed: {order.ticker}: {e}")
+                    from core.order_executor.executor import _unwrap_retry_error
+
+                    error_msg = _unwrap_retry_error(e)
+                    logger.error(f"Rebalancing order failed: {order.ticker}: {error_msg}")
                     # execute_order는 예외 재전파 전에 DB에 FAILED 결과를 저장하지만,
                     # 여기서도 결과를 수집해야 실패 알림에 포함된다.
-                    from core.order_executor.executor import _unwrap_retry_error
 
                     results.append(
                         OrderResult(
@@ -653,14 +655,43 @@ class RebalancingEngine:
         except Exception as e:
             logger.error(f"Failed to send recommendation: {e}")
 
-    async def _send_rebalancing_completed_notification(self, result: RebalancingResult) -> None:
-        """리밸런싱 완료 알림 전송"""
+    async def _send_rebalancing_completed_notification(
+        self,
+        result: RebalancingResult,
+        order_results: Optional[list[OrderResult]] = None,
+    ) -> None:
+        """리밸런싱 완료 알림 전송
+
+        Args:
+            result: 리밸런싱 결과 (주문 목록 포함)
+            order_results: 실제 주문 실행 결과 리스트. None이면 주문 수만 표시.
+        """
         try:
+            total = len(result.orders)
+            time_str = result.executed_at.astimezone(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M KST")
+
+            if order_results:
+                succeeded = sum(1 for r in order_results if r.status != OrderStatus.FAILED)
+                failed = total - succeeded
+
+                if failed == 0:
+                    status_line = f"주문 {total}건 전체 체결"
+                    icon = "✅"
+                elif succeeded == 0:
+                    status_line = f"주문 {total}건 전체 실패"
+                    icon = "❌"
+                else:
+                    status_line = f"주문 {total}건 중 {succeeded}건 체결 / {failed}건 실패"
+                    icon = "⚠️"
+            else:
+                status_line = f"주문 {total}건 제출"
+                icon = "✅"
+
             message = (
-                f"✅ <b>정기 리밸런싱 완료</b>\n\n"
-                f"주문 {len(result.orders)}건 체결\n"
+                f"{icon} <b>리밸런싱 완료</b>\n\n"
+                f"{status_line}\n"
                 f"유형: {result.rebalancing_type.value}\n"
-                f"시간: {result.executed_at.astimezone(timezone(timedelta(hours=9))).strftime('%Y-%m-%d %H:%M KST')}"
+                f"시간: {time_str}"
             )
             if self._telegram:
                 await self._telegram.send_text(message, parse_mode="HTML")

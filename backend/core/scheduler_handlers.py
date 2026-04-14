@@ -348,7 +348,7 @@ async def handle_market_close() -> dict:
         async with async_session_factory() as session:
             from sqlalchemy import text
 
-            today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            today_date = datetime.now(timezone.utc).date()
             query = text(
                 """
                 SELECT side,
@@ -360,7 +360,7 @@ async def handle_market_close() -> dict:
                 GROUP BY side
             """
             )
-            rows = await session.execute(query, {"today": today_str})
+            rows = await session.execute(query, {"today": today_date})
             trade_stats = {}
             for side, cnt, amount in rows.fetchall():
                 trade_stats[side] = {"count": cnt, "amount": float(amount)}
@@ -553,7 +553,7 @@ async def handle_post_market() -> dict:
         async with async_session_factory() as session:
             from sqlalchemy import text
 
-            today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            today_date = datetime.now(timezone.utc).date()
             query = text(
                 """
                 SELECT ticker, side, filled_quantity, filled_price, status, created_at
@@ -563,7 +563,7 @@ async def handle_post_market() -> dict:
                 ORDER BY created_at
             """
             )
-            rows = await session.execute(query, {"today": today_str})
+            rows = await session.execute(query, {"today": today_date})
             for ticker, side, qty, price, status, created_at in rows.fetchall():
                 trades.append(
                     {

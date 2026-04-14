@@ -35,6 +35,7 @@ from config.constants import (
     InvestmentStyle,
     Market,
     OrderSide,
+    OrderStatus,
     OrderType,
     RebalancingFrequency,
     RebalancingType,
@@ -1373,3 +1374,109 @@ class TestOrderFailureNotification:
         assert "005930" in sent_message
         assert "000660" in sent_message
         assert "실패: 2건" in sent_message
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 완료 알림 정확도 테스트
+# ══════════════════════════════════════════════════════════════════════════════
+class TestRebalancingCompletedNotification:
+    """리밸런싱 완료 알림이 실제 성공/실패 결과를 반영하는지 검증"""
+
+    def _make_engine_with_telegram(self):
+        """테스트용 엔진 + 모의 텔레그램"""
+        engine = RebalancingEngine.__new__(RebalancingEngine)
+        engine._telegram = AsyncMock()
+        return engine
+
+    def _make_result(self, order_count=20):
+        """테스트용 RebalancingResult"""
+        orders = [
+            RebalancingOrder(
+                ticker=f"TICK{i:02d}",
+                market=Market.KRX,
+                action=OrderSide.BUY,
+                quantity=100,
+            )
+            for i in range(order_count)
+        ]
+        return RebalancingResult(
+            orders=orders,
+            rebalancing_type=RebalancingType.SCHEDULED,
+        )
+
+    @pytest.mark.asyncio
+    async def test_all_failed_shows_failure_message(self):
+        """전체 실패 시 '전체 실패' 메시지와 ❌ 아이콘"""
+        engine = self._make_engine_with_telegram()
+        result = self._make_result(order_count=5)
+        order_results = [_make_order_result(f"T{i}", OrderStatus.FAILED, "test error") for i in range(5)]
+
+        await engine._send_rebalancing_completed_notification(result, order_results)
+
+        sent_msg = engine._telegram.send_text.call_args[0][0]
+        assert "전체 실패" in sent_msg
+        assert "❌" in sent_msg
+        assert "5건" in sent_msg
+
+    @pytest.mark.asyncio
+    async def test_all_succeeded_shows_success_message(self):
+        """전체 성공 시 '전체 체결' 메시지와 ✅ 아이콘"""
+        engine = self._make_engine_with_telegram()
+        result = self._make_result(order_count=3)
+        order_results = [_make_order_result(f"T{i}", OrderStatus.SUBMITTED) for i in range(3)]
+
+        await engine._send_rebalancing_completed_notification(result, order_results)
+
+        sent_msg = engine._telegram.send_text.call_args[0][0]
+        assert "전체 체결" in sent_msg
+        assert "✅" in sent_msg
+
+    @pytest.mark.asyncio
+    async def test_partial_failure_shows_mixed_message(self):
+        """일부 실패 시 성공/실패 건수와 ⚠️ 아이콘"""
+        engine = self._make_engine_with_telegram()
+        result = self._make_result(order_count=4)
+        order_results = [
+            _make_order_result("T0", OrderStatus.SUBMITTED),
+            _make_order_result("T1", OrderStatus.FAILED, "err"),
+            _make_order_result("T2", OrderStatus.SUBMITTED),
+            _make_order_result("T3", OrderStatus.FAILED, "err"),
+        ]
+
+        await engine._send_rebalancing_completed_notification(result, order_results)
+
+        sent_msg = engine._telegram.send_text.call_args[0][0]
+        assert "2건 체결" in sent_msg
+        assert "2건 실패" in sent_msg
+        assert "⚠️" in sent_msg
+
+    @pytest.mark.asyncio
+    async def test_no_order_results_fallback(self):
+        """order_results가 None이면 기본 메시지 표시"""
+        engine = self._make_engine_with_telegram()
+        result = self._make_result(order_count=10)
+
+        await engine._send_rebalancing_completed_notification(result, None)
+
+        sent_msg = engine._telegram.send_text.call_args[0][0]
+        assert "10건 제출" in sent_msg
+
+    @pytest.mark.asyncio
+    async def test_handle_rebalancing_passes_results_to_notification(self):
+        """_handle_rebalancing_by_style가 _execute_orders 결과를 완료 알림에 전달"""
+        engine = self._make_engine_with_telegram()
+        engine.profile = MagicMock()
+        engine.profile.investment_style = InvestmentStyle.DISCRETIONARY
+        engine.profile.user_id = "test-user"
+
+        failed_results = [
+            _make_order_result("T0", OrderStatus.FAILED, "err"),
+        ]
+        engine._execute_orders = AsyncMock(return_value=failed_results)
+        engine._send_rebalancing_completed_notification = AsyncMock()
+
+        result = self._make_result(order_count=1)
+        await engine._handle_rebalancing_by_style(result)
+
+        # _send_rebalancing_completed_notification에 order_results가 전달된다
+        engine._send_rebalancing_completed_notification.assert_awaited_once_with(result, failed_results)

@@ -826,7 +826,64 @@ DB의 `error_message`가 `RetryError[<Future ... raised KISAPIError>]` 형태로
 | 7 | market 하드코딩(NYSE) + order_type NULL | 단순화 주석 방치 + INSERT 컬럼 누락 | a2a74a3 |
 | 8 | order_id UNIQUE 제약 위반 | 빈 문자열 중복 | f792cd4 |
 
-### 10.5 후속 개선 사항 (E2E 경로 외)
+### 10.5 E2E 추가 검증 (2026-04-14)
+
+#### 10.5.1 POST_MARKET SQL 타입 버그 수정
+
+| 항목 | 내용 |
+|------|------|
+| 증상 | POST_MARKET 핸들러에서 거래 내역 조회 실패: `'str' object has no attribute 'toordinal'` |
+| 원인 | `DATE(created_at) = :today` 쿼리에 문자열 `'2026-04-14'`를 전달. asyncpg는 `$1`에 `datetime.date` 객체를 기대 |
+| 영향 | 일일 리포트에 당일 체결 내역 누락 (리포트 자체는 생성됨) |
+| 수정 | `today_str = ...strftime(...)` → `today_date = ...date()` (handle_market_close, handle_post_market 2곳) |
+
+#### 10.5.2 리밸런싱 완료 알림 정확도 개선
+
+| 항목 | 내용 |
+|------|------|
+| 증상 | 20건 전부 FAILED인데 `✅ 정기 리밸런싱 완료 — 주문 20건 체결`로 표시 |
+| 원인 | `_send_rebalancing_completed_notification`이 `_execute_orders` 결과를 받지 않고 주문 수만 표시 |
+| 수정 | `_handle_rebalancing_by_style`에서 `order_results`를 완료 알림에 전달, 아이콘/메시지를 실제 결과 반영 (✅전체체결/⚠️일부실패/❌전체실패) |
+| 테스트 | `TestRebalancingCompletedNotification` 5건 추가 (전체실패, 전체성공, 일부실패, fallback, wiring 검증) |
+
+#### 10.5.3 RetryError 로그 품질 수정
+
+| 항목 | 내용 |
+|------|------|
+| 증상 | 리밸런싱 로그에 `RetryError[<Future at 0x... state=finished>]`로 원인 불명 |
+| 원인 | `_execute_orders` except 블록에서 `str(e)` 사용, `_unwrap_retry_error` 미적용 |
+| 수정 | `_unwrap_retry_error(e)` 결과를 로그에 사용하여 실제 KIS 에러 코드/메시지 표시 |
+
+#### 10.5.4 스케줄러 이벤트 검증
+
+| 이벤트 | 실행 시각 (UTC) | 상태 |
+|--------|----------------|------|
+| PRE_MARKET | ~01:xx | ✅ 실행 완료 |
+| MARKET_OPEN | ~01:xx | ✅ 파이프라인 + 리밸런싱 실행 |
+| MIDDAY_CHECK | ~03:xx | ✅ 포지션 모니터링 |
+| MARKET_CLOSE | ~06:xx | ✅ 스냅샷 저장 |
+| POST_MARKET | 07:00 | ✅ 일일 리포트 생성 + Telegram 발송 (1.1초) |
+| 멱등성 복원 | 06:42 (재시작) | ✅ 5건 복원, 중복 실행 없음 |
+
+#### 10.5.5 주문 실행 현황 분석 (2026-04-14)
+
+| 상태 | 건수 | 비율 |
+|------|------|------|
+| SUBMITTED | 10 | 7% |
+| FAILED | 130 | 93% |
+| FILLED | 0 | 0% |
+
+에러 유형 분포:
+
+| 에러 유형 | 건수 | 설명 |
+|-----------|------|------|
+| 주문가능금액 부족 | 61 | DEMO 계좌 잔고 소진 후 |
+| 500 Server Error | 48 | KIS DEMO 미국주식 API 불안정 |
+| 모의투자 장종료 | 12 | KRX 장 마감 후 주문 시도 |
+| TOKEN_UNAVAILABLE | 7 | EGW00133 (1분 1회 토큰 제한) |
+| Quote fetch failed | 2 | 시세 조회 실패 |
+
+### 10.6 후속 개선 사항 (E2E 경로 외)
 
 1. **리밸런싱 API 비동기화**: 현재 동기 처리로 20건 주문 시 nginx 504 발생. 주문 실행을 백그라운드 태스크로 분리하고 API는 즉시 202 Accepted 반환 필요.
 2. **HighLatencyP95 WARNING 임계값 조정**: 리밸런싱 엔드포인트를 p95 계산에서 제외하거나, 비동기화 완료 후 자연 해소.
