@@ -18,6 +18,7 @@
 """
 
 import asyncio
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -371,7 +372,7 @@ class OrderExecutor:
         except Exception as e:
             logger.error(f"주문 실행 실패: {e}")
             result = OrderResult(
-                order_id="",
+                order_id=f"FAIL_{uuid.uuid4().hex[:12]}",
                 ticker=request.ticker,
                 market=request.market,
                 side=request.side,
@@ -534,8 +535,9 @@ class OrderExecutor:
                     )
 
                 # API 결과를 OrderResult로 변환
+                raw_order_id = api_result.get("order_id", "")
                 result = OrderResult(
-                    order_id=api_result.get("order_id", ""),
+                    order_id=raw_order_id if raw_order_id else f"KIS_{uuid.uuid4().hex[:12]}",
                     ticker=request.ticker,
                     market=request.market,
                     side=request.side,

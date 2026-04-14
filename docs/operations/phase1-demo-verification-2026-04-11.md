@@ -640,3 +640,18 @@ Phase 1 DEMO 검증 완료 후, 미완성 API wiring 4건에 대해 순차적으
 - 에러 경로 `OrderResult` 생성 시 `order_type=request.order_type` 명시적 전달
 
 **검증**: ruff 0 errors, black 0 reformatted, 51 passed (system+rebalancing) + 325 passed (order 관련).
+
+### 7.13 order_id UNIQUE 제약 위반 수정 — UUID fallback 생성 (2026-04-14)
+
+**증상**: 20건 주문 중 첫 번째만 DB에 저장되고 나머지 19건은 `duplicate key value violates unique constraint "orders_order_id_key"` 에러로 저장 실패. 모든 주문의 `order_id`가 빈 문자열(`""`)이어서 UNIQUE 제약 위반.
+
+**근본 원인**:
+- 에러 경로: `OrderResult(order_id="", ...)` 하드코딩
+- 성공 경로: `api_result.get("order_id", "")` — KIS API가 order_id를 반환하지 않으면 빈 문자열
+
+**수정**:
+- 에러 경로: `order_id=f"FAIL_{uuid.uuid4().hex[:12]}"` — 고유 ID 생성
+- 성공 경로: `raw_order_id if raw_order_id else f"KIS_{uuid.uuid4().hex[:12]}"` — KIS 응답이 비어있으면 fallback UUID
+- `import uuid` 추가
+
+**검증**: ruff 0 errors, black 0 reformatted, 325 passed (order 관련).
