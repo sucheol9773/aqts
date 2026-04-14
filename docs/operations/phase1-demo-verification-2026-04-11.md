@@ -655,3 +655,69 @@ Phase 1 DEMO 검증 완료 후, 미완성 API wiring 4건에 대해 순차적으
 - `import uuid` 추가
 
 **검증**: ruff 0 errors, black 0 reformatted, 325 passed (order 관련).
+
+---
+
+## 10. E2E 실거래 사이클 검증 결과 (2026-04-14)
+
+### 10.1 검증 환경
+
+| 항목 | 값 |
+|------|------|
+| 서버 | GCP Compute Engine (aqts-server, 34.64.216.144) |
+| 거래 모드 | DEMO (KIS 모의투자) |
+| 위험 성향 | BALANCED |
+| 투자 스타일 | DISCRETIONARY (자동 매매) |
+| 초기 자본 | 10,000,000원 |
+| 투자 목적 | WEALTH_GROWTH |
+| 앙상블 시그널 | 115+ 종목 (Redis 캐시) |
+| 검증 시간 | 2026-04-14 09:30~11:20 KST |
+
+### 10.2 E2E 경로 검증 결과
+
+| 단계 | 결과 | 비고 |
+|------|------|------|
+| 1. InvestorProfile 생성 (PUT /api/profile/) | ✅ 성공 | BALANCED/DISCRETIONARY/WEALTH_GROWTH |
+| 2. 리밸런싱 트리거 (POST /api/system/rebalancing) | ✅ 성공 | 20건 주문 생성 |
+| 3. PortfolioConstructionEngine | ✅ 성공 | 114 positions, mean_variance, cash=5% |
+| 4. RebalancingEngine → 주문 생성 | ✅ 성공 | 올바른 market 할당 (KRX/NYSE/NASDAQ) |
+| 5. OrderExecutor → KIS API 주문 전송 | ✅ 성공 | KIS DEMO 토큰 발급, 한국 종목 SUBMITTED |
+| 6. DB 주문 저장 | ✅ 성공 | order_type=MARKET, 고유 order_id |
+| 7. Telegram 알림 | ✅ 성공 | 리밸런싱 완료 알림 KST 시간대 |
+| 8. 미국 종목 장외 거부 | ✅ 정상 | fail-closed (장 마감 시간) |
+
+### 10.3 최종 주문 DB 현황
+
+```
+ market |  status   | count
+--------+-----------+-------
+ KRX    | FAILED    |     3
+ KRX    | SUBMITTED |     3
+ NASDAQ | FAILED    |     2
+ NYSE   | FAILED    |     4
+```
+
+- KRX SUBMITTED 3건: 한국 종목 KIS 모의투자 주문 정상 접수
+- KRX FAILED 3건: KIS rate limit (EGW00133) 또는 모의투자 계좌 제한
+- NYSE/NASDAQ FAILED 6건: 미국 장 마감 시간 (정상 동작)
+- 총 12건/20건 처리: 나머지 8건은 KIS rate limit으로 2분 윈도우 내 미처리
+
+### 10.4 발견 및 수정된 버그 (총 8건)
+
+| # | 버그 | 근본 원인 | 수정 커밋 |
+|---|------|-----------|-----------|
+| 1 | AuthenticatedUser → user_id 타입 불일치 | RBAC 미들웨어가 NamedTuple 반환, DB는 str 기대 | 6d6a85c |
+| 2 | 감사 로그/API 응답에 raw AuthenticatedUser 직렬화 | NamedTuple → JSON 배열 변환 | eb3b3d5 |
+| 3 | InvestorProfileManager(db) 불필요 인자 전달 | 클래스에 __init__ 미정의 | 274f264 |
+| 4 | Decimal → float 캐스팅 누락 | PostgreSQL NUMERIC → Python Decimal | 0eac1b4 |
+| 5 | OrderExecutor/TelegramTransport 미주입 | Wiring Rule 위반 ("정의 ≠ 적용") | e580f8f |
+| 6 | QuoteProvider 미주입 + Telegram UTC 시간대 | fail-closed 정책 + 시간대 누락 | b277b09 |
+| 7 | market 하드코딩(NYSE) + order_type NULL | 단순화 주석 방치 + INSERT 컬럼 누락 | a2a74a3 |
+| 8 | order_id UNIQUE 제약 위반 | 빈 문자열 중복 | f792cd4 |
+
+### 10.5 후속 개선 사항 (E2E 경로 외)
+
+1. **리밸런싱 API 비동기화**: 현재 동기 처리로 20건 주문 시 nginx 504 발생. 주문 실행을 백그라운드 태스크로 분리하고 API는 즉시 202 Accepted 반환 필요.
+2. **HighLatencyP95 WARNING 임계값 조정**: 리밸런싱 엔드포인트를 p95 계산에서 제외하거나, 비동기화 완료 후 자연 해소.
+3. **KIS rate limit 대응**: 주문 간 적절한 간격 배치 또는 배치 주문 API 활용.
+4. **미국 장 시간 사전 검증**: 장외 시간에는 미국 종목 주문을 사전 필터링하여 불필요한 API 호출 방지.
