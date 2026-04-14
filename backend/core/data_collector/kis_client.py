@@ -473,6 +473,103 @@ class KISClient:
         )
 
     # ══════════════════════════════════════
+    # 주문 체결 조회 API
+    # ══════════════════════════════════════
+    async def inquire_kr_daily_ccld(
+        self,
+        start_date: str,
+        end_date: str,
+        order_dv: str = "00",
+        ccld_dv: str = "00",
+        ctx_area_fk100: str = "",
+        ctx_area_nk100: str = "",
+    ) -> dict:
+        """
+        국내주식 일별 주문체결 조회
+
+        Args:
+            start_date: 조회 시작일 (YYYYMMDD)
+            end_date: 조회 종료일 (YYYYMMDD)
+            order_dv: 매도매수구분 (00: 전체, 01: 매도, 02: 매수)
+            ccld_dv: 체결구분 (00: 전체, 01: 체결, 02: 미체결)
+            ctx_area_fk100: 연속조회키 (첫 조회 시 빈 문자열)
+            ctx_area_nk100: 연속조회키 (첫 조회 시 빈 문자열)
+
+        Returns:
+            KIS API 응답 (output: 체결 내역 리스트)
+        """
+        tr_id = self._get_tr_id("TTTC8001R", "VTTC8001R")
+        params = {
+            "CANO": self._settings.account_no,
+            "ACNT_PRDT_CD": self._settings.account_prod,
+            "INQR_STRT_DT": start_date,
+            "INQR_END_DT": end_date,
+            "SLL_BUY_DVSN_CD": order_dv,
+            "INQR_DVSN": "00",
+            "PDNO": "",
+            "CCLD_DVSN": ccld_dv,
+            "ORD_GNO_BRNO": "",
+            "ODNO": "",
+            "INQR_DVSN_3": "00",
+            "INQR_DVSN_1": "",
+            "CTX_AREA_FK100": ctx_area_fk100,
+            "CTX_AREA_NK100": ctx_area_nk100,
+        }
+        return await self._request(
+            "GET",
+            "/uapi/domestic-stock/v1/trading/inquire-daily-ccld",
+            tr_id,
+            params=params,
+        )
+
+    async def inquire_us_ccld(
+        self,
+        start_date: str,
+        end_date: str,
+        order_dv: str = "00",
+        ccld_dv: str = "00",
+        ctx_area_fk200: str = "",
+        ctx_area_nk200: str = "",
+    ) -> dict:
+        """
+        해외주식 주문체결 조회
+
+        Args:
+            start_date: 조회 시작일 (YYYYMMDD)
+            end_date: 조회 종료일 (YYYYMMDD)
+            order_dv: 매도매수구분 (00: 전체)
+            ccld_dv: 체결구분 (00: 전체, 01: 체결, 02: 미체결)
+            ctx_area_fk200: 연속조회키 (첫 조회 시 빈 문자열)
+            ctx_area_nk200: 연속조회키 (첫 조회 시 빈 문자열)
+
+        Returns:
+            KIS API 응답 (output: 체결 내역 리스트)
+        """
+        tr_id = self._get_tr_id("TTTS3035R", "VTTS3035R")
+        params = {
+            "CANO": self._settings.account_no,
+            "ACNT_PRDT_CD": self._settings.account_prod,
+            "PDNO": "",
+            "ORD_STRT_DT": start_date,
+            "ORD_END_DT": end_date,
+            "SLL_BUY_DVSN_CD": order_dv,
+            "CCLD_NCCS_DVSN": ccld_dv,
+            "OVRS_EXCG_CD": "",
+            "SORT_SQN": "DS",
+            "ORD_DT": "",
+            "ORD_GNO_BRNO": "",
+            "ODNO": "",
+            "CTX_AREA_FK200": ctx_area_fk200,
+            "CTX_AREA_NK200": ctx_area_nk200,
+        }
+        return await self._request(
+            "GET",
+            "/uapi/overseas-stock/v1/trading/inquire-ccld",
+            tr_id,
+            params=params,
+        )
+
+    # ══════════════════════════════════════
     # 잔고 조회 API
     # ══════════════════════════════════════
     async def get_kr_balance(self) -> dict:

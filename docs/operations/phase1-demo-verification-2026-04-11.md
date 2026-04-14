@@ -997,3 +997,68 @@ API 호출을 두 단계로 분리한다:
 | `test_get_rebalancing_status_not_found` | 존재하지 않는 task_id → 404 |
 | `test_get_rebalancing_status_redis_error` | Redis 오류 → 실패 응답 |
 | `test_trigger_rebalancing_lock_released_on_validation_failure` | 프로필 없음 시 락 해제 확인 |
+
+### 10.9 주문 체결 상태 폴링 시스템 구현 (2026-04-14)
+
+#### 문제
+
+§10.8에서 분석한 바와 같이, SUBMITTED 상태 주문 10건이 체결 여부가 갱신되지 않은 채 남아있었다. 원인은 두 가지이다:
+
+1. **체결 조회 로직 부재**: 주문 제출 후 KIS 체결 조회 API(`TTTC8001R`/`VTTS3035R`)를 호출하여 체결 여부를 확인하는 로직이 없었다.
+2. **WebSocket 체결 통보 미연동**: KIS WebSocket 체결 통보(`H0STCNI0`/`H0STCNI9`) 수신 시 DB 갱신 콜백이 없었다.
+
+서버의 `ReconciliationRunnerMissing` 경고(스케줄러가 작동하지만 reconcile이 24h 동안 미실행)도 동일 원인이다.
+
+#### 해결 방안: 방안 C (폴링 + WebSocket 병행)
+
+##### 1단계: 폴링 기반 체결 조회 (본 커밋)
+
+두 가지 실행 모드를 제공한다:
+
+- **`poll_after_execution()`**: 주문 직후 비동기 태스크로 단기 폴링 (30초 간격 × 5회). `asyncio.create_task()`로 생성되어 백그라운드에서 동작한다.
+- **`reconcile_all_submitted()`**: POST_MARKET 스케줄러(16:00 KST)에서 SUBMITTED 상태 전량 일괄 조회. 일일 리포트 생성 전에 실행되어 체결 내역 정확도를 보장한다.
+
+##### 2단계: WebSocket 체결 통보 연동 (후속 커밋)
+
+KIS WebSocket `H0STCNI0`(국내) / `H0STCNI9`(해외) 체결 통보 수신 시 DB 즉시 갱신. 폴링과 병행하여 이중 안전망 역할.
+
+#### 변경 파일
+
+| 파일 | 변경 내용 |
+|---|---|
+| `core/order_executor/settlement_poller.py` | **신규**. `_fetch_kis_ccld_records()` KIS 체결 조회, `_match_ccld_record()` 주문 매칭, `_parse_ccld_status()` 상태 파싱, `_update_order_status()` DB 갱신, `poll_after_execution()` 단기 폴링, `reconcile_all_submitted()` 일괄 조회 |
+| `core/data_collector/kis_client.py` | `inquire_kr_daily_ccld()` 국내 체결 조회 API 추가 (TR: `VTTC8001R`/`TTTC8001R`), `inquire_us_ccld()` 해외 체결 조회 API 추가 (TR: `VTTS3035R`/`TTTS3035R`) |
+| `core/order_executor/executor.py` | `_start_settlement_polling()` 메서드 추가. `_execute_market_order()` 및 `_execute_limit_order()` 완료 후 SUBMITTED 상태이면 폴링 태스크 생성 |
+| `core/scheduler_handlers.py` | `handle_post_market()` §1.9에 `reconcile_all_submitted()` 호출 추가 (체결 내역 조회 전 실행) |
+| `tests/test_settlement_poller.py` | **신규**. 20건 단위 테스트 — 상태 파싱 7건, 주문 매칭 4건, DB 갱신 3건, 폴링 루프 3건, reconcile 4건 |
+
+#### 설계 근거
+
+- **KIS API 특성**: 주문 제출 시점에 체결 정보가 완전히 반환되지 않음. 모의투자(DEMO)에서는 시장가 주문도 즉시 체결되지 않을 수 있음.
+- **상태 머신 준수**: `order_state_machine.py`의 전이 규칙(`SUBMITTED→FILLED`, `SUBMITTED→PARTIAL`)을 검증한 후에만 DB 갱신.
+- **Rate limit 최적화**: `reconcile_all_submitted()`는 마켓별로 KIS API를 한 번씩만 호출하여 rate limit 소비를 최소화.
+- **Optimistic locking**: `WHERE status = :current_status` 조건으로 동시 갱신 충돌 방지 (WebSocket과 폴링이 동시에 같은 주문을 갱신하려는 경우).
+
+#### 테스트 (4060 passed)
+
+| 테스트 | 검증 내용 |
+|---|---|
+| `test_kr_fully_filled` | 국내주식 전량 체결 → FILLED 상태 + 수량/가격 정확 |
+| `test_kr_partial_fill` | 국내주식 부분 체결 → PARTIAL 상태 |
+| `test_kr_no_fill` | 국내주식 미체결 → SUBMITTED 유지 |
+| `test_us_fully_filled` | 해외주식 전량 체결 → FILLED (FT_ 필드 파싱) |
+| `test_us_partial_fill` | 해외주식 부분 체결 → PARTIAL |
+| `test_empty_fields_fallback` | 빈 필드 → SUBMITTED + 에러 없음 |
+| `test_match_by_order_id` | 주문번호 정확 매칭 |
+| `test_match_by_ticker_fallback` | UUID 폴백 시 종목코드로 매칭 |
+| `test_no_match` / `test_empty_records` | 매칭 실패 → None |
+| `test_update_submitted_to_filled` | SUBMITTED→FILLED DB 갱신 + commit 호출 |
+| `test_skip_terminal_state` | 이미 FILLED → 갱신 스킵 |
+| `test_skip_same_submitted` | SUBMITTED→SUBMITTED 동일 상태 → 스킵 |
+| `test_poll_stops_on_terminal_state` | DB에서 이미 종결 → KIS API 미호출 |
+| `test_poll_updates_on_fill` | KIS 체결 확인 → DB 갱신 후 중단 |
+| `test_poll_order_not_found_in_db` | DB 주문 미발견 → 폴링 중단 |
+| `test_reconcile_no_submitted_orders` | SUBMITTED 없음 → 즉시 종료 |
+| `test_reconcile_updates_filled_orders` | 체결 건 DB 갱신 |
+| `test_reconcile_handles_processing_error` | 예외 시 errors 카운트 증가 |
+| `test_reconcile_market_batch_optimization` | 같은 마켓 → API 1회 호출 |

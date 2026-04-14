@@ -547,6 +547,24 @@ async def handle_post_market() -> dict:
         result["skip_reason"] = "start_nonpositive_with_end_positive"
         return result
 
+    # ── 1.9. SUBMITTED 주문 일괄 체결 확인 (reconcile) ──
+    # 일일 리포트 생성 전에 SUBMITTED 상태 주문의 실제 체결 여부를 확인하여
+    # DB를 최신 상태로 갱신한다. 이후 체결 내역 조회가 정확해진다.
+    try:
+        from core.order_executor.settlement_poller import reconcile_all_submitted
+
+        reconcile_stats = await reconcile_all_submitted()
+        result["reconcile_stats"] = reconcile_stats
+        logger.info(
+            f"[PostMarket] reconcile 완료: "
+            f"checked={reconcile_stats['checked']}, "
+            f"updated={reconcile_stats['updated']}, "
+            f"errors={reconcile_stats['errors']}"
+        )
+    except Exception as e:
+        logger.error(f"[PostMarket] reconcile 실패: {e}")
+        result["reconcile_error"] = str(e)
+
     # ── 2. 금일 체결 내역 조회 ──
     trades = []
     try:

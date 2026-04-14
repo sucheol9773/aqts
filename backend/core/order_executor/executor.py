@@ -580,11 +580,36 @@ class OrderExecutor:
                 )
 
             logger.info(f"시장가 주문 완료: {result.order_id}")
+
+            # 체결 상태 폴링 태스크 생성 (SUBMITTED 상태일 때만)
+            if result.status == OrderStatus.SUBMITTED:
+                self._start_settlement_polling(result)
+
             return result
 
         except Exception as e:
             logger.error(f"시장가 주문 실패: {e}")
             raise
+
+    def _start_settlement_polling(self, result: OrderResult) -> None:
+        """주문 체결 상태 폴링 백그라운드 태스크를 생성한다.
+
+        asyncio 이벤트 루프가 없는 환경(테스트 등)에서는 경고만 출력하고 스킵.
+        """
+        try:
+            from core.order_executor.settlement_poller import poll_after_execution
+
+            asyncio.create_task(
+                poll_after_execution(
+                    kis_client=self._kis_client,
+                    order_id=result.order_id,
+                    ticker=result.ticker,
+                    market=result.market.value if isinstance(result.market, Market) else str(result.market),
+                )
+            )
+            logger.debug(f"[SettlementPoller] 폴링 태스크 생성: {result.order_id}")
+        except RuntimeError:
+            logger.warning(f"[SettlementPoller] 이벤트 루프 없음, 폴링 스킵: {result.order_id}")
 
     async def _execute_limit_order(self, request: OrderRequest) -> OrderResult:
         """
@@ -690,6 +715,11 @@ class OrderExecutor:
                 )
 
             logger.info(f"지정가 주문 완료: {result.order_id}")
+
+            # 체결 상태 폴링 태스크 생성 (SUBMITTED 상태일 때만)
+            if result.status == OrderStatus.SUBMITTED:
+                self._start_settlement_polling(result)
+
             return result
 
         except Exception as e:
