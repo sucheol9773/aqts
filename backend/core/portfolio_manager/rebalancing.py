@@ -614,6 +614,25 @@ class RebalancingEngine:
                     logger.info(f"Rebalancing order executed: {label} {order.ticker} x{order.quantity}")
                 except Exception as e:
                     logger.error(f"Rebalancing order failed: {order.ticker}: {e}")
+                    # execute_order는 예외 재전파 전에 DB에 FAILED 결과를 저장하지만,
+                    # 여기서도 결과를 수집해야 실패 알림에 포함된다.
+                    from core.order_executor.executor import _unwrap_retry_error
+
+                    results.append(
+                        OrderResult(
+                            order_id="",
+                            ticker=order.ticker,
+                            market=order.market,
+                            side=order.action,
+                            quantity=order.quantity,
+                            filled_quantity=0,
+                            avg_price=0.0,
+                            status=OrderStatus.FAILED,
+                            executed_at=datetime.now(timezone.utc),
+                            order_type=order.order_type,
+                            error_message=_unwrap_retry_error(e),
+                        )
+                    )
 
         # 실패 건이 있으면 알림 발송
         failed = [r for r in results if r.status == OrderStatus.FAILED]

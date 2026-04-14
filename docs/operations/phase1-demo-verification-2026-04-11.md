@@ -759,7 +759,13 @@ DB의 `error_message`가 `RetryError[<Future ... raised KISAPIError>]` 형태로
 
 **기존 테스트 수정** (2건): `TestExecuteOrdersDelay` 테스트에 `OrderResult` 반환값 설정 + `engine._telegram = None` 추가 (반환 타입 변경 대응).
 
-**검증**: ruff 0 errors, black 0 reformatted, 4029 passed, 0 failed (gen_status 반영 후 3933 total).
+**배포 후 검증에서 추가 발견**:
+- `OrderExecutor.execute_order()`는 FAILED 결과를 DB에 저장한 뒤 **예외를 재전파**(raise)함
+- `_execute_orders`의 except 블록에서 예외를 잡았지만 `results`에 추가하지 않아 실패 건이 누락됨
+- 수정: except 블록에서 `OrderResult(status=FAILED)`를 직접 생성하여 `results`에 추가
+- 추가 테스트 1건: `test_failure_notification_on_exception_raise` — 예외 raise 시에도 결과 수집 + 알림 발송 확인
+
+**검증**: ruff 0 errors, black 0 reformatted, 4030 passed, 0 failed (gen_status 반영 후 3934 total).
 
 ---
 

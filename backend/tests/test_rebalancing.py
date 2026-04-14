@@ -1318,3 +1318,58 @@ class TestOrderFailureNotification:
 
         assert len(results) == 1
         assert results[0].status == OrderStatus.FAILED
+
+    @pytest.mark.asyncio
+    async def test_failure_notification_on_exception_raise(self):
+        """execute_order가 예외를 raise해도 실패 결과가 수집되고 알림이 발송된다"""
+        from config.constants import Market, OrderSide, OrderStatus, OrderType
+        from core.portfolio_manager.rebalancing import (
+            RebalancingEngine,
+            RebalancingOrder,
+        )
+
+        mock_executor = AsyncMock()
+        mock_executor.execute_order = AsyncMock(
+            side_effect=Exception("KIS API Error [1]: 모의투자 주문가능금액이 부족합니다")
+        )
+
+        mock_telegram = AsyncMock()
+
+        engine = RebalancingEngine.__new__(RebalancingEngine)
+        engine._order_executor = mock_executor
+        engine._telegram = mock_telegram
+
+        orders = [
+            RebalancingOrder(
+                ticker="005930",
+                market=Market.KRX,
+                action=OrderSide.BUY,
+                quantity=100,
+                order_type=OrderType.MARKET,
+                reason="리밸런싱",
+            ),
+            RebalancingOrder(
+                ticker="000660",
+                market=Market.KRX,
+                action=OrderSide.BUY,
+                quantity=50,
+                order_type=OrderType.MARKET,
+                reason="리밸런싱",
+            ),
+        ]
+
+        with patch(
+            "core.portfolio_manager.rebalancing.asyncio.sleep",
+            new_callable=AsyncMock,
+        ):
+            results = await engine._execute_orders(orders)
+
+        # 예외가 발생해도 결과가 수집된다
+        assert len(results) == 2
+        assert all(r.status == OrderStatus.FAILED for r in results)
+        # Telegram 알림이 발송된다
+        mock_telegram.send_text.assert_called_once()
+        sent_message = mock_telegram.send_text.call_args[0][0]
+        assert "005930" in sent_message
+        assert "000660" in sent_message
+        assert "실패: 2건" in sent_message
