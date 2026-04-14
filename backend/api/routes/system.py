@@ -23,6 +23,8 @@ from config.logging import logger
 from config.settings import get_settings
 from core.backtest_engine.engine import BacktestConfig, BacktestEngine
 from core.circuit_breaker import CircuitBreakerRegistry
+from core.notification.telegram_transport import create_transport as create_telegram_transport
+from core.order_executor.executor import OrderExecutor
 from core.pipeline import InvestmentDecisionPipeline
 from core.portfolio_manager.construction import PortfolioConstructionEngine
 from core.portfolio_manager.profile import InvestorProfileManager
@@ -271,7 +273,14 @@ async def trigger_rebalancing(
         construction_engine = PortfolioConstructionEngine(
             risk_profile=profile.risk_profile,
         )
-        rebalancing_engine = RebalancingEngine(profile, construction_engine)
+        order_executor = OrderExecutor()
+        telegram_notifier = create_telegram_transport()
+        rebalancing_engine = RebalancingEngine(
+            profile,
+            construction_engine,
+            telegram_notifier=telegram_notifier,
+            order_executor=order_executor,
+        )
 
         rebal_result = await rebalancing_engine.execute_scheduled_rebalancing(
             ensemble_signals=ensemble_signals,

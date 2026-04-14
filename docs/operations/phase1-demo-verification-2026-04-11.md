@@ -598,3 +598,16 @@ Phase 1 DEMO 검증 완료 후, 미완성 API wiring 4건에 대해 순차적으
 **수정**: `from_dict()`에서 `seed_amount=float(data["seed_amount"])`, `loss_tolerance=float(data["loss_tolerance"])` 명시적 캐스팅 추가.
 
 **검증**: ruff 0 errors, black 0 reformatted, test_profile 32 passed + test_rebalancing 26 passed.
+
+### 7.10 RebalancingEngine에 OrderExecutor / TelegramTransport wiring 추가 (2026-04-14)
+
+**증상**: 리밸런싱 성공(20건 주문 생성)했으나 `OrderExecutor not available, orders not executed` 경고와 함께 실제 KIS 주문이 미실행. DB orders 테이블 0건.
+
+**근본 원인**: `system.py`의 `trigger_rebalancing`에서 `RebalancingEngine(profile, construction_engine)`으로 생성 시 `order_executor`와 `telegram_notifier` 파라미터를 전달하지 않아 `None` 상태. Wiring Rule 위반 — "정의했다 ≠ 적용했다".
+
+**수정**:
+- `OrderExecutor()` 인스턴스 생성하여 `order_executor` 파라미터로 전달
+- `create_telegram_transport()` 팩토리로 `telegram_notifier` 파라미터 전달
+- import 추가: `core.notification.telegram_transport.create_transport`, `core.order_executor.executor.OrderExecutor`
+
+**검증**: ruff 0 errors, black 0 reformatted, test_system_routes 15 passed.
