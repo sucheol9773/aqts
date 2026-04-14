@@ -16,6 +16,7 @@
 - async execute_emergency_rebalancing: 비상 리밸런싱 실행
 """
 
+import asyncio
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta, timezone
@@ -585,8 +586,14 @@ class RebalancingEngine:
         sell_orders = [o for o in orders if o.action == OrderSide.SELL]
         buy_orders = [o for o in orders if o.action == OrderSide.BUY]
 
+        # KIS API rate limit 대응: 주문 간 0.5초 딜레이
+        # execute_batch_orders와 동일한 간격으로 API 부하를 분산
+        order_delay_sec = 0.5
+
         for order_group, label in [(sell_orders, "SELL"), (buy_orders, "BUY")]:
-            for order in order_group:
+            for idx, order in enumerate(order_group):
+                if idx > 0:
+                    await asyncio.sleep(order_delay_sec)
                 try:
                     request = OrderRequest(
                         ticker=order.ticker,

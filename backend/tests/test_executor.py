@@ -20,7 +20,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from config.constants import Market, OrderSide, OrderStatus, OrderType
-from core.order_executor.executor import OrderExecutor, OrderRequest, OrderResult
+from core.order_executor.executor import (
+    OrderExecutor,
+    OrderRequest,
+    OrderResult,
+    _unwrap_retry_error,
+)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -991,3 +996,53 @@ class TestOrderExecutorIntegration:
         assert len(results) == 2
         assert results[0].side == OrderSide.SELL
         assert results[1].side == OrderSide.BUY
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# _unwrap_retry_error 헬퍼 함수 테스트
+# ══════════════════════════════════════════════════════════════════════════════
+class TestUnwrapRetryError:
+    """RetryError unwrap 헬퍼 함수 테스트"""
+
+    def test_unwrap_retry_error_extracts_original(self):
+        """RetryError 내부의 원본 예외 메시지를 추출한다"""
+        from concurrent.futures import Future
+
+        from tenacity import RetryError
+
+        original = ValueError("KIS API Error [EGW00133]: 접근토큰 발급 잠시 후 다시 시도하세요")
+        future = Future()
+        future.set_exception(original)
+
+        from tenacity import Future as TenacityFuture
+
+        attempt = TenacityFuture(attempt_number=3)
+        attempt.set_exception(original)
+
+        retry_err = RetryError(attempt)
+
+        result = _unwrap_retry_error(retry_err)
+        assert "EGW00133" in result
+        assert "접근토큰" in result
+
+    def test_unwrap_non_retry_error_returns_str(self):
+        """일반 예외는 str()로 변환한다"""
+        err = RuntimeError("일반 에러 메시지")
+        result = _unwrap_retry_error(err)
+        assert result == "일반 에러 메시지"
+
+    def test_unwrap_kis_api_error_preserves_code(self):
+        """KISAPIError가 RetryError로 감싸인 경우 코드가 보존된다"""
+        from tenacity import Future as TenacityFuture
+        from tenacity import RetryError
+
+        from core.data_collector.kis_client import KISAPIError
+
+        kis_err = KISAPIError("EGW00133", "접근토큰 발급 잠시 후 다시 시도하세요(1분당 1회)")
+        attempt = TenacityFuture(attempt_number=3)
+        attempt.set_exception(kis_err)
+
+        retry_err = RetryError(attempt)
+        result = _unwrap_retry_error(retry_err)
+        assert "EGW00133" in result
+        assert "접근토큰" in result

@@ -23,7 +23,7 @@
 
 | Module | Feature | Status | Code Path | Tests | Notes |
 |--------|---------|--------|-----------|-------|-------|
-| kis_client | KIS API 래퍼 (LIVE/DEMO/BACKTEST) | Tested | core/data_collector/kis_client.py | test_kis_client.py (14) | 한국투자증권 OpenAPI 통합, 3가지 모드 지원 |
+| kis_client | KIS API 래퍼 (LIVE/DEMO/BACKTEST) | Tested | core/data_collector/kis_client.py | test_kis_client.py (19) | 한국투자증권 OpenAPI 통합, 3가지 모드 지원 |
 | market_data | 시세 데이터 수집 및 무결성 검증 | Tested | core/data_collector/market_data.py | test_market_data.py (12) | 가격 데이터 OHLCV, 이상치 검증 |
 | news_collector | RSS 뉴스 + DART 공시 수집 | Tested | core/data_collector/news_collector.py | test_news_collector.py (13) | Naver/Hankyung/Maekyung/Reuters 4개 소스 |
 | economic_collector | FRED·ECOS 경제지표 수집 | Tested | core/data_collector/economic_collector.py | test_economic_collector.py (21) | 미국 9개 + 한국 5개 지표 |
@@ -62,7 +62,7 @@
 | regime_detector | 실시간 시장 레짐 탐지 (5 regimes) | Tested | core/strategy_ensemble/regime.py | test_regime.py (31) + test_backtest_improvements.py (22) | TRENDING_UP/DOWN/SIDEWAYS/HIGH_VOLATILITY/CRISIS |
 | profile | 투자자 프로필 (위험성향·스타일·손실허용도) | Tested | core/portfolio_manager/profile.py | test_profile.py (22) | 5단계 위험성향 분류 |
 | construction | 포트폴리오 구성 (MVO·Risk Parity·Black-Litterman) | Tested | core/portfolio_manager/construction.py | test_construction.py (77) | 3중 엔진, Ledoit-Wolf 축소, USD 하드캡 |
-| rebalancing | 리밸런싱 (정기·긴급·방어) | Tested | core/portfolio_manager/rebalancing.py | test_rebalancing.py (36) | 3가지 리밸런싱 모드 |
+| rebalancing | 리밸런싱 (정기·긴급·방어) | Tested | core/portfolio_manager/rebalancing.py | test_rebalancing.py (38) | 3가지 리밸런싱 모드 |
 | universe | 투자 유니버스 관리 | Tested | core/portfolio_manager/universe.py | test_universe.py (29) | 섹터 필터, 지정 종목, 유동성 필터 |
 | exchange_rate | 환율 관리 (KIS+FRED, Redis 캐싱) | Tested | core/portfolio_manager/exchange_rate.py | test_exchange_rate.py (48) | 5분/24시간 TTL 캐시 |
 | weight_optimizer | 가중치 자동 최적화 (Sharpe·Risk-Adjusted 등) | Tested | core/weight_optimizer.py | test_weight_optimizer.py (32) | 4가지 최적화 방식, Walk-Forward 포함 |
@@ -73,7 +73,7 @@
 
 | Module | Feature | Status | Code Path | Tests | Notes |
 |--------|---------|--------|-----------|-------|-------|
-| executor | 주문 집행 (시장가·지정가·TWAP·VWAP) | Tested | core/order_executor/executor.py | test_executor.py (33) | TWAP 6분할, VWAP 가중치, 배치 실행, dry_run 모드 지원 |
+| executor | 주문 집행 (시장가·지정가·TWAP·VWAP) | Tested | core/order_executor/executor.py | test_executor.py (36) | TWAP 6분할, VWAP 가중치, 배치 실행, dry_run 모드 지원 |
 | dry_run_engine | 드라이런 엔진 (주문 인터셉트 + 가상 기록) | Tested | core/dry_run/engine.py | test_dry_run_engine.py (33) + test_dry_run_api.py (13) | DryRunSession/Order/Report, 6개 API 엔드포인트 |
 | trading_guard | 트레이딩 안전 장치 (7계층 보호) | Tested | core/trading_guard.py | test_trading_guard.py (72) | 환경·자본·손실·MDD·연속손실 검증 |
 | emergency_monitor | 비상 리밸런싱 5분 모니터 | Tested | core/emergency_monitor.py | test_emergency_monitor.py (64) | 동적 손절, 방어 포트폴리오 전환 |
@@ -347,7 +347,7 @@
 ## Test Coverage Summary
 
 ```
-Total Tests: 3,916 tests (413 smoke-marked) — ALL PASS, Coverage 90%
+Total Tests: 3,926 tests (413 smoke-marked) — ALL PASS, Coverage 90%
 ├── Core Features: 40+ modules with passing tests
 ├── Data Contracts: 154 tests (9 contracts) [smoke]
 ├── Pipeline Gates: 59 tests (12 components)

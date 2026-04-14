@@ -656,6 +656,35 @@ Phase 1 DEMO 검증 완료 후, 미완성 API wiring 4건에 대해 순차적으
 
 **검증**: ruff 0 errors, black 0 reformatted, 325 passed (order 관련).
 
+### 7.14 KRX 주문 실패 원인 수정 — 토큰 사전 체크 + RetryError unwrap + 주문 간 딜레이 (2026-04-14)
+
+**발견**: E2E 검증 시 KRX 6건 중 SUBMITTED 3건 / FAILED 6건 발생 (일부 이전 검증 누적 포함).
+DB의 `error_message`가 `RetryError[<Future ... raised KISAPIError>]` 형태로만 저장되어 실제 KIS 에러 코드가 은폐됨.
+
+**근본 원인 분석** (로그 관찰):
+1. KIS 토큰 발급 EGW00133 (1분당 1회 제한)으로 토큰 미확보
+2. 토큰 recovery 완료 전(02:38:29 예정)에 주문 실행 시작(02:38:04)
+3. 토큰 없는 상태에서 `_request()` → `_get_auth_headers()` → `get_access_token()` → `_issue_token()` 재시도 → 전부 EGW00133으로 실패
+4. tenacity `RetryError`가 원본 `KISAPIError`를 감싸서 `str(e)`가 진단 불가한 형태로 DB에 저장
+
+**수정 내용**:
+
+| 파일 | 변경 | 목적 |
+|------|------|------|
+| `kis_client.py` | `KISTokenManager.has_valid_token` property 추가 | 네트워크 호출 없이 토큰 유효 여부 확인 |
+| `kis_client.py` | `KISClient.has_valid_token` property 추가 | TokenManager에 위임 |
+| `executor.py` | `_unwrap_retry_error()` 헬퍼 함수 추가 | `RetryError` → 원본 예외 메시지 추출 |
+| `executor.py` | `execute_order()` catch 블록에서 unwrap 적용 | DB에 실제 KIS 에러 코드 저장 |
+| `executor.py` | `_execute_market_order()` / `_execute_limit_order()`에 토큰 사전 체크 | 토큰 미확보 시 즉시 TOKEN_UNAVAILABLE 에러 (무의미한 API 재시도 방지) |
+| `rebalancing.py` | `_execute_orders()`에 주문 간 0.5초 딜레이 추가 | `execute_batch_orders()`와 동일한 rate limit 대응 |
+
+**추가된 테스트** (10건):
+- `TestUnwrapRetryError` (3건): RetryError unwrap, 일반 예외, KISAPIError 보존
+- `TestHasValidToken` (5건): 토큰 없음/만료/임박/유효/Client 위임
+- `TestExecuteOrdersDelay` (2건): 복수 주문 딜레이 적용, 단건 주문 딜레이 미적용
+
+**검증**: ruff 0 errors, black 0 reformatted, 4023 passed, 0 failed.
+
 ---
 
 ## 10. E2E 실거래 사이클 검증 결과 (2026-04-14)

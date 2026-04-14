@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from sqlalchemy import text
+from tenacity import RetryError
 
 from config.constants import Market, OrderSide, OrderStatus, OrderType
 from config.logging import logger
@@ -148,6 +149,21 @@ class OrderResult:
             "executed_at": self.executed_at.isoformat(),
             "error_message": self.error_message,
         }
+
+
+def _unwrap_retry_error(exc: Exception) -> str:
+    """RetryError를 unwrap하여 실제 원인 에러 메시지를 반환합니다.
+
+    tenacity의 RetryError는 내부에 원본 예외를 감싸고 있어
+    str(RetryError)가 'RetryError[<Future ...>]' 형태로만 표시됩니다.
+    이 함수는 원본 예외를 추출하여 의미 있는 에러 메시지를 반환합니다.
+    """
+    if isinstance(exc, RetryError):
+        last = exc.last_attempt
+        if last and last.exception():
+            original = last.exception()
+            return str(original)
+    return str(exc)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -370,7 +386,9 @@ class OrderExecutor:
             return result
 
         except Exception as e:
-            logger.error(f"주문 실행 실패: {e}")
+            # RetryError를 unwrap하여 실제 KIS 에러 코드를 DB에 기록
+            error_message = _unwrap_retry_error(e)
+            logger.error(f"주문 실행 실패: {error_message}")
             result = OrderResult(
                 order_id=f"FAIL_{uuid.uuid4().hex[:12]}",
                 ticker=request.ticker,
@@ -382,7 +400,7 @@ class OrderExecutor:
                 status=OrderStatus.FAILED,
                 executed_at=datetime.now(timezone.utc),
                 order_type=request.order_type,
-                error_message=str(e),
+                error_message=error_message,
             )
             await self._store_order(result)
             raise
@@ -517,7 +535,20 @@ class OrderExecutor:
                     executed_at=datetime.now(timezone.utc),
                 )
             else:
-                # 실제 API 호출
+                # 실제 API 호출 전 토큰 유효성 사전 체크
+                if not self._kis_client.has_valid_token:
+                    logger.warning(f"KIS 토큰 미확보 상태에서 주문 시도: {request.ticker} — " "토큰 갱신을 시도합니다")
+                    try:
+                        await self._kis_client._token_manager.get_access_token()
+                    except Exception as token_err:
+                        from core.data_collector.kis_client import KISAPIError
+
+                        raise KISAPIError(
+                            "TOKEN_UNAVAILABLE",
+                            f"KIS 접근 토큰 확보 실패로 주문을 실행할 수 없습니다: "
+                            f"{_unwrap_retry_error(token_err)}",
+                        ) from token_err
+
                 if request.market == Market.KRX:
                     api_result = await self._kis_client.place_kr_order(
                         ticker=request.ticker,
@@ -616,7 +647,20 @@ class OrderExecutor:
                     executed_at=datetime.now(timezone.utc),
                 )
             else:
-                # 실제 API 호출
+                # 실제 API 호출 전 토큰 유효성 사전 체크
+                if not self._kis_client.has_valid_token:
+                    logger.warning(f"KIS 토큰 미확보 상태에서 주문 시도: {request.ticker} — " "토큰 갱신을 시도합니다")
+                    try:
+                        await self._kis_client._token_manager.get_access_token()
+                    except Exception as token_err:
+                        from core.data_collector.kis_client import KISAPIError
+
+                        raise KISAPIError(
+                            "TOKEN_UNAVAILABLE",
+                            f"KIS 접근 토큰 확보 실패로 주문을 실행할 수 없습니다: "
+                            f"{_unwrap_retry_error(token_err)}",
+                        ) from token_err
+
                 if request.market == Market.KRX:
                     api_result = await self._kis_client.place_kr_order(
                         ticker=request.ticker,

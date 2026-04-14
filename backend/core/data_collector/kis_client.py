@@ -36,6 +36,13 @@ class KISTokenManager:
         self._token_expires_at: Optional[datetime] = None
         self._websocket_key: Optional[str] = None
 
+    @property
+    def has_valid_token(self) -> bool:
+        """현재 유효한 접근 토큰이 존재하는지 확인 (네트워크 호출 없음)"""
+        if not self._access_token or not self._token_expires_at:
+            return False
+        return datetime.now() < self._token_expires_at - timedelta(minutes=10)
+
     async def get_access_token(self) -> str:
         """유효한 접근 토큰 반환 (만료 시 자동 갱신)"""
         if self._settings.is_backtest:
@@ -227,6 +234,11 @@ class KISClient:
     @property
     def is_backtest(self) -> bool:
         return self._settings.is_backtest
+
+    @property
+    def has_valid_token(self) -> bool:
+        """현재 유효한 KIS 접근 토큰이 존재하는지 확인 (네트워크 호출 없음)"""
+        return self._token_manager.has_valid_token
 
     def _get_tr_id(self, live_id: str, demo_id: str) -> str:
         """거래 모드에 따른 TR_ID 반환"""

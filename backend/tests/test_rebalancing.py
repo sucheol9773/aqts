@@ -1019,3 +1019,90 @@ class TestRebalancingEngine:
         assert result.trigger_reason == "Loss exceeded"
         assert result.new_portfolio_summary["cash_ratio"] == 0.7
         rebalancing_engine._record_rebalancing.assert_called_once()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# _execute_orders 주문 간 딜레이 테스트
+# ══════════════════════════════════════════════════════════════════════════════
+class TestExecuteOrdersDelay:
+    """리밸런싱 _execute_orders의 주문 간 딜레이 검증"""
+
+    @pytest.mark.asyncio
+    async def test_execute_orders_applies_delay_between_orders(self):
+        """동일 그룹 내 2번째 주문부터 asyncio.sleep이 호출된다"""
+        from config.constants import Market, OrderSide, OrderType
+        from core.portfolio_manager.rebalancing import (
+            RebalancingEngine,
+            RebalancingOrder,
+        )
+
+        mock_executor = AsyncMock()
+        mock_executor.execute_order = AsyncMock()
+
+        engine = RebalancingEngine.__new__(RebalancingEngine)
+        engine._order_executor = mock_executor
+
+        orders = [
+            RebalancingOrder(
+                ticker="005930",
+                market=Market.KRX,
+                action=OrderSide.BUY,
+                quantity=100,
+                order_type=OrderType.MARKET,
+                reason="리밸런싱",
+            ),
+            RebalancingOrder(
+                ticker="000660",
+                market=Market.KRX,
+                action=OrderSide.BUY,
+                quantity=50,
+                order_type=OrderType.MARKET,
+                reason="리밸런싱",
+            ),
+        ]
+
+        with patch(
+            "core.portfolio_manager.rebalancing.asyncio.sleep",
+            new_callable=AsyncMock,
+        ) as mock_sleep:
+            await engine._execute_orders(orders)
+
+        # 첫 번째 주문 전에는 sleep 없고, 두 번째 주문 전에 0.5초 sleep
+        assert mock_sleep.call_count == 1
+        mock_sleep.assert_called_with(0.5)
+        assert mock_executor.execute_order.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_execute_orders_no_delay_for_single_order(self):
+        """주문이 1건이면 딜레이가 없다"""
+        from config.constants import Market, OrderSide, OrderType
+        from core.portfolio_manager.rebalancing import (
+            RebalancingEngine,
+            RebalancingOrder,
+        )
+
+        mock_executor = AsyncMock()
+        mock_executor.execute_order = AsyncMock()
+
+        engine = RebalancingEngine.__new__(RebalancingEngine)
+        engine._order_executor = mock_executor
+
+        orders = [
+            RebalancingOrder(
+                ticker="005930",
+                market=Market.KRX,
+                action=OrderSide.BUY,
+                quantity=100,
+                order_type=OrderType.MARKET,
+                reason="리밸런싱",
+            ),
+        ]
+
+        with patch(
+            "core.portfolio_manager.rebalancing.asyncio.sleep",
+            new_callable=AsyncMock,
+        ) as mock_sleep:
+            await engine._execute_orders(orders)
+
+        mock_sleep.assert_not_called()
+        assert mock_executor.execute_order.call_count == 1

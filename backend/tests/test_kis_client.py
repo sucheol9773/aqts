@@ -202,3 +202,56 @@ class TestKISAPIError:
     def test_backtest_error(self):
         err = KISAPIError("BACKTEST", "차단")
         assert err.code == "BACKTEST"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# has_valid_token property 테스트
+# ══════════════════════════════════════════════════════════════════════════════
+class TestHasValidToken:
+    """KISTokenManager.has_valid_token / KISClient.has_valid_token 테스트"""
+
+    @patch("core.data_collector.kis_client.get_settings")
+    def test_no_token_returns_false(self, mock_settings):
+        """토큰이 없으면 False"""
+        mock_settings.return_value.kis = _mock_kis_settings()
+        tm = KISTokenManager()
+        assert tm.has_valid_token is False
+
+    @patch("core.data_collector.kis_client.get_settings")
+    def test_expired_token_returns_false(self, mock_settings):
+        """만료된 토큰은 False"""
+        mock_settings.return_value.kis = _mock_kis_settings()
+        tm = KISTokenManager()
+        tm._access_token = "test_token"
+        tm._token_expires_at = datetime.now() - timedelta(hours=1)
+        assert tm.has_valid_token is False
+
+    @patch("core.data_collector.kis_client.get_settings")
+    def test_near_expiry_token_returns_false(self, mock_settings):
+        """만료 10분 이내 토큰은 False (갱신 필요)"""
+        mock_settings.return_value.kis = _mock_kis_settings()
+        tm = KISTokenManager()
+        tm._access_token = "test_token"
+        tm._token_expires_at = datetime.now() + timedelta(minutes=5)
+        assert tm.has_valid_token is False
+
+    @patch("core.data_collector.kis_client.get_settings")
+    def test_valid_token_returns_true(self, mock_settings):
+        """유효한 토큰은 True"""
+        mock_settings.return_value.kis = _mock_kis_settings()
+        tm = KISTokenManager()
+        tm._access_token = "test_token"
+        tm._token_expires_at = datetime.now() + timedelta(hours=12)
+        assert tm.has_valid_token is True
+
+    @patch("core.data_collector.kis_client.get_settings")
+    def test_client_delegates_to_token_manager(self, mock_settings):
+        """KISClient.has_valid_token은 TokenManager에 위임한다"""
+        mock_settings.return_value.kis = _mock_kis_settings()
+        client = KISClient()
+        # 토큰 없음 → False
+        assert client.has_valid_token is False
+        # 토큰 설정 → True
+        client._token_manager._access_token = "test_token"
+        client._token_manager._token_expires_at = datetime.now() + timedelta(hours=12)
+        assert client.has_valid_token is True
