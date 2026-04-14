@@ -18,7 +18,7 @@
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, time, timezone
+from datetime import datetime, time, timedelta, timezone
 from typing import Any, Optional
 
 from sqlalchemy import text
@@ -618,7 +618,7 @@ class RebalancingEngine:
                 f"✅ <b>정기 리밸런싱 완료</b>\n\n"
                 f"주문 {len(result.orders)}건 체결\n"
                 f"유형: {result.rebalancing_type.value}\n"
-                f"시간: {result.executed_at.strftime('%Y-%m-%d %H:%M UTC')}"
+                f"시간: {result.executed_at.astimezone(timezone(timedelta(hours=9))).strftime('%Y-%m-%d %H:%M KST')}"
             )
             if self._telegram:
                 await self._telegram.send_text(message, parse_mode="HTML")
@@ -633,7 +633,7 @@ class RebalancingEngine:
                 f"<b>사유:</b> {result.trigger_reason}\n"
                 f"<b>주문:</b> {len(result.orders)}건\n"
                 f"<b>조치:</b> 포트폴리오 방어 모드 전환\n\n"
-                f"<i>{result.executed_at.strftime('%Y-%m-%d %H:%M:%S UTC')}</i>"
+                f"<i>{result.executed_at.astimezone(timezone(timedelta(hours=9))).strftime('%Y-%m-%d %H:%M:%S KST')}</i>"
             )
             if self._telegram:
                 await self._telegram.send_text(message, parse_mode="HTML")

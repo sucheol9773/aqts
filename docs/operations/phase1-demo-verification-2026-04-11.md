@@ -611,3 +611,16 @@ Phase 1 DEMO 검증 완료 후, 미완성 API wiring 4건에 대해 순차적으
 - import 추가: `core.notification.telegram_transport.create_transport`, `core.order_executor.executor.OrderExecutor`
 
 **검증**: ruff 0 errors, black 0 reformatted, test_system_routes 15 passed.
+
+### 7.11 OrderExecutor QuoteProvider 주입 + Telegram 시간대 KST 수정 (2026-04-14)
+
+**증상 1**: 리밸런싱 주문 20건 전부 FAILED — `live OrderExecutor requires a quote_provider; refusing to trade blind`. OrderExecutor의 fail-closed 정책에 의해 quote_provider 없이는 주문이 거부됨.
+
+**증상 2**: Telegram 알림 메시지의 시간이 UTC로 표시됨 (사용자는 KST 기대).
+
+**수정**:
+- `system.py`: `KISQuoteProvider()` 생성 후 `OrderExecutor(quote_provider=quote_provider)`로 전달
+- `rebalancing.py`: 정기/비상 리밸런싱 알림의 시간 포맷을 `astimezone(timezone(timedelta(hours=9)))` + `KST` 표기로 변경
+- `rebalancing.py`: `timedelta` import 추가
+
+**검증**: ruff 0 errors, black 0 reformatted, test_system_routes 15 + test_rebalancing 36 = 51 passed.
