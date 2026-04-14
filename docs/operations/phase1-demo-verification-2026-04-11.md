@@ -624,3 +624,19 @@ Phase 1 DEMO 검증 완료 후, 미완성 API wiring 4건에 대해 순차적으
 - `rebalancing.py`: `timedelta` import 추가
 
 **검증**: ruff 0 errors, black 0 reformatted, test_system_routes 15 + test_rebalancing 36 = 51 passed.
+
+### 7.12 리밸런싱 market 하드코딩 제거 + OrderResult order_type NULL 수정 (2026-04-14)
+
+**증상 1**: 한국 종목(047050, 261240 등)이 `market=NYSE`로 주문되어 US 시세 조회 실패. `_generate_rebalancing_orders`에서 `market=Market.NYSE`로 하드코딩(`# 단순화`).
+
+**증상 2**: 주문 실패 시 DB 저장 실패 — `null value in column "order_type" violates not-null constraint`. `_store_order` INSERT에 `order_type` 컬럼 누락, `OrderResult`에 `order_type` 필드 없음.
+
+**수정 1 (market 하드코딩)**:
+- `rebalancing.py` `_generate_rebalancing_orders`: `TargetPortfolio.allocations`의 `market` 정보를 딕셔너리로 추출하여 종목별 올바른 market 전달
+
+**수정 2 (order_type NULL)**:
+- `OrderResult` dataclass에 `order_type: OrderType = OrderType.MARKET` 필드 추가
+- `_store_order` INSERT 문에 `order_type` 컬럼/파라미터 추가
+- 에러 경로 `OrderResult` 생성 시 `order_type=request.order_type` 명시적 전달
+
+**검증**: ruff 0 errors, black 0 reformatted, 51 passed (system+rebalancing) + 325 passed (order 관련).

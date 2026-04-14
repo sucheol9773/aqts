@@ -126,6 +126,9 @@ class OrderResult:
     executed_at: datetime
     """주문 실행 시각 (UTC)"""
 
+    order_type: OrderType = OrderType.MARKET
+    """주문 유형 (MARKET, LIMIT, TWAP, VWAP)"""
+
     error_message: str = ""
     """오류 메시지 (실패 시에만 포함)"""
 
@@ -137,6 +140,7 @@ class OrderResult:
             "market": self.market.value,
             "side": self.side.value,
             "quantity": self.quantity,
+            "order_type": self.order_type.value,
             "filled_quantity": self.filled_quantity,
             "avg_price": self.avg_price,
             "status": self.status.value,
@@ -376,6 +380,7 @@ class OrderExecutor:
                 avg_price=0.0,
                 status=OrderStatus.FAILED,
                 executed_at=datetime.now(timezone.utc),
+                order_type=request.order_type,
                 error_message=str(e),
             )
             await self._store_order(result)
@@ -948,10 +953,10 @@ class OrderExecutor:
                 query = text(
                     """
                     INSERT INTO orders (
-                        order_id, ticker, market, side, quantity,
+                        order_id, ticker, market, side, order_type, quantity,
                         filled_quantity, filled_price, status, created_at, error_message
                     ) VALUES (
-                        :order_id, :ticker, :market, :side, :quantity,
+                        :order_id, :ticker, :market, :side, :order_type, :quantity,
                         :filled_quantity, :filled_price, :status, :created_at, :error_message
                     )
                 """
@@ -964,6 +969,7 @@ class OrderExecutor:
                         "ticker": result.ticker,
                         "market": result.market.value,
                         "side": result.side.value,
+                        "order_type": result.order_type.value,
                         "quantity": result.quantity,
                         "filled_quantity": result.filled_quantity,
                         "filled_price": result.avg_price,

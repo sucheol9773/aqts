@@ -497,6 +497,7 @@ class RebalancingEngine:
         """
         orders = []
         target_dict = {a.ticker: a.target_weight for a in target_portfolio.allocations}
+        market_dict = {a.ticker: a.market for a in target_portfolio.allocations}
 
         all_tickers = set(current_portfolio.keys()) | set(target_dict.keys())
 
@@ -512,9 +513,10 @@ class RebalancingEngine:
             quantity = int(abs(weight_diff) * seed_capital / 1000)
 
             if quantity > 0:
+                market = market_dict.get(ticker, Market.NYSE)
                 order = RebalancingOrder(
                     ticker=ticker,
-                    market=Market.NYSE,  # 단순화
+                    market=market,
                     action=action,
                     quantity=quantity,
                     order_type=OrderType.MARKET,
