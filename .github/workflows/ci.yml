@@ -394,24 +394,21 @@ jobs:
           category: grype-container-scan
 
       # ── cosign keyless 서명 (Sigstore Fulcio + Rekor) ──
+      # cosign v2.4.0 고정 시 Fulcio OIDC 토큰 파싱 실패(invalid character 'u')
+      # 발생. cosign-installer v3.10.1 (cosign v2.6.1 내장)로 업그레이드.
+      # COSIGN_EXPERIMENTAL 은 cosign v2 이후 불필요 (--yes 플래그로 대체).
       - name: Install cosign
         if: github.ref == 'refs/heads/main'
-        uses: sigstore/cosign-installer@v3
-        with:
-          cosign-release: v2.4.0
+        uses: sigstore/cosign-installer@v3.10.1
 
       - name: Sign image with cosign (keyless)
         if: github.ref == 'refs/heads/main'
-        env:
-          COSIGN_EXPERIMENTAL: "true"
         run: |
           cosign sign --yes \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}"
 
       - name: Attach SBOM as cosign attestation
         if: github.ref == 'refs/heads/main'
-        env:
-          COSIGN_EXPERIMENTAL: "true"
         run: |
           cosign attest --yes \
             --predicate sbom.cdx.json \
@@ -420,8 +417,6 @@ jobs:
 
       - name: Verify signature (sanity check)
         if: github.ref == 'refs/heads/main'
-        env:
-          COSIGN_EXPERIMENTAL: "true"
         run: |
           cosign verify \
             --certificate-identity-regexp "^https://github.com/${{ github.repository }}/" \

@@ -22,7 +22,9 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAMESPACE: ${{ github.repository_owner }}
   IMAGE_NAME: aqts-backend
-  COSIGN_VERSION: v2.4.0
+  # cosign v2.4.0 → v2.6.3: CI sign 이 v2.6.1 로 서명하므로 verify 호환성 유지.
+  # CD 에서는 verify 만 사용 (OIDC 미관여).
+  COSIGN_VERSION: v2.6.3
 
 jobs:
   # ──────────────────────────────────

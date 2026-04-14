@@ -39,7 +39,7 @@
 배포 서버에서 SSH 를 통해 다음 순서로 실행한다.
 
 1. `git pull origin main` — compose/config 동기화.
-2. `cosign` 미설치 시 `${COSIGN_VERSION}` (현재 v2.4.0) 자동 설치.
+2. `cosign` 미설치 시 `${COSIGN_VERSION}` (현재 v2.6.3) 자동 설치.
 3. `cosign verify --certificate-identity-regexp "^https://github.com/${REPO_FULL}/" --certificate-oidc-issuer "https://token.actions.githubusercontent.com" "${IMAGE_REF}"` — 통과해야만 다음 단계 진행. 실패 시 즉시 종료.
 4. `docker pull "${IMAGE_REF}"` 후 `EXPECTED_IMAGE_ID=$(docker image inspect "${IMAGE_REF}" --format '{{.Id}}')` 로 로컬 digest 잠금.
 5. `docker compose -f docker-compose.yml up -d --force-recreate --no-deps backend scheduler` → `docker compose -f docker-compose.yml up -d`. `--force-recreate` 는 compose 의 "변경 없음" 최적화를 무력화하여 backend/scheduler 가 **원자적으로 교체**되도록 강제한다.
@@ -71,7 +71,7 @@
 ```bash
 # 1. cosign 설치 (서버에 없을 경우)
 curl -sSLo /tmp/cosign \
-  "https://github.com/sigstore/cosign/releases/download/v2.4.0/cosign-linux-amd64"
+  "https://github.com/sigstore/cosign/releases/download/v2.6.3/cosign-linux-amd64"
 sudo install -m 0755 /tmp/cosign /usr/local/bin/cosign
 
 # 2. 검증 (현재 main 의 short SHA 를 사용)
