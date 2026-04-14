@@ -6,7 +6,8 @@
 
 import asyncio
 import json
-from datetime import datetime, timezone
+import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import pandas as pd
@@ -29,16 +30,20 @@ from core.order_executor.executor import OrderExecutor
 from core.order_executor.quote_provider_kis import KISQuoteProvider
 from core.pipeline import InvestmentDecisionPipeline
 from core.portfolio_manager.construction import PortfolioConstructionEngine
-from core.portfolio_manager.profile import InvestorProfileManager
+from core.portfolio_manager.profile import InvestorProfile, InvestorProfileManager
 from core.portfolio_manager.rebalancing import RebalancingEngine
 from core.scheduler_idempotency import is_executed, mark_executed
-from db.database import RedisManager, get_db_session
+from db.database import RedisManager, async_session_factory, get_db_session
 from db.repositories.audit_log import AuditLogger
 
 # ── 리밸런싱 분산 락 설정 ──
 REBALANCING_LOCK_KEY = "rebalancing:lock"
 REBALANCING_LOCK_TTL = 300  # 5분 — 리밸런싱 최대 소요 시간
 REBALANCING_IDEM_EVENT = "API_REBALANCING"  # scheduler_idempotency 이벤트 타입
+
+# ── 리밸런싱 백그라운드 태스크 상태 키 ──
+REBALANCING_STATUS_PREFIX = "rebalancing:status:"
+REBALANCING_STATUS_TTL = 86400  # 24시간 보존
 
 router = APIRouter()
 
@@ -172,7 +177,117 @@ async def run_backtest(
         return APIResponse(success=False, message=f"백테스트 실행 실패: {str(e)}")
 
 
-@router.post("/rebalancing", response_model=APIResponse[dict])
+async def _update_rebalancing_status(
+    task_id: str,
+    status: str,
+    **kwargs: object,
+) -> None:
+    """Redis에 리밸런싱 백그라운드 태스크 상태 저장"""
+    try:
+        redis = RedisManager.get_client()
+        payload = {
+            "task_id": task_id,
+            "status": status,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            **kwargs,
+        }
+        await redis.set(
+            f"{REBALANCING_STATUS_PREFIX}{task_id}",
+            json.dumps(payload, default=str),
+            ex=REBALANCING_STATUS_TTL,
+        )
+    except Exception as e:
+        logger.error(f"[Rebalancing] Redis 상태 업데이트 실패: {e}")
+
+
+async def _run_rebalancing_background(
+    task_id: str,
+    rebalancing_type: str,
+    user_id: str,
+    username: str,
+    profile: InvestorProfile,
+    ensemble_signals: dict[str, float],
+    current_portfolio: dict[str, float],
+    sector_info: Optional[dict[str, str]],
+    market_info: Optional[dict[str, Market]],
+) -> None:
+    """리밸런싱 주문 실행 백그라운드 태스크
+
+    API 핸들러에서 검증(멱등성, 락, 프로필, 시그널) 완료 후
+    asyncio.create_task로 호출된다.
+    분산 락 해제와 멱등성 기록은 이 함수 내에서 처리한다.
+    """
+    try:
+        await _update_rebalancing_status(task_id, "running", order_count=0)
+
+        # 리밸런싱 엔진 생성
+        construction_engine = PortfolioConstructionEngine(
+            risk_profile=profile.risk_profile,
+        )
+        quote_provider = KISQuoteProvider()
+        order_executor = OrderExecutor(quote_provider=quote_provider)
+        telegram_notifier = create_telegram_transport()
+        rebalancing_engine = RebalancingEngine(
+            profile,
+            construction_engine,
+            telegram_notifier=telegram_notifier,
+            order_executor=order_executor,
+        )
+
+        rebal_result = await rebalancing_engine.execute_scheduled_rebalancing(
+            ensemble_signals=ensemble_signals,
+            current_portfolio=current_portfolio,
+            seed_capital=profile.seed_amount,
+            sector_info=sector_info,
+            market_info=market_info,
+        )
+
+        # 멱등성 키 기록
+        await mark_executed(REBALANCING_IDEM_EVENT)
+
+        # 감사 로그 (백그라운드 세션)
+        try:
+            async with async_session_factory() as db_session:
+                audit = AuditLogger(db_session)
+                await audit.log(
+                    action_type="REBALANCING_COMPLETED",
+                    module="portfolio_manager",
+                    description=(f"Rebalancing completed: {len(rebal_result.orders)}건 주문"),
+                    metadata={
+                        "task_id": task_id,
+                        "rebalancing_type": rebalancing_type,
+                        "user": user_id,
+                        "order_count": len(rebal_result.orders),
+                    },
+                )
+        except Exception as audit_err:
+            logger.warning(f"[Rebalancing] 완료 감사 로그 실패: {audit_err}")
+
+        await _update_rebalancing_status(
+            task_id,
+            "completed",
+            order_count=len(rebal_result.orders),
+            result_summary=rebal_result.to_dict(),
+        )
+
+        logger.info(
+            f"[Rebalancing] 백그라운드 완료: task_id={task_id}, "
+            f"type={rebalancing_type}, orders={len(rebal_result.orders)}건"
+        )
+
+    except Exception as e:
+        logger.error(f"[Rebalancing] 백그라운드 실패: task_id={task_id}, error={e}")
+        await _update_rebalancing_status(task_id, "failed", error=str(e))
+    finally:
+        # 분산 락 해제 (성공/실패 무관하게 항상 해제)
+        try:
+            redis = RedisManager.get_client()
+            await redis.delete(REBALANCING_LOCK_KEY)
+        except Exception:
+            pass  # 락 해제 실패는 TTL 만료로 자동 해소
+
+
+@router.post("/rebalancing")
 async def trigger_rebalancing(
     rebalancing_type: str = Query(
         default="MANUAL",
@@ -186,9 +301,10 @@ async def trigger_rebalancing(
     db: AsyncSession = Depends(get_db_session),
 ):
     """
-    수동 리밸런싱 트리거
+    수동 리밸런싱 트리거 (비동기)
 
-    현재 포트폴리오 상태를 분석하여 리밸런싱을 실행합니다.
+    검증 후 즉시 202 Accepted를 반환하고, 주문 실행은 백그라운드에서 처리합니다.
+    진행 상태는 GET /api/system/rebalancing/status/{task_id}로 조회합니다.
 
     중복 실행 방지:
     - 같은 거래일(KST)에는 1회만 실행 (force=true로 강제 가능)
@@ -226,145 +342,193 @@ async def trigger_rebalancing(
                 },
             )
 
-        # 감사 로그 기록
-        audit = AuditLogger(db)
-        await audit.log(
-            action_type="REBALANCING_TRIGGERED",
-            module="portfolio_manager",
-            description=f"Manual rebalancing triggered by user {current_user.username}",
-            metadata={
-                "rebalancing_type": rebalancing_type,
-                "user": current_user.id,
-            },
-        )
-
-        triggered_at = datetime.now(timezone.utc)
-
-        # ── 1. 사용자 프로필 조회 ──
-        profile_mgr = InvestorProfileManager()
-        profile = await profile_mgr.get_profile(current_user.id)
-        if not profile:
-            return APIResponse(
-                success=False,
-                message="투자자 프로필이 없습니다. 먼저 프로필을 생성해주세요.",
-            )
-
-        # ── 2. Redis에서 앙상블 시그널 조회 ──
-        ensemble_signals: dict[str, float] = {}
-        try:
-            redis = RedisManager.get_client()
-            keys = await redis.keys("ensemble:latest:*")
-            for key in keys:
-                key_str = key if isinstance(key, str) else key.decode()
-                if key_str.endswith("_summary"):
-                    continue
-                ticker = key_str.split(":")[-1]
-                raw = await redis.get(key_str)
-                if raw:
-                    data = json.loads(raw)
-                    if "error" not in data and "ensemble_signal" in data:
-                        ensemble_signals[ticker] = float(data["ensemble_signal"])
-        except Exception as redis_err:
-            logger.warning(f"[Rebalancing] Redis 시그널 조회 실패: {redis_err}")
-
-        if not ensemble_signals:
-            return APIResponse(
-                success=False,
-                message="앙상블 시그널이 없습니다. MARKET_OPEN 실행이 필요합니다.",
-            )
-
-        # ── 3. 현재 포지션 및 유니버스 정보 조회 ──
-        current_portfolio: dict[str, float] = {}
-        sector_info: dict[str, str] = {}
-        market_info: dict[str, Market] = {}
+        # ── 이후 실패 시 분산 락을 해제하기 위한 플래그 ──
+        # 백그라운드 태스크에 진입하면 태스크가 락을 관리한다.
+        background_started = False
 
         try:
-            # 현재 포지션
-            pos_query = text(
-                """
-                SELECT ticker,
-                       SUM(CASE WHEN side = 'BUY' THEN filled_quantity * filled_price
-                                ELSE -filled_quantity * filled_price END) AS position_value
-                FROM orders
-                WHERE status IN ('FILLED', 'PARTIAL')
-                GROUP BY ticker
-                HAVING SUM(CASE WHEN side = 'BUY' THEN filled_quantity
-                                ELSE -filled_quantity END) > 0
-                """
+            # 감사 로그 기록
+            audit = AuditLogger(db)
+            await audit.log(
+                action_type="REBALANCING_TRIGGERED",
+                module="portfolio_manager",
+                description=f"Manual rebalancing triggered by user {current_user.username}",
+                metadata={
+                    "rebalancing_type": rebalancing_type,
+                    "user": current_user.id,
+                },
             )
-            result = await db.execute(pos_query)
-            total_pos_value = 0.0
-            pos_values: dict[str, float] = {}
-            for row in result.fetchall():
-                ticker, pos_val = row
-                pos_values[ticker] = float(pos_val)
-                total_pos_value += float(pos_val)
-            if total_pos_value > 0:
-                for ticker, val in pos_values.items():
-                    current_portfolio[ticker] = val / total_pos_value
 
-            # 유니버스 정보
-            uni_query = text("SELECT ticker, sector, market FROM universe WHERE is_active = true")
-            result = await db.execute(uni_query)
-            for row in result.fetchall():
-                ticker, sector, market = row
-                if sector:
-                    sector_info[ticker] = sector
+            # ── 1. 사용자 프로필 조회 ──
+            profile_mgr = InvestorProfileManager()
+            profile = await profile_mgr.get_profile(current_user.id)
+            if not profile:
+                return APIResponse(
+                    success=False,
+                    message="투자자 프로필이 없습니다. 먼저 프로필을 생성해주세요.",
+                )
+
+            # ── 2. Redis에서 앙상블 시그널 조회 ──
+            ensemble_signals: dict[str, float] = {}
+            try:
+                keys = await redis.keys("ensemble:latest:*")
+                for key in keys:
+                    key_str = key if isinstance(key, str) else key.decode()
+                    if key_str.endswith("_summary"):
+                        continue
+                    ticker = key_str.split(":")[-1]
+                    raw = await redis.get(key_str)
+                    if raw:
+                        data = json.loads(raw)
+                        if "error" not in data and "ensemble_signal" in data:
+                            ensemble_signals[ticker] = float(data["ensemble_signal"])
+            except Exception as redis_err:
+                logger.warning(f"[Rebalancing] Redis 시그널 조회 실패: {redis_err}")
+
+            if not ensemble_signals:
+                return APIResponse(
+                    success=False,
+                    message="앙상블 시그널이 없습니다. MARKET_OPEN 실행이 필요합니다.",
+                )
+
+            # ── 3. 현재 포지션 및 유니버스 정보 조회 ──
+            current_portfolio: dict[str, float] = {}
+            sector_info: dict[str, str] = {}
+            market_info: dict[str, Market] = {}
+
+            try:
+                pos_query = text(
+                    """
+                    SELECT ticker,
+                           SUM(CASE WHEN side = 'BUY' THEN filled_quantity * filled_price
+                                    ELSE -filled_quantity * filled_price END) AS position_value
+                    FROM orders
+                    WHERE status IN ('FILLED', 'PARTIAL')
+                    GROUP BY ticker
+                    HAVING SUM(CASE WHEN side = 'BUY' THEN filled_quantity
+                                    ELSE -filled_quantity END) > 0
+                    """
+                )
+                result = await db.execute(pos_query)
+                total_pos_value = 0.0
+                pos_values: dict[str, float] = {}
+                for row in result.fetchall():
+                    ticker_val, pos_val = row
+                    pos_values[ticker_val] = float(pos_val)
+                    total_pos_value += float(pos_val)
+                if total_pos_value > 0:
+                    for ticker_val, val in pos_values.items():
+                        current_portfolio[ticker_val] = val / total_pos_value
+
+                uni_query = text("SELECT ticker, sector, market FROM universe WHERE is_active = true")
+                result = await db.execute(uni_query)
+                for row in result.fetchall():
+                    ticker_val, sector, market = row
+                    if sector:
+                        sector_info[ticker_val] = sector
+                    try:
+                        market_info[ticker_val] = Market(market)
+                    except ValueError:
+                        pass
+            except Exception as db_err:
+                logger.warning(f"[Rebalancing] DB 조회 실패: {db_err}")
+
+            # ── 4. 백그라운드 태스크 생성 → 즉시 202 반환 ──
+            now_kst = datetime.now(timezone(timedelta(hours=9)))
+            task_id = f"{now_kst.strftime('%Y%m%d')}_{uuid.uuid4().hex[:8]}"
+
+            await _update_rebalancing_status(
+                task_id,
+                "accepted",
+                rebalancing_type=rebalancing_type,
+                user=current_user.username,
+                signal_count=len(ensemble_signals),
+            )
+
+            asyncio.create_task(
+                _run_rebalancing_background(
+                    task_id=task_id,
+                    rebalancing_type=rebalancing_type,
+                    user_id=current_user.id,
+                    username=current_user.username,
+                    profile=profile,
+                    ensemble_signals=ensemble_signals,
+                    current_portfolio=current_portfolio,
+                    sector_info=sector_info if sector_info else None,
+                    market_info=market_info if market_info else None,
+                )
+            )
+            background_started = True
+
+            logger.info(
+                f"[Rebalancing] 백그라운드 태스크 시작: task_id={task_id}, " f"signals={len(ensemble_signals)}건"
+            )
+
+            return JSONResponse(
+                status_code=202,
+                content={
+                    "success": True,
+                    "data": {
+                        "type": rebalancing_type,
+                        "status": "accepted",
+                        "task_id": task_id,
+                        "signal_count": len(ensemble_signals),
+                    },
+                    "message": (
+                        f"리밸런싱 요청 수락됨 (task_id={task_id}). "
+                        f"GET /api/system/rebalancing/status/{task_id}로 진행 상태를 조회하세요."
+                    ),
+                },
+            )
+        finally:
+            # 백그라운드 태스크가 시작되지 않았으면 여기서 락 해제
+            if not background_started:
                 try:
-                    market_info[ticker] = Market(market)
-                except ValueError:
+                    await redis.delete(REBALANCING_LOCK_KEY)
+                except Exception:
                     pass
-        except Exception as db_err:
-            logger.warning(f"[Rebalancing] DB 조회 실패: {db_err}")
 
-        # ── 4. 리밸런싱 엔진 실행 ──
-        construction_engine = PortfolioConstructionEngine(
-            risk_profile=profile.risk_profile,
-        )
-        quote_provider = KISQuoteProvider()
-        order_executor = OrderExecutor(quote_provider=quote_provider)
-        telegram_notifier = create_telegram_transport()
-        rebalancing_engine = RebalancingEngine(
-            profile,
-            construction_engine,
-            telegram_notifier=telegram_notifier,
-            order_executor=order_executor,
-        )
-
-        rebal_result = await rebalancing_engine.execute_scheduled_rebalancing(
-            ensemble_signals=ensemble_signals,
-            current_portfolio=current_portfolio,
-            seed_capital=profile.seed_amount,
-            sector_info=sector_info if sector_info else None,
-            market_info=market_info if market_info else None,
-        )
-
-        # ── 5. 멱등성 키 기록 (같은 거래일 재실행 방지) ──
-        await mark_executed(REBALANCING_IDEM_EVENT)
-
-        logger.info(f"[Rebalancing] 완료: type={rebalancing_type}, " f"orders={len(rebal_result.orders)}건")
-
-        return APIResponse(
-            success=True,
-            data={
-                "type": rebalancing_type,
-                "status": "completed",
-                "triggered_at": triggered_at.isoformat(),
-                "user": current_user.id,
-                "result": rebal_result.to_dict(),
-            },
-            message=f"리밸런싱 완료: {len(rebal_result.orders)}건 주문 생성",
-        )
     except Exception as e:
         logger.error(f"Rebalancing error: {e}")
-        return APIResponse(success=False, message=f"리밸런싱 실패: {str(e)}")
-    finally:
-        # 분산 락 해제 (성공/실패 무관하게 항상 해제)
+        # 검증 단계에서 예외 발생 시 락 해제
         try:
             redis = RedisManager.get_client()
             await redis.delete(REBALANCING_LOCK_KEY)
         except Exception:
-            pass  # 락 해제 실패는 TTL 만료로 자동 해소
+            pass
+        return APIResponse(success=False, message=f"리밸런싱 실패: {str(e)}")
+
+
+@router.get("/rebalancing/status/{task_id}")
+async def get_rebalancing_status(
+    task_id: str,
+    current_user=Depends(require_viewer),
+):
+    """
+    리밸런싱 백그라운드 태스크 진행 상태 조회
+
+    Returns:
+        - accepted: 요청 수락, 실행 대기 중
+        - running: 주문 실행 중
+        - completed: 완료
+        - failed: 실패
+    """
+    try:
+        redis = RedisManager.get_client()
+        raw = await redis.get(f"{REBALANCING_STATUS_PREFIX}{task_id}")
+        if not raw:
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "success": False,
+                    "message": f"task_id '{task_id}'를 찾을 수 없습니다.",
+                },
+            )
+        status_data = json.loads(raw)
+        return APIResponse(success=True, data=status_data)
+    except Exception as e:
+        logger.error(f"Rebalancing status error: {e}")
+        return APIResponse(success=False, message=f"상태 조회 실패: {str(e)}")
 
 
 @router.post("/pipeline", response_model=APIResponse[dict])

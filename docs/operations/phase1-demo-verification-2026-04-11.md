@@ -885,7 +885,70 @@ DB의 `error_message`가 `RetryError[<Future ... raised KISAPIError>]` 형태로
 
 ### 10.6 후속 개선 사항 (E2E 경로 외)
 
-1. **리밸런싱 API 비동기화**: 현재 동기 처리로 20건 주문 시 nginx 504 발생. 주문 실행을 백그라운드 태스크로 분리하고 API는 즉시 202 Accepted 반환 필요.
+1. ~~**리밸런싱 API 비동기화**: 현재 동기 처리로 20건 주문 시 nginx 504 발생.~~ → **§10.7에서 구현 완료**
 2. **HighLatencyP95 WARNING 임계값 조정**: 리밸런싱 엔드포인트를 p95 계산에서 제외하거나, 비동기화 완료 후 자연 해소.
 3. **KIS rate limit 대응**: 주문 간 적절한 간격 배치 또는 배치 주문 API 활용.
 4. **미국 장 시간 사전 검증**: 장외 시간에는 미국 종목 주문을 사전 필터링하여 불필요한 API 호출 방지.
+
+### 10.7 리밸런싱 API 비동기화 (2026-04-14)
+
+#### 문제
+
+`POST /api/system/rebalancing` 엔드포인트가 동기적으로 주문 20건을 실행하면서 총 소요 시간이 nginx `proxy_read_timeout`(60s)을 초과하여 504 Gateway Timeout이 반환되었다. 클라이언트는 빈 응답을 받아 `JSONDecodeError`가 발생하고, 실제 주문 실행 결과를 확인할 수 없었다.
+
+#### 해결 방안: 비동기 태스크 분리 (202 Accepted 패턴)
+
+API 호출을 두 단계로 분리한다:
+
+1. **검증 단계 (동기, ~수백ms)**: 멱등성 체크, 분산 락 획득, 프로필 조회, 앙상블 시그널 조회, 포지션/유니버스 DB 조회. 실패 시 즉시 에러 응답 반환 + 락 해제.
+2. **실행 단계 (비동기, 백그라운드)**: `asyncio.create_task()`로 주문 실행을 백그라운드에서 처리. API는 검증 완료 즉시 `202 Accepted` + `task_id`를 반환.
+
+#### 변경 파일
+
+| 파일 | 변경 내용 |
+|---|---|
+| `api/routes/system.py` | `trigger_rebalancing()` 비동기 리팩터링, `_run_rebalancing_background()` 헬퍼 추가, `_update_rebalancing_status()` Redis 상태 저장 함수 추가, `GET /rebalancing/status/{task_id}` 조회 엔드포인트 추가 |
+| `tests/test_system_routes.py` | 성공 케이스 202 반환 검증, status 엔드포인트 테스트 3건, 락 해제 검증 1건 추가 (총 +4건) |
+
+#### API 변경 사항
+
+**POST /api/system/rebalancing** (변경)
+
+- 이전: 동기 실행 → `200 OK` + 실행 결과
+- 이후: 검증 후 즉시 `202 Accepted` + `task_id` 반환
+
+```json
+{
+  "success": true,
+  "data": {
+    "type": "MANUAL",
+    "status": "accepted",
+    "task_id": "20260414_abc12345",
+    "signal_count": 15
+  },
+  "message": "리밸런싱 요청 수락됨 (task_id=20260414_abc12345). GET /api/system/rebalancing/status/20260414_abc12345로 진행 상태를 조회하세요."
+}
+```
+
+**GET /api/system/rebalancing/status/{task_id}** (신규)
+
+- `accepted` → `running` → `completed` / `failed` 상태 전이
+- Redis에 24시간 보존 (`REBALANCING_STATUS_TTL = 86400`)
+- 404: 존재하지 않는 task_id
+
+#### 락 관리 전략
+
+- 검증 단계에서 실패하면 `background_started = False` 플래그에 의해 `finally` 블록에서 즉시 락 해제
+- 백그라운드 태스크에 진입하면 태스크의 `finally` 블록이 락 해제를 책임
+- 둘 다 실패해도 TTL(300s)에 의한 자동 만료로 데드락 방지
+
+#### 테스트 (3943 passed)
+
+| 테스트 | 검증 내용 |
+|---|---|
+| `test_trigger_rebalancing_success` | 202 반환, body.data.status == "accepted", create_task 호출 확인 |
+| `test_trigger_rebalancing_idempotency_force_bypass` | force=True → 202 반환 |
+| `test_get_rebalancing_status_found` | Redis에서 정상 조회 |
+| `test_get_rebalancing_status_not_found` | 존재하지 않는 task_id → 404 |
+| `test_get_rebalancing_status_redis_error` | Redis 오류 → 실패 응답 |
+| `test_trigger_rebalancing_lock_released_on_validation_failure` | 프로필 없음 시 락 해제 확인 |
