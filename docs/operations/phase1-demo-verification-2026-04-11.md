@@ -718,6 +718,49 @@ DB의 `error_message`가 `RetryError[<Future ... raised KISAPIError>]` 형태로
 
 **검증**: ruff 0 errors, black 0 reformatted, 4025 passed, 0 failed (gen_status 반영 후 3929 total).
 
+### 7.16 주문 실패 Telegram 알림 추가 (2026-04-14)
+
+**발견**: E2E 검증에서 20건 주문 전부 FAILED(모의투자 잔고 부족 + 장외 시간 KIS 서버 오류)인데, Telegram 알림이 한 건도 발송되지 않음.
+
+**근본 원인**: `RebalancingEngine`에 주문 실패 알림 코드 경로가 존재하지 않았음.
+- `_send_rebalancing_completed_notification`: 성공 시에만 호출
+- `_send_emergency_notification`: 비상 리밸런싱에만 호출
+- 주문 FAILED에 대한 알림: **미구현**
+
+**참고**: NotificationRouter wiring 자체는 정상 (기동 로그 `NotificationRouter wired`, `AlertRetryLoop started` 확인). 알림 파이프라인 인프라가 아닌 비즈니스 로직 누락.
+
+**수정 내용**:
+
+| 파일 | 변경 | 목적 |
+|------|------|------|
+| `rebalancing.py` | `_execute_orders()` 반환 타입 `None` → `list[OrderResult]` | 주문 결과 수집 |
+| `rebalancing.py` | 실행 후 FAILED 건 필터링 → `_send_order_failure_notification()` 호출 | 실패 알림 트리거 |
+| `rebalancing.py` | `_send_order_failure_notification()` 메서드 추가 | 에러 유형별 그룹핑하여 Telegram 발송 |
+| `rebalancing.py` | `OrderStatus`, `OrderResult` import 추가 | 반환 타입 및 상태 비교용 |
+
+**알림 메시지 형식**:
+```
+⚠️ 리밸런싱 주문 실패 알림
+
+전체: 20건 | 성공: 0건 | 실패: 20건
+
+• 모의투자 주문가능금액이 부족합니다
+  → 005930, 000660, 047050, 261240, 058470 외 6건
+
+• Server error '500 Internal Server Error' ...
+  → XOM, QQQ, AAPL, PG, KO 외 2건
+```
+
+**추가된 테스트** (4건):
+- `test_failure_notification_sent_when_orders_fail`: FAILED 시 Telegram 호출 + 메시지 내용 확인
+- `test_no_failure_notification_when_all_succeed`: 전체 성공 시 알림 미발송
+- `test_failure_notification_groups_errors`: 에러 유형별 그룹핑 확인
+- `test_failure_notification_without_telegram`: Telegram 미설정 시 예외 없이 로그만 남김
+
+**기존 테스트 수정** (2건): `TestExecuteOrdersDelay` 테스트에 `OrderResult` 반환값 설정 + `engine._telegram = None` 추가 (반환 타입 변경 대응).
+
+**검증**: ruff 0 errors, black 0 reformatted, 4029 passed, 0 failed (gen_status 반영 후 3933 total).
+
 ---
 
 ## 10. E2E 실거래 사이클 검증 결과 (2026-04-14)

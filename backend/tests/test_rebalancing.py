@@ -1024,23 +1024,47 @@ class TestRebalancingEngine:
 # ══════════════════════════════════════════════════════════════════════════════
 # _execute_orders 주문 간 딜레이 테스트
 # ══════════════════════════════════════════════════════════════════════════════
+def _make_order_result(ticker, status_val, error_message=""):
+    """테스트용 OrderResult 팩토리"""
+    from datetime import datetime, timezone
+
+    from config.constants import Market, OrderSide, OrderStatus, OrderType
+    from core.order_executor.executor import OrderResult
+
+    return OrderResult(
+        order_id=f"TEST_{ticker}",
+        ticker=ticker,
+        market=Market.KRX,
+        side=OrderSide.BUY,
+        quantity=100,
+        filled_quantity=100 if status_val == OrderStatus.SUBMITTED else 0,
+        avg_price=50000.0 if status_val == OrderStatus.SUBMITTED else 0.0,
+        status=status_val,
+        executed_at=datetime.now(timezone.utc),
+        order_type=OrderType.MARKET,
+        error_message=error_message,
+    )
+
+
 class TestExecuteOrdersDelay:
     """리밸런싱 _execute_orders의 주문 간 딜레이 검증"""
 
     @pytest.mark.asyncio
     async def test_execute_orders_applies_delay_between_orders(self):
         """동일 그룹 내 2번째 주문부터 asyncio.sleep이 호출된다"""
-        from config.constants import Market, OrderSide, OrderType
+        from config.constants import Market, OrderSide, OrderStatus, OrderType
         from core.portfolio_manager.rebalancing import (
             RebalancingEngine,
             RebalancingOrder,
         )
 
+        mock_result = _make_order_result("005930", OrderStatus.SUBMITTED)
         mock_executor = AsyncMock()
-        mock_executor.execute_order = AsyncMock()
+        mock_executor.execute_order = AsyncMock(return_value=mock_result)
 
         engine = RebalancingEngine.__new__(RebalancingEngine)
         engine._order_executor = mock_executor
+        engine._telegram = None
 
         orders = [
             RebalancingOrder(
@@ -1065,27 +1089,30 @@ class TestExecuteOrdersDelay:
             "core.portfolio_manager.rebalancing.asyncio.sleep",
             new_callable=AsyncMock,
         ) as mock_sleep:
-            await engine._execute_orders(orders)
+            results = await engine._execute_orders(orders)
 
         # 첫 번째 주문 전에는 sleep 없고, 두 번째 주문 전에 0.5초 sleep
         assert mock_sleep.call_count == 1
         mock_sleep.assert_called_with(0.5)
         assert mock_executor.execute_order.call_count == 2
+        assert len(results) == 2
 
     @pytest.mark.asyncio
     async def test_execute_orders_no_delay_for_single_order(self):
         """주문이 1건이면 딜레이가 없다"""
-        from config.constants import Market, OrderSide, OrderType
+        from config.constants import Market, OrderSide, OrderStatus, OrderType
         from core.portfolio_manager.rebalancing import (
             RebalancingEngine,
             RebalancingOrder,
         )
 
+        mock_result = _make_order_result("005930", OrderStatus.SUBMITTED)
         mock_executor = AsyncMock()
-        mock_executor.execute_order = AsyncMock()
+        mock_executor.execute_order = AsyncMock(return_value=mock_result)
 
         engine = RebalancingEngine.__new__(RebalancingEngine)
         engine._order_executor = mock_executor
+        engine._telegram = None
 
         orders = [
             RebalancingOrder(
@@ -1102,7 +1129,192 @@ class TestExecuteOrdersDelay:
             "core.portfolio_manager.rebalancing.asyncio.sleep",
             new_callable=AsyncMock,
         ) as mock_sleep:
-            await engine._execute_orders(orders)
+            results = await engine._execute_orders(orders)
 
         mock_sleep.assert_not_called()
         assert mock_executor.execute_order.call_count == 1
+        assert len(results) == 1
+
+
+class TestOrderFailureNotification:
+    """리밸런싱 주문 실패 시 Telegram 알림 발송 검증"""
+
+    @pytest.mark.asyncio
+    async def test_failure_notification_sent_when_orders_fail(self):
+        """FAILED 주문이 있으면 실패 알림이 발송된다"""
+        from config.constants import Market, OrderSide, OrderStatus, OrderType
+        from core.portfolio_manager.rebalancing import (
+            RebalancingEngine,
+            RebalancingOrder,
+        )
+
+        failed_result = _make_order_result("005930", OrderStatus.FAILED, "모의투자 주문가능금액이 부족합니다")
+        mock_executor = AsyncMock()
+        mock_executor.execute_order = AsyncMock(return_value=failed_result)
+
+        mock_telegram = AsyncMock()
+
+        engine = RebalancingEngine.__new__(RebalancingEngine)
+        engine._order_executor = mock_executor
+        engine._telegram = mock_telegram
+
+        orders = [
+            RebalancingOrder(
+                ticker="005930",
+                market=Market.KRX,
+                action=OrderSide.BUY,
+                quantity=100,
+                order_type=OrderType.MARKET,
+                reason="리밸런싱",
+            ),
+        ]
+
+        with patch(
+            "core.portfolio_manager.rebalancing.asyncio.sleep",
+            new_callable=AsyncMock,
+        ):
+            results = await engine._execute_orders(orders)
+
+        assert len(results) == 1
+        assert results[0].status == OrderStatus.FAILED
+        # Telegram send_text가 호출됐는지 확인
+        mock_telegram.send_text.assert_called_once()
+        sent_message = mock_telegram.send_text.call_args[0][0]
+        assert "실패" in sent_message
+        assert "005930" in sent_message
+
+    @pytest.mark.asyncio
+    async def test_no_failure_notification_when_all_succeed(self):
+        """모든 주문이 성공하면 실패 알림이 발송되지 않는다"""
+        from config.constants import Market, OrderSide, OrderStatus, OrderType
+        from core.portfolio_manager.rebalancing import (
+            RebalancingEngine,
+            RebalancingOrder,
+        )
+
+        success_result = _make_order_result("005930", OrderStatus.SUBMITTED)
+        mock_executor = AsyncMock()
+        mock_executor.execute_order = AsyncMock(return_value=success_result)
+
+        mock_telegram = AsyncMock()
+
+        engine = RebalancingEngine.__new__(RebalancingEngine)
+        engine._order_executor = mock_executor
+        engine._telegram = mock_telegram
+
+        orders = [
+            RebalancingOrder(
+                ticker="005930",
+                market=Market.KRX,
+                action=OrderSide.BUY,
+                quantity=100,
+                order_type=OrderType.MARKET,
+                reason="리밸런싱",
+            ),
+        ]
+
+        with patch(
+            "core.portfolio_manager.rebalancing.asyncio.sleep",
+            new_callable=AsyncMock,
+        ):
+            results = await engine._execute_orders(orders)
+
+        assert len(results) == 1
+        # 성공이므로 Telegram 호출 없음
+        mock_telegram.send_text.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_failure_notification_groups_errors(self):
+        """에러 유형별로 그룹핑하여 알림에 포함한다"""
+        from config.constants import Market, OrderSide, OrderStatus, OrderType
+        from core.portfolio_manager.rebalancing import (
+            RebalancingEngine,
+            RebalancingOrder,
+        )
+
+        mock_executor = AsyncMock()
+        # 첫 번째: 잔고 부족, 두 번째: 토큰 오류
+        mock_executor.execute_order = AsyncMock(
+            side_effect=[
+                _make_order_result("005930", OrderStatus.FAILED, "모의투자 주문가능금액이 부족합니다"),
+                _make_order_result("AAPL", OrderStatus.FAILED, "TOKEN_UNAVAILABLE"),
+            ]
+        )
+
+        mock_telegram = AsyncMock()
+
+        engine = RebalancingEngine.__new__(RebalancingEngine)
+        engine._order_executor = mock_executor
+        engine._telegram = mock_telegram
+
+        orders = [
+            RebalancingOrder(
+                ticker="005930",
+                market=Market.KRX,
+                action=OrderSide.BUY,
+                quantity=100,
+                order_type=OrderType.MARKET,
+                reason="리밸런싱",
+            ),
+            RebalancingOrder(
+                ticker="AAPL",
+                market=Market.NASDAQ,
+                action=OrderSide.BUY,
+                quantity=50,
+                order_type=OrderType.MARKET,
+                reason="리밸런싱",
+            ),
+        ]
+
+        with patch(
+            "core.portfolio_manager.rebalancing.asyncio.sleep",
+            new_callable=AsyncMock,
+        ):
+            results = await engine._execute_orders(orders)
+
+        assert len(results) == 2
+        mock_telegram.send_text.assert_called_once()
+        sent_message = mock_telegram.send_text.call_args[0][0]
+        # 두 가지 에러 유형이 모두 포함
+        assert "주문가능금액" in sent_message
+        assert "TOKEN_UNAVAILABLE" in sent_message
+        assert "005930" in sent_message
+        assert "AAPL" in sent_message
+
+    @pytest.mark.asyncio
+    async def test_failure_notification_without_telegram(self):
+        """Telegram 미설정 시에도 예외 없이 로그만 남긴다"""
+        from config.constants import Market, OrderSide, OrderStatus, OrderType
+        from core.portfolio_manager.rebalancing import (
+            RebalancingEngine,
+            RebalancingOrder,
+        )
+
+        failed_result = _make_order_result("005930", OrderStatus.FAILED, "테스트 오류")
+        mock_executor = AsyncMock()
+        mock_executor.execute_order = AsyncMock(return_value=failed_result)
+
+        engine = RebalancingEngine.__new__(RebalancingEngine)
+        engine._order_executor = mock_executor
+        engine._telegram = None  # Telegram 없음
+
+        orders = [
+            RebalancingOrder(
+                ticker="005930",
+                market=Market.KRX,
+                action=OrderSide.BUY,
+                quantity=100,
+                order_type=OrderType.MARKET,
+                reason="리밸런싱",
+            ),
+        ]
+
+        with patch(
+            "core.portfolio_manager.rebalancing.asyncio.sleep",
+            new_callable=AsyncMock,
+        ):
+            # 예외 없이 정상 완료되어야 함
+            results = await engine._execute_orders(orders)
+
+        assert len(results) == 1
+        assert results[0].status == OrderStatus.FAILED

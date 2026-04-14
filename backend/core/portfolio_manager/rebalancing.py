@@ -28,6 +28,7 @@ from config.constants import (
     InvestmentStyle,
     Market,
     OrderSide,
+    OrderStatus,
     OrderType,
     RebalancingFrequency,
     RebalancingType,
@@ -35,7 +36,7 @@ from config.constants import (
 from config.logging import logger
 from config.settings import get_settings
 from core.notification.telegram_transport import TelegramTransport
-from core.order_executor.executor import OrderExecutor, OrderRequest
+from core.order_executor.executor import OrderExecutor, OrderRequest, OrderResult
 from core.portfolio_manager.construction import (
     PortfolioConstructionEngine,
     TargetAllocation,
@@ -569,7 +570,7 @@ class RebalancingEngine:
             logger.info("Auto-executing emergency rebalancing")
             await self._execute_orders(result.orders)
 
-    async def _execute_orders(self, orders: list[RebalancingOrder]) -> None:
+    async def _execute_orders(self, orders: list[RebalancingOrder]) -> list[OrderResult]:
         """
         OrderExecutor를 통해 리밸런싱 주문을 실행합니다.
 
@@ -577,10 +578,15 @@ class RebalancingEngine:
 
         Args:
             orders: 리밸런싱 주문 리스트
+
+        Returns:
+            실행된 주문 결과 리스트 (성공/실패 모두 포함)
         """
+        results: list[OrderResult] = []
+
         if not self._order_executor:
             logger.warning("OrderExecutor not available, orders not executed")
-            return
+            return results
 
         # 매도 주문 우선 실행
         sell_orders = [o for o in orders if o.action == OrderSide.SELL]
@@ -603,10 +609,18 @@ class RebalancingEngine:
                         order_type=order.order_type,
                         reason=order.reason,
                     )
-                    await self._order_executor.execute_order(request)
+                    result = await self._order_executor.execute_order(request)
+                    results.append(result)
                     logger.info(f"Rebalancing order executed: {label} {order.ticker} x{order.quantity}")
                 except Exception as e:
                     logger.error(f"Rebalancing order failed: {order.ticker}: {e}")
+
+        # 실패 건이 있으면 알림 발송
+        failed = [r for r in results if r.status == OrderStatus.FAILED]
+        if failed:
+            await self._send_order_failure_notification(results)
+
+        return results
 
     async def _send_rebalancing_recommendation(self, result: RebalancingResult) -> None:
         """텔레그램으로 리밸런싱 추천 전송"""
@@ -651,6 +665,47 @@ class RebalancingEngine:
                 logger.warning(f"Emergency notification (no Telegram): {message}")
         except Exception as e:
             logger.error(f"Failed to send emergency notification: {e}")
+
+    async def _send_order_failure_notification(self, results: list[OrderResult]) -> None:
+        """주문 실패 요약 알림 발송
+
+        전체 주문 결과 중 FAILED 건을 집계하여 Telegram으로 발송합니다.
+        에러 유형별로 그룹핑하여 운영자가 원인을 빠르게 파악할 수 있도록 합니다.
+        """
+        try:
+            total = len(results)
+            failed = [r for r in results if r.status == OrderStatus.FAILED]
+            succeeded = total - len(failed)
+
+            # 에러 유형별 집계
+            error_groups: dict[str, list[str]] = {}
+            for r in failed:
+                # 에러 메시지에서 핵심 원인 추출 (첫 80자)
+                key = r.error_message[:80] if r.error_message else "알 수 없는 오류"
+                error_groups.setdefault(key, []).append(r.ticker)
+
+            lines = [
+                "⚠️ <b>리밸런싱 주문 실패 알림</b>\n",
+                f"전체: {total}건 | 성공: {succeeded}건 | 실패: {len(failed)}건\n",
+            ]
+            for err_msg, tickers in error_groups.items():
+                ticker_str = ", ".join(tickers[:5])
+                if len(tickers) > 5:
+                    ticker_str += f" 외 {len(tickers) - 5}건"
+                lines.append(f"• <b>{err_msg}</b>\n  → {ticker_str}\n")
+
+            now_kst = datetime.now(timezone(timedelta(hours=9)))
+            lines.append(f"\n<i>{now_kst.strftime('%Y-%m-%d %H:%M KST')}</i>")
+
+            message = "\n".join(lines)
+
+            if self._telegram:
+                await self._telegram.send_text(message, parse_mode="HTML")
+                logger.warning(f"Order failure notification sent: {len(failed)}/{total} failed")
+            else:
+                logger.warning(f"Order failure notification (no Telegram): {message}")
+        except Exception as e:
+            logger.error(f"Failed to send order failure notification: {e}")
 
     def _format_rebalancing_message(self, result: RebalancingResult) -> str:
         """리밸런싱 메시지 포맷"""
