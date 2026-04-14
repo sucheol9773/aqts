@@ -685,6 +685,39 @@ DB의 `error_message`가 `RetryError[<Future ... raised KISAPIError>]` 형태로
 
 **검증**: ruff 0 errors, black 0 reformatted, 4023 passed, 0 failed.
 
+### 7.15 리밸런싱 중복 실행 방지 — 멱등성 체크 + 분산 락 (2026-04-14)
+
+**발견**: E2E 검증 시 `/api/system/rebalancing` 엔드포인트를 504 타임아웃 후 재호출하여 동일 거래일에 20건씩 2회(총 40건)의 주문이 생성됨.
+
+**근본 원인**: 리밸런싱 엔드포인트에 중복 실행 방지 메커니즘이 없었음.
+- 같은 거래일 내 재요청을 차단하지 않음
+- 동시 요청에 대한 동시성 제어 없음
+
+**수정 내용**:
+
+| 파일 | 변경 | 목적 |
+|------|------|------|
+| `system.py` | `is_executed()` 기반 멱등성 체크 추가 (Step 0-a) | 같은 거래일(KST) 중복 실행 차단 |
+| `system.py` | Redis 분산 락 (`SETNX`, TTL 5분) 추가 (Step 0-b) | 동시 실행 차단 (409 반환) |
+| `system.py` | `force: bool = Query(default=False)` 파라미터 추가 | 운영자 판단 시 멱등성 우회 허용 |
+| `system.py` | 성공 후 `mark_executed()` 호출 (Step 5) | 해당 거래일 실행 완료 기록 |
+| `system.py` | `finally` 블록에서 락 해제 | 예외 발생 시에도 락 누수 방지 |
+
+**동작 흐름**:
+1. `force=False`(기본) + 오늘 이미 실행 → `already_executed` 응답 (200, 재실행 없음)
+2. `force=True` → 멱등성 체크 우회, 분산 락만 적용
+3. 분산 락 미획득 → 409 Conflict 응답
+4. 정상 실행 완료 → `mark_executed()` 기록 + 락 해제
+
+**추가된 테스트** (3건):
+- `test_trigger_rebalancing_idempotency_block`: 같은 거래일 중복 요청 시 `already_executed` 반환 확인
+- `test_trigger_rebalancing_idempotency_force_bypass`: `force=True` 시 멱등성 우회 확인
+- `test_trigger_rebalancing_lock_conflict`: 분산 락 충돌 시 409 반환 확인
+
+**기존 테스트 수정** (4건): 모든 리밸런싱 테스트에 `is_executed`, `mark_executed`, Redis 락 mock 추가 및 `force=False` 명시적 전달 (FastAPI `Query` 객체 기본값 문제 해결).
+
+**검증**: ruff 0 errors, black 0 reformatted, 4025 passed, 0 failed (gen_status 반영 후 3929 total).
+
 ---
 
 ## 10. E2E 실거래 사이클 검증 결과 (2026-04-14)

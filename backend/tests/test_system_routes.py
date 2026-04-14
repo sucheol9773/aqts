@@ -203,11 +203,17 @@ class TestSystemRoutes:
         # 리밸런싱 결과 mock
         mock_rebal_result = RebalancingResult()
 
+        # Redis lock (set nx=True) 반환값 설정
+        mock_redis.set = AsyncMock(return_value=True)
+        mock_redis.delete = AsyncMock()
+
         with (
             patch("api.routes.system.AuditLogger") as mock_audit,
             patch("api.routes.system.InvestorProfileManager") as mock_pm,
             patch("api.routes.system.RedisManager") as mock_rm,
             patch("api.routes.system.RebalancingEngine") as mock_re,
+            patch("api.routes.system.is_executed", new_callable=AsyncMock, return_value=False),
+            patch("api.routes.system.mark_executed", new_callable=AsyncMock, return_value=True),
         ):
             mock_audit.return_value = AsyncMock()
             mock_pm.return_value.get_profile = AsyncMock(return_value=mock_profile)
@@ -218,6 +224,7 @@ class TestSystemRoutes:
 
             response = await trigger_rebalancing(
                 rebalancing_type="MANUAL",
+                force=False,
                 current_user=_mock_user("user123"),
                 db=mock_db,
             )
@@ -232,16 +239,23 @@ class TestSystemRoutes:
         from api.routes.system import trigger_rebalancing
 
         mock_db = AsyncMock()
+        mock_redis = AsyncMock()
+        mock_redis.set = AsyncMock(return_value=True)
+        mock_redis.delete = AsyncMock()
 
         with (
             patch("api.routes.system.AuditLogger") as mock_audit,
             patch("api.routes.system.InvestorProfileManager") as mock_pm,
+            patch("api.routes.system.RedisManager") as mock_rm,
+            patch("api.routes.system.is_executed", new_callable=AsyncMock, return_value=False),
         ):
             mock_audit.return_value = AsyncMock()
             mock_pm.return_value.get_profile = AsyncMock(return_value=None)
+            mock_rm.get_client.return_value = mock_redis
 
             response = await trigger_rebalancing(
                 rebalancing_type="MANUAL",
+                force=False,
                 current_user=_mock_user("admin"),
                 db=mock_db,
             )
@@ -257,11 +271,14 @@ class TestSystemRoutes:
         mock_profile = MagicMock()
         mock_redis = AsyncMock()
         mock_redis.keys.return_value = []
+        mock_redis.set = AsyncMock(return_value=True)
+        mock_redis.delete = AsyncMock()
 
         with (
             patch("api.routes.system.AuditLogger") as mock_audit,
             patch("api.routes.system.InvestorProfileManager") as mock_pm,
             patch("api.routes.system.RedisManager") as mock_rm,
+            patch("api.routes.system.is_executed", new_callable=AsyncMock, return_value=False),
         ):
             mock_audit.return_value = AsyncMock()
             mock_pm.return_value.get_profile = AsyncMock(return_value=mock_profile)
@@ -269,6 +286,7 @@ class TestSystemRoutes:
 
             response = await trigger_rebalancing(
                 rebalancing_type="MANUAL",
+                force=False,
                 current_user=_mock_user("admin"),
                 db=mock_db,
             )
@@ -280,20 +298,132 @@ class TestSystemRoutes:
         """POST /rebalancing 예외 처리"""
         from api.routes.system import trigger_rebalancing
 
-        with (patch("api.routes.system.AuditLogger") as mock_audit,):
+        mock_redis = AsyncMock()
+        mock_redis.set = AsyncMock(return_value=True)
+        mock_redis.delete = AsyncMock()
+
+        with (
+            patch("api.routes.system.AuditLogger") as mock_audit,
+            patch("api.routes.system.RedisManager") as mock_rm,
+            patch("api.routes.system.is_executed", new_callable=AsyncMock, return_value=False),
+        ):
             mock_db = AsyncMock()
             mock_audit_instance = AsyncMock()
             mock_audit_instance.log.side_effect = Exception("DB write error")
             mock_audit.return_value = mock_audit_instance
+            mock_rm.get_client.return_value = mock_redis
 
             response = await trigger_rebalancing(
                 rebalancing_type="EMERGENCY",
+                force=False,
                 current_user=_mock_user("admin"),
                 db=mock_db,
             )
 
             assert response.success is False
             assert "DB write error" in response.message
+
+    async def test_trigger_rebalancing_idempotency_block(self):
+        """같은 거래일 중복 요청 시 already_executed 반환"""
+        from api.routes.system import trigger_rebalancing
+
+        mock_db = AsyncMock()
+        mock_redis = AsyncMock()
+        mock_redis.delete = AsyncMock()
+
+        with (
+            patch("api.routes.system.is_executed", new_callable=AsyncMock, return_value=True),
+            patch("api.routes.system.RedisManager") as mock_rm,
+        ):
+            mock_rm.get_client.return_value = mock_redis
+            response = await trigger_rebalancing(
+                rebalancing_type="MANUAL",
+                force=False,
+                current_user=_mock_user("admin"),
+                db=mock_db,
+            )
+
+        assert response.success is True
+        assert response.data["status"] == "already_executed"
+        assert "이미 리밸런싱이 실행" in response.message
+
+    async def test_trigger_rebalancing_idempotency_force_bypass(self):
+        """force=True 시 멱등성 체크를 우회한다"""
+        from api.routes.system import trigger_rebalancing
+        from core.portfolio_manager.rebalancing import RebalancingResult
+
+        mock_db = AsyncMock()
+        mock_profile = MagicMock()
+        mock_profile.risk_profile = "BALANCED"
+        mock_profile.seed_amount = 50_000_000.0
+
+        mock_redis = AsyncMock()
+        mock_redis.keys.return_value = ["ensemble:latest:005930"]
+        mock_redis.get.return_value = '{"ensemble_signal": 0.3, "regime": "SIDEWAYS"}'
+        mock_redis.set = AsyncMock(return_value=True)
+        mock_redis.delete = AsyncMock()
+
+        pos_result = MagicMock()
+        pos_result.fetchall.return_value = []
+        uni_result = MagicMock()
+        uni_result.fetchall.return_value = [("005930", "IT", "KRX")]
+        mock_db.execute.side_effect = [pos_result, uni_result]
+
+        mock_rebal_result = RebalancingResult()
+
+        with (
+            patch("api.routes.system.AuditLogger") as mock_audit,
+            patch("api.routes.system.InvestorProfileManager") as mock_pm,
+            patch("api.routes.system.RedisManager") as mock_rm,
+            patch("api.routes.system.RebalancingEngine") as mock_re,
+            patch("api.routes.system.is_executed", new_callable=AsyncMock, return_value=True),
+            patch("api.routes.system.mark_executed", new_callable=AsyncMock, return_value=True),
+        ):
+            mock_audit.return_value = AsyncMock()
+            mock_pm.return_value.get_profile = AsyncMock(return_value=mock_profile)
+            mock_rm.get_client.return_value = mock_redis
+            mock_re_instance = AsyncMock()
+            mock_re_instance.execute_scheduled_rebalancing.return_value = mock_rebal_result
+            mock_re.return_value = mock_re_instance
+
+            # force=True → is_executed=True 여도 실행됨
+            response = await trigger_rebalancing(
+                rebalancing_type="MANUAL",
+                force=True,
+                current_user=_mock_user("admin"),
+                db=mock_db,
+            )
+
+        assert response.success is True
+        assert response.data["status"] == "completed"
+
+    async def test_trigger_rebalancing_lock_conflict(self):
+        """분산 락 획득 실패 시 409 반환"""
+        from api.routes.system import trigger_rebalancing
+
+        mock_db = AsyncMock()
+        mock_redis = AsyncMock()
+        # 락 획득 실패 (이미 다른 요청이 점유)
+        mock_redis.set = AsyncMock(return_value=False)
+        mock_redis.delete = AsyncMock()
+
+        with (
+            patch("api.routes.system.AuditLogger") as mock_audit,
+            patch("api.routes.system.RedisManager") as mock_rm,
+            patch("api.routes.system.is_executed", new_callable=AsyncMock, return_value=False),
+        ):
+            mock_audit.return_value = AsyncMock()
+            mock_rm.get_client.return_value = mock_redis
+
+            response = await trigger_rebalancing(
+                rebalancing_type="MANUAL",
+                force=False,
+                current_user=_mock_user("admin"),
+                db=mock_db,
+            )
+
+        # JSONResponse 반환 (409)
+        assert response.status_code == 409
 
     # ══════════════════════════════════════
     # POST /pipeline 엔드포인트 테스트

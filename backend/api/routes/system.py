@@ -11,6 +11,7 @@ from typing import Optional
 
 import pandas as pd
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
@@ -30,8 +31,14 @@ from core.pipeline import InvestmentDecisionPipeline
 from core.portfolio_manager.construction import PortfolioConstructionEngine
 from core.portfolio_manager.profile import InvestorProfileManager
 from core.portfolio_manager.rebalancing import RebalancingEngine
+from core.scheduler_idempotency import is_executed, mark_executed
 from db.database import RedisManager, get_db_session
 from db.repositories.audit_log import AuditLogger
+
+# ── 리밸런싱 분산 락 설정 ──
+REBALANCING_LOCK_KEY = "rebalancing:lock"
+REBALANCING_LOCK_TTL = 300  # 5분 — 리밸런싱 최대 소요 시간
+REBALANCING_IDEM_EVENT = "API_REBALANCING"  # scheduler_idempotency 이벤트 타입
 
 router = APIRouter()
 
@@ -167,7 +174,14 @@ async def run_backtest(
 
 @router.post("/rebalancing", response_model=APIResponse[dict])
 async def trigger_rebalancing(
-    rebalancing_type: str = Query(default="MANUAL", description="리밸런싱 유형 (SCHEDULED/EMERGENCY/MANUAL)"),
+    rebalancing_type: str = Query(
+        default="MANUAL",
+        description="리밸런싱 유형 (SCHEDULED/EMERGENCY/MANUAL)",
+    ),
+    force: bool = Query(
+        default=False,
+        description="같은 거래일 중복 실행 허용 (기본: False)",
+    ),
     current_user=Depends(require_operator),
     db: AsyncSession = Depends(get_db_session),
 ):
@@ -175,9 +189,42 @@ async def trigger_rebalancing(
     수동 리밸런싱 트리거
 
     현재 포트폴리오 상태를 분석하여 리밸런싱을 실행합니다.
+
+    중복 실행 방지:
+    - 같은 거래일(KST)에는 1회만 실행 (force=true로 강제 가능)
+    - 동시 실행 시 Redis 분산 락으로 두 번째 요청 차단 (409)
     """
     try:
         logger.info(f"Rebalancing triggered: {rebalancing_type}")
+
+        # ── 0-a. 거래일 멱등성 체크 (같은 날 중복 실행 방지) ──
+        if not force:
+            already_ran = await is_executed(REBALANCING_IDEM_EVENT)
+            if already_ran:
+                logger.info(f"[Rebalancing] 같은 거래일 중복 요청 차단 (user={current_user.username})")
+                return APIResponse(
+                    success=True,
+                    data={"type": rebalancing_type, "status": "already_executed"},
+                    message="오늘 이미 리밸런싱이 실행되었습니다. force=true로 강제 실행할 수 있습니다.",
+                )
+
+        # ── 0-b. 분산 락 획득 (동시 실행 방지) ──
+        redis = RedisManager.get_client()
+        lock_acquired = await redis.set(
+            REBALANCING_LOCK_KEY,
+            f"{current_user.username}:{datetime.now(timezone.utc).isoformat()}",
+            nx=True,
+            ex=REBALANCING_LOCK_TTL,
+        )
+        if not lock_acquired:
+            logger.warning(f"[Rebalancing] 분산 락 획득 실패 — 이미 실행 중 (user={current_user.username})")
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "success": False,
+                    "message": "리밸런싱이 이미 실행 중입니다. 완료 후 다시 시도해주세요.",
+                },
+            )
 
         # 감사 로그 기록
         audit = AuditLogger(db)
@@ -292,6 +339,9 @@ async def trigger_rebalancing(
             market_info=market_info if market_info else None,
         )
 
+        # ── 5. 멱등성 키 기록 (같은 거래일 재실행 방지) ──
+        await mark_executed(REBALANCING_IDEM_EVENT)
+
         logger.info(f"[Rebalancing] 완료: type={rebalancing_type}, " f"orders={len(rebal_result.orders)}건")
 
         return APIResponse(
@@ -308,6 +358,13 @@ async def trigger_rebalancing(
     except Exception as e:
         logger.error(f"Rebalancing error: {e}")
         return APIResponse(success=False, message=f"리밸런싱 실패: {str(e)}")
+    finally:
+        # 분산 락 해제 (성공/실패 무관하게 항상 해제)
+        try:
+            redis = RedisManager.get_client()
+            await redis.delete(REBALANCING_LOCK_KEY)
+        except Exception:
+            pass  # 락 해제 실패는 TTL 만료로 자동 해소
 
 
 @router.post("/pipeline", response_model=APIResponse[dict])
