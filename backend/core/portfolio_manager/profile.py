@@ -82,10 +82,10 @@ class InvestorProfile:
         return cls(
             user_id=data["user_id"],
             risk_profile=RiskProfile(data["risk_profile"]),
-            seed_amount=data["seed_amount"],
+            seed_amount=float(data["seed_amount"]),
             investment_goal=data["investment_goal"],
             investment_style=InvestmentStyle(data["investment_style"]),
-            loss_tolerance=data["loss_tolerance"],
+            loss_tolerance=float(data["loss_tolerance"]),
             sector_filter=sector_raw if sector_raw else [],
             designated_tickers=tickers_raw if tickers_raw else [],
             rebalancing_frequency=RebalancingFrequency(data.get("rebalancing_frequency", "MONTHLY")),

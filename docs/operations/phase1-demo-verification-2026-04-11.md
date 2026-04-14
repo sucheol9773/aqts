@@ -588,3 +588,13 @@ Phase 1 DEMO 검증 완료 후, 미완성 API wiring 4건에 대해 순차적으
 **수정**: `InvestorProfileManager(db)` → `InvestorProfileManager()`
 
 **검증**: ruff 0 errors, black 0 reformatted, test_system_routes 15 passed.
+
+### 7.9 InvestorProfile Decimal→float 캐스팅 누락 수정 (2026-04-14)
+
+**증상**: `POST /api/system/rebalancing` 호출 시 `unsupported operand type(s) for *: 'float' and 'decimal.Decimal'` TypeError 발생.
+
+**근본 원인**: PostgreSQL `NUMERIC(18,2)` 컬럼(`seed_amount`, `loss_tolerance`)은 Python `decimal.Decimal`로 반환되지만, `InvestorProfile.from_dict()`에서 `float()` 캐스팅 없이 그대로 저장. 이후 리밸런싱 엔진에서 `float * Decimal` 연산 시 TypeError 발생.
+
+**수정**: `from_dict()`에서 `seed_amount=float(data["seed_amount"])`, `loss_tolerance=float(data["loss_tolerance"])` 명시적 캐스팅 추가.
+
+**검증**: ruff 0 errors, black 0 reformatted, test_profile 32 passed + test_rebalancing 26 passed.
