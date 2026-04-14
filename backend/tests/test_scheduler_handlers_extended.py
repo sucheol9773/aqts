@@ -29,6 +29,7 @@ from core.scheduler_handlers import (
     handle_midday_check,
     handle_post_market,
 )
+from core.utils.timezone import today_kst_str
 
 # 패치 경로 상수
 _KIS = "core.data_collector.kis_client.KISClient"
@@ -486,7 +487,7 @@ class TestHandlePostMarket:
 
         async def _redis_get(key):
             if "snapshot" in key:
-                today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                today = today_kst_str()
                 if today in key:
                     return snapshot
                 return prev_snapshot
@@ -530,7 +531,7 @@ class TestHandlePostMarket:
         # 안전망(post_market 의 zero-snapshot skip) 을 우회하기 위해 실제와 유사한
         # snapshot 을 제공한다. 이 fixture 는 텔레그램/리포트 저장 경로를 검증하는
         # 것이 목적이며, snapshot 부재 시나리오는 별도 테스트에서 검증한다.
-        _today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        _today = today_kst_str()
         _snapshot_json = json.dumps(
             {
                 "date": _today,
@@ -599,7 +600,7 @@ class TestHandlePostMarket:
         # 안전망(post_market 의 zero-snapshot skip) 을 우회하기 위해 실제와 유사한
         # snapshot 을 제공한다. 이 fixture 는 텔레그램/리포트 저장 경로를 검증하는
         # 것이 목적이며, snapshot 부재 시나리오는 별도 테스트에서 검증한다.
-        _today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        _today = today_kst_str()
         _snapshot_json = json.dumps(
             {
                 "date": _today,
@@ -672,7 +673,7 @@ class TestHandlePostMarket:
         # 안전망(post_market 의 zero-snapshot skip) 을 우회하기 위해 실제와 유사한
         # snapshot 을 제공한다. 이 fixture 는 텔레그램/리포트 저장 경로를 검증하는
         # 것이 목적이며, snapshot 부재 시나리오는 별도 테스트에서 검증한다.
-        _today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        _today = today_kst_str()
         _snapshot_json = json.dumps(
             {
                 "date": _today,
@@ -740,7 +741,7 @@ class TestHandlePostMarket:
         # 안전망(post_market 의 zero-snapshot skip) 을 우회하기 위해 실제와 유사한
         # snapshot 을 제공한다. 이 fixture 는 텔레그램/리포트 저장 경로를 검증하는
         # 것이 목적이며, snapshot 부재 시나리오는 별도 테스트에서 검증한다.
-        _today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        _today = today_kst_str()
         _snapshot_json = json.dumps(
             {
                 "date": _today,
@@ -810,7 +811,7 @@ class TestHandlePostMarket:
         # 안전망(post_market 의 zero-snapshot skip) 을 우회하기 위해 실제와 유사한
         # snapshot 을 제공한다. 이 fixture 는 텔레그램/리포트 저장 경로를 검증하는
         # 것이 목적이며, snapshot 부재 시나리오는 별도 테스트에서 검증한다.
-        _today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        _today = today_kst_str()
         _snapshot_json = json.dumps(
             {
                 "date": _today,
@@ -1141,7 +1142,7 @@ def _make_post_market_mocks(
     trade_rows=None,
 ):
     """handle_post_market 테스트를 위한 공통 mock 세트 생성"""
-    _today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    _today = today_kst_str()
     snapshot = json.dumps(
         {
             "date": _today,
@@ -1328,7 +1329,7 @@ class TestHandlePostMarketEdgeCases:
     @pytest.mark.asyncio
     async def test_prev_snapshot_malformed_json(self):
         """전일 스냅샷 JSON 파싱 실패 시 initial_capital fallback"""
-        _today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        _today = today_kst_str()
         today_snapshot = json.dumps(
             {
                 "portfolio_value": 50_000_000.0,

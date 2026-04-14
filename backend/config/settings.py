@@ -102,6 +102,12 @@ class KISSettings(BaseSettings):
         description="모의 WebSocket URL",
     )
 
+    # ── HTS ID (체결 통보 구독에 필요) ──
+    hts_id: str = Field(
+        default="",
+        description="HTS ID (체결통보 WebSocket 구독 키). KIS Developers에서 확인.",
+    )
+
     # ── 공통 설정 ──
     token_refresh_interval: int = Field(default=3600, description="토큰 갱신 주기 (초)")
     api_timeout: int = Field(default=10, description="API 요청 타임아웃 (초)")

@@ -35,6 +35,7 @@ from core.health_checker import ComponentHealth, HealthChecker, HealthStatus
 from core.mode_manager import ModeManager, TransitionStatus
 from core.state_machine import PipelineState, PipelineStateMachine
 from core.trading_guard import TradingGuard, TradingGuardState
+from core.utils.timezone import today_kst_str
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Redis Mock - 핸들러 간 데이터 전파용 인메모리 구현
@@ -821,7 +822,7 @@ class TestFullPipelineIntegration:
             # for this integration test - we're verifying the handler runs
 
             # Check Redis snapshot
-            today_key = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            today_key = today_kst_str()
             snapshot_raw = await mock_redis.get(f"portfolio:snapshot:{today_key}")
             assert snapshot_raw is not None
             snapshot = json.loads(snapshot_raw)
@@ -837,7 +838,7 @@ class TestFullPipelineIntegration:
         mock_redis = InMemoryRedis()
 
         # Pre-populate Redis with snapshot data
-        today_key = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today_key = today_kst_str()
         snapshot = {
             "date": today_key,
             "portfolio_value": 10720000,
@@ -1102,7 +1103,7 @@ class TestFullPipelineIntegration:
             assert close_result["snapshot_saved"] is True
 
             # Verify snapshot saved to shared Redis
-            today_key = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            today_key = today_kst_str()
             snapshot_cache = await shared_redis.get(f"portfolio:snapshot:{today_key}")
             assert snapshot_cache is not None
             snapshot = json.loads(snapshot_cache)

@@ -10,13 +10,14 @@ Scheduler 멱등성 + handle_market_close/handle_post_market 안전망 유닛테
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 import core.scheduler_idempotency as idem
 from core.scheduler_handlers import handle_market_close, handle_post_market
+from core.utils.timezone import now_kst, today_kst_str
 
 _REDIS_HANDLERS = "core.scheduler_handlers.RedisManager.get_client"
 _REDIS_IDEM = "core.scheduler_idempotency.RedisManager.get_client"
@@ -238,8 +239,8 @@ class TestPostMarketSafetyNet:
         """
         import json
 
-        today_key = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        yesterday_key = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+        today_key = today_kst_str()
+        yesterday_key = (now_kst() - timedelta(days=1)).strftime("%Y-%m-%d")
 
         today_snapshot = json.dumps(
             {
@@ -334,7 +335,7 @@ class TestPostMarketSafetyNet:
         """end>0 인데 initial_capital 도 0 이라 start<=0 인 정합성 붕괴 케이스."""
         import json
 
-        today_key = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today_key = today_kst_str()
 
         today_snapshot = json.dumps(
             {
