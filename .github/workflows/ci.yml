@@ -394,12 +394,42 @@ jobs:
           category: grype-container-scan
 
       # ── cosign keyless 서명 (Sigstore Fulcio + Rekor) ──
-      # cosign v2.4.0 고정 시 Fulcio OIDC 토큰 파싱 실패(invalid character 'u')
-      # 발생. cosign-installer v3.10.1 (cosign v2.6.1 내장)로 업그레이드.
+      # 버전 경위:
+      #   - 2026-04-15: cosign-installer v3.7.0(cosign v2.4.0) → v3.10.1(v2.6.1)
+      #     로 승격. v2.4.0 의 OIDC 토큰 파싱 경로 비호환 해소 시도.
+      #   - 2026-04-16: v2.6.1 에서 동일 증상
+      #     ("invalid character 'u' looking for beginning of value") 재현.
+      #     cosign-installer v3.x 시리즈는 cosign v2.x 에만 고정되어 있어
+      #     v3.10.1 이 실질적으로 v3.x 계열 중 최상위 지점이었음. 업스트림
+      #     stable 은 v3.0.5(installer v4.1.1 내장) 로 이동, v2.6.x 계열의
+      #     OIDC 파싱 경로 수정 커밋이 v3 라인에만 포함됨.
+      #   - 조치: cosign-installer v3.10.1 → v4.1.1 (cosign v3.0.5 내장).
+      #     CD 의 verify 경로도 동일 메이저 버전으로 동기화 (cd.yml
+      #     COSIGN_VERSION=v3.0.5).
       # COSIGN_EXPERIMENTAL 은 cosign v2 이후 불필요 (--yes 플래그로 대체).
       - name: Install cosign
         if: github.ref == 'refs/heads/main'
-        uses: sigstore/cosign-installer@v3.10.1
+        uses: sigstore/cosign-installer@v4.1.1
+
+      - name: Cosign/OIDC ambient diagnostics (observation-first)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          echo "═══ cosign version ═══"
+          cosign version
+          echo "═══ OIDC ambient env presence (values redacted) ═══"
+          if [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            echo "ACTIONS_ID_TOKEN_REQUEST_URL: set (length=${#ACTIONS_ID_TOKEN_REQUEST_URL})"
+          else
+            echo "ACTIONS_ID_TOKEN_REQUEST_URL: UNSET (job-level id-token:write 누락 가능)"
+          fi
+          if [ -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]; then
+            echo "ACTIONS_ID_TOKEN_REQUEST_TOKEN: set (length=${#ACTIONS_ID_TOKEN_REQUEST_TOKEN})"
+          else
+            echo "ACTIONS_ID_TOKEN_REQUEST_TOKEN: UNSET"
+          fi
+          echo "GITHUB_REPOSITORY: ${GITHUB_REPOSITORY:-}"
+          echo "GITHUB_REF:        ${GITHUB_REF:-}"
+          echo "GITHUB_WORKFLOW:   ${GITHUB_WORKFLOW:-}"
 
       - name: Sign image with cosign (keyless)
         if: github.ref == 'refs/heads/main'

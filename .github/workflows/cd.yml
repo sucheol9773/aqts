@@ -22,9 +22,12 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAMESPACE: ${{ github.repository_owner }}
   IMAGE_NAME: aqts-backend
-  # cosign v2.4.0 → v2.6.3: CI sign 이 v2.6.1 로 서명하므로 verify 호환성 유지.
-  # CD 에서는 verify 만 사용 (OIDC 미관여).
-  COSIGN_VERSION: v2.6.3
+  # cosign 버전은 CI sign 과 메이저 라인을 동기화한다.
+  # - CI: cosign-installer v4.1.1 (cosign v3.0.5 내장) — sign/attest 경로
+  # - CD: cosign v3.0.5 — verify 경로 (OIDC 미관여)
+  # 2026-04-16: v2.6.3 → v3.0.5. v2.6.x 계열 OIDC 파싱 경로 비호환 해소를
+  # 위해 CI 가 v3 라인으로 이동했고, sign/verify 쌍 일관성을 위해 CD 도 동기화.
+  COSIGN_VERSION: v3.0.5
 
 jobs:
   # ──────────────────────────────────

@@ -29,7 +29,7 @@
    - `docker/build-push-action@v6` 로 GHCR push (`provenance: true`, `sbom: true`).
    - `anchore/sbom-action@v0` 로 CycloneDX JSON SBOM 생성 + 90일 아티팩트 보관.
    - `anchore/scan-action@v3` (grype) `severity-cutoff: high`, SARIF 를 GitHub Security 탭에 업로드.
-   - `cosign-installer@v3` → `cosign sign --yes <digest>` (keyless).
+   - `cosign-installer@v4.1.1` (cosign v3.0.5 내장) → `cosign sign --yes <digest>` (keyless).
    - `cosign attest --predicate sbom.cdx.json --type cyclonedx <digest>` 로 SBOM attestation.
    - `cosign verify` 셀프-체크로 sanity verify 후 GitHub step summary 에 digest/태그 출력.
 3. PR 빌드는 push 없이 로컬 load 만 수행하고, non-root user 검증만 한다 (CVE 스캔/서명은 main push 한정 — Rekor 오염 방지).
@@ -39,7 +39,7 @@
 배포 서버에서 SSH 를 통해 다음 순서로 실행한다.
 
 1. `git pull origin main` — compose/config 동기화.
-2. `cosign` 미설치 시 `${COSIGN_VERSION}` (현재 v2.6.3) 자동 설치.
+2. `cosign` 미설치 시 `${COSIGN_VERSION}` (현재 v3.0.5) 자동 설치.
 3. `cosign verify --certificate-identity-regexp "^https://github.com/${REPO_FULL}/" --certificate-oidc-issuer "https://token.actions.githubusercontent.com" "${IMAGE_REF}"` — 통과해야만 다음 단계 진행. 실패 시 즉시 종료.
 4. `docker pull "${IMAGE_REF}"` 후 `EXPECTED_IMAGE_ID=$(docker image inspect "${IMAGE_REF}" --format '{{.Id}}')` 로 로컬 digest 잠금.
 5. `docker compose -f docker-compose.yml up -d --force-recreate --no-deps backend scheduler` → `docker compose -f docker-compose.yml up -d`. `--force-recreate` 는 compose 의 "변경 없음" 최적화를 무력화하여 backend/scheduler 가 **원자적으로 교체**되도록 강제한다.
@@ -61,7 +61,7 @@
 
 - keyless 서명은 비밀키가 없으므로 회전 대상이 아니다. 대신 다음을 모니터링한다.
   - GitHub OIDC 발급자(`token.actions.githubusercontent.com`) 변경 — 변경 시 verify 정책 업데이트 필요.
-  - `cosign` CLI 메이저 버전 (현재 v2 계열) — `COSIGN_VERSION` env 단일 지점에서 갱신.
+  - `cosign` CLI 메이저 버전 (현재 v3 계열) — CI 측은 `sigstore/cosign-installer` 핀 지점(`v4.1.1`), CD 측은 `COSIGN_VERSION` env 단일 지점에서 갱신한다. 두 경로를 항상 동일 메이저 라인으로 맞춘다.
   - Sigstore Fulcio root CA 변경 — `cosign initialize` 를 통한 trust root 갱신 필요 시 본 문서에 반영.
 
 ## 7. 운영자 수동 검증 절차
@@ -71,7 +71,7 @@
 ```bash
 # 1. cosign 설치 (서버에 없을 경우)
 curl -sSLo /tmp/cosign \
-  "https://github.com/sigstore/cosign/releases/download/v2.6.3/cosign-linux-amd64"
+  "https://github.com/sigstore/cosign/releases/download/v3.0.5/cosign-linux-amd64"
 sudo install -m 0755 /tmp/cosign /usr/local/bin/cosign
 
 # 2. 검증 (현재 main 의 short SHA 를 사용)
@@ -122,3 +122,31 @@ apt 레이어에만 **일(day)-단위 cache-bust build-arg** 를 주입한다. p
 ### 운영 원칙 업데이트
 - **새 base image / Dockerfile 변경 시** 체크리스트에 다음을 추가한다: "apt 레이어 cache-bust 메커니즘이 여전히 작동하는지 확인" (ARG 이름 변경, RUN 문자열에서 참조 제거 등은 회귀). 회귀 테스트(`test_dockerfile_apt_cachebust.py`) 가 이를 정적 검사로 잡는다.
 - CVE 게이트 실패 → 첫 반응은 **화이트리스트 확장이 아니라 fix 버전 흡수 경로 점검**이다. 본 건은 fix 버전(`3.0.19-1~deb12u2`) 이 이미 upstream 에 있었고 단순히 캐시 재사용으로 인해 흡수되지 못한 케이스였다. 화이트리스트는 fix 가 없거나 fix 일정이 잡힌 경우의 마지막 수단이어야 한다.
+
+## 9. 회고 — 2026-04-16 cosign keyless OIDC 파싱 비호환 (v2.4→v2.6→v3 승격)
+
+### 증상
+`Sign image with cosign (keyless)` 스텝이 Fulcio OIDC 토큰 파싱 단계에서 실패:
+
+```
+fetching ambient OIDC credentials:
+invalid character 'u' looking for beginning of value
+```
+
+JSON 디코더가 첫 바이트 `'u'` 를 만났다는 신호다. 이는 OIDC 엔드포인트 응답이 `unauthorized` 같은 평문 혹은 HTML 오류 페이지이거나, 파서 경로 내부에서 non-JSON 바이트를 JSON 으로 해석하려는 경우에 관측된다.
+
+### 경위 타임라인
+- 2026-04-14: 초기 도입 시 `cosign-installer@v3.7.0` (cosign v2.4.0 내장) 고정. CI 에서 첫 실패 발생.
+- 2026-04-15 (`3c0b850`): `cosign-installer@v3.10.1` (cosign v2.6.1) 으로 점프. 동일 스텝이 한두 번은 통과한 것으로 보이나 지속적으로 재현.
+- 2026-04-16: 동일 증상 재발. 조사 결과 `cosign-installer@v3` 시리즈는 cosign v2.x 만 탑재하며, OIDC 파서 경로 수정은 v3 라인에만 포함됨. `cosign-installer@v4.1.1` (cosign v3.0.5 내장) 이 업스트림 stable.
+
+### Fix
+- `.github/workflows/ci.yml`: `sigstore/cosign-installer@v3.10.1` → `@v4.1.1`. sign 단계 직전에 **관찰용 진단 스텝** 추가 — `cosign version`, `ACTIONS_ID_TOKEN_REQUEST_URL`/`_TOKEN` 존재 여부(값은 redact), `GITHUB_*` 컨텍스트. 재발 시 원인이 cosign CLI 인지 OIDC ambient 환경인지 분리 관측 가능.
+- `.github/workflows/cd.yml`: `COSIGN_VERSION: v2.6.3` → `v3.0.5`. sign/verify 쌍의 메이저 라인 동기화. CD 는 verify 만 사용하므로 OIDC 는 무관하지만, 이후 attestation 포맷/verify 옵션이 메이저 간 달라질 수 있어 선제적 동기화.
+- `docs/security/supply-chain-policy.md`: cosign-installer 버전 핀, `COSIGN_VERSION` 기본값, 운영자 수동 검증 절차의 `curl` URL 갱신.
+
+### 운영 원칙 업데이트
+- **cosign CLI 메이저 버전은 CI(installer 핀)와 CD(`COSIGN_VERSION` env)가 항상 동일 메이저 라인** (현재 v3) 을 유지한다. 한 쪽만 승격하면 attestation 포맷/verify 옵션 차이로 인한 서명 검증 실패가 발생할 수 있다.
+- **OIDC ambient 장애 vs CLI 파싱 장애 구분**: 재발 시 관찰 스텝 출력을 먼저 확인한다. 환경변수가 `UNSET` 이면 `permissions: id-token: write` 가 job 레벨이 아닌 workflow 레벨에만 있는지 점검. 환경변수가 `set` 인데 파싱 실패면 CLI 버전 승격 검토.
+- **`cosign-installer` 메이저 승격은 CLI 메이저 승격을 수반**한다. v3 → v4 는 cosign v2 → v3 을 의미한다. 단순 점프가 아니므로 릴리스 노트에서 verify 옵션 / attestation 포맷 차이 (예: `--type cyclonedx` 경로, certificate identity regexp 처리) 를 확인한 뒤 승격한다.
+- 일반화된 원칙: "supply-chain 도구 체인의 관찰 가능성은 파이프라인의 1 급 자산이다." CI 의 진단 스텝은 장애 첫 발생 시점에 진단 정보를 노출하여 추측성 롤백 사이클을 차단한다 — RBAC Wiring Rule / 알림 파이프라인 Wiring Rule 의 공급망 도메인 확장이다.
