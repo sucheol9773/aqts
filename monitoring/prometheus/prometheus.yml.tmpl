@@ -9,8 +9,15 @@ alerting:
         - targets: ["alertmanager:9093"]
 
 # ── 알림 규칙 파일 ──
+# Prometheus 는 rule_files 의 상대 경로를 config 파일 디렉터리 기준으로
+# 해석한다. 본 파일은 entrypoint 에서 sed 렌더링되어 `/tmp/prometheus.yml`
+# 로 실행되므로, 상대 경로 "rules/*.yml" 는 `/tmp/rules/*.yml` 를 가리켜
+# 존재하지 않는다 (빈 glob 은 에러가 아니므로 규칙이 조용히 0개 로드된다).
+# 컨테이너 내 실 마운트 위치인 `/etc/prometheus/rules/*.yml` 를 절대 경로로
+# 명시하여 렌더링 위치와 무관하게 규칙을 로드한다. CLAUDE.md 의 "경로 불
+# 일치 silent miss" 회귀 방지(2026-04-16).
 rule_files:
-  - "rules/*.yml"
+  - "/etc/prometheus/rules/*.yml"
 
 scrape_configs:
   - job_name: "aqts-backend"

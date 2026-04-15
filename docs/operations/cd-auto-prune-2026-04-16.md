@@ -116,8 +116,27 @@ CD Post-deploy cleanup 스텝은 SSH heredoc 내부에서 실행되므로 `docke
 | 템플릿 렌더링 | `docker compose exec prometheus cat /tmp/prometheus.yml \| grep 'host:'` | `host: "aqts-server"` (또는 env 로 주입된 값), 리터럴 `${HOST_LABEL}` 가 남지 않음 |
 | scrape 성공 | `curl -s http://localhost:9090/api/v1/targets` | `aqts-node-exporter` job 이 `up=1` |
 | 메트릭 노출 | `curl -s http://localhost:9100/metrics \| grep -c '^node_filesystem_size_bytes'` | > 0 |
+| **rule_files glob 로딩 (신규)** | `curl -s http://localhost:9090/api/v1/rules \| python3 -c "import sys,json; print(len(json.load(sys.stdin)['data']['groups']))"` | ≥ 1 (아래 silent miss 회귀 방어) |
 | 알림 규칙 로드 | Prometheus UI `/rules` → `aqts_host_system` 그룹 | 3개 rule 모두 `ok` |
 | CD prune 실행 | Actions UI 의 `Post-deploy cleanup` step | `df -h /` before/after 출력 + prune 결과 텍스트 존재 |
+
+### 4.1 Silent Miss 회귀 사례 — `rule_files` 상대 경로 (2026-04-16)
+
+Step A 초판 배포 후 검증에서 `aqts_host_system` 그룹이 Prometheus `/api/v1/rules` 에 전혀 나타나지 않았다. 관찰:
+
+- `docker compose ps prometheus`: `Up 16 minutes (healthy)` — 재생성 성공.
+- `/tmp/prometheus.yml` 1651B, entrypoint sed 로 `host: "aqts-server"` 정상 주입.
+- `Loading configuration file` / `Completed loading ... rules=61.491µs` — config 로드 에러 없음.
+- `/etc/prometheus/rules/aqts_alerts.yml` 30KB 로 마운트 정상.
+- `curl .../api/v1/rules`: `{"data":{"groups":[]}}` — **0개 그룹**.
+- `docker compose exec prometheus ls /tmp/rules/`: `No such file or directory`.
+- `docker compose exec prometheus pwd`: `/prometheus`.
+
+원인: Prometheus 는 `rule_files:` 의 상대 경로 glob 을 **config 파일 디렉터리 기준**으로 해석한다. 본 커밋에서 config 렌더링 위치를 `/etc/prometheus/prometheus.yml` → `/tmp/prometheus.yml` 로 옮기면서 `rules/*.yml` 이 `/tmp/rules/*.yml` 로 resolve 되어 빈 glob 을 반환했다. 빈 glob 은 Prometheus 가 에러로 처리하지 않으므로 "config 로드 성공 + 규칙 0개 + 에러 없음" 의 silent miss 경로로 빠졌다.
+
+해결: `prometheus.yml.tmpl` 의 `rule_files` 를 절대 경로 `/etc/prometheus/rules/*.yml` 로 변경. 렌더링 위치와 무관하게 컨테이너 내 실 마운트 위치를 직접 참조한다.
+
+회귀 방어선: 위 표의 "rule_files glob 로딩" 행을 영구 체크포인트로 승격. 배포 후 이 수치가 0 이면 같은 은폐 회귀가 발생한 것으로 간주한다.
 
 검증 중 하나라도 실패하면 Silence Error 의심 원칙에 따라 "메트릭이 없어서 알림이 조용히 동작 안 함" 경로로 빠지지 않았는지 점검한다. 특히 §2.1-3 의 scrape 단계가 실패하면 §2.1-4 의 CD prune 은 정상 실행되지만 임계 관찰은 실효적으로 꺼진 상태다. 두 축은 독립이며 한쪽의 성공이 다른 쪽의 건강을 증명하지 않는다.
 
@@ -126,7 +145,7 @@ CD Post-deploy cleanup 스텝은 SSH heredoc 내부에서 실행되므로 `docke
 본 변경은 순수한 추가(additive) 변경이며 기존 서비스 경로에 영향을 주지 않는다.
 
 - `node-exporter` service 는 compose 의 신규 service 다. 기존 backend/scheduler 의 depends_on 에 포함되지 않으므로 기동 실패가 다른 서비스 기동을 블록하지 않는다.
-- Prometheus 는 `rule_files: ["rules/*.yml"]` 로 로드하지만, `aqts_host_system` 그룹의 PromQL 이 에러인 경우에도 기존 그룹은 영향받지 않는다 (Prometheus 는 그룹 단위로 독립 평가).
+- Prometheus 는 `rule_files: ["/etc/prometheus/rules/*.yml"]` 로 로드하지만, `aqts_host_system` 그룹의 PromQL 이 에러인 경우에도 기존 그룹은 영향받지 않는다 (Prometheus 는 그룹 단위로 독립 평가).
 - CD `Post-deploy cleanup` 스텝은 `if: success()` + `|| true` 의 이중 가드로 실패 전파를 차단한다.
 
 롤백 절차 (이례적으로 본 변경을 되돌려야 할 때):
