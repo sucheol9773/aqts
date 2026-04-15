@@ -92,7 +92,7 @@ env_bool(key: str, default: bool | None = None, *, strict: bool | None = None) -
   (`os.environ.get(...) ==`, `.lower()`, `in (..., "true", ...)` 등).
 - `.env*`, `docker-compose*.yml`, `.github/workflows/*.yml` 의
   알려진 bool 키 (`TESTING`, `OTEL_ENABLED`, `SCHEDULER_ENABLED`,
-  `DEBUG`, `AQTS_STRICT_BOOL`, `COLLECTOR_OTLP_ENABLED`,
+  `AQTS_STRICT_BOOL`, `COLLECTOR_OTLP_ENABLED`,
   `ALERT_RETRY_LOOP_ENABLED`, `KIS_WS_INSECURE_ALLOW`) 가 비표준 표기
   사용 시.
 

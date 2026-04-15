@@ -27,7 +27,6 @@ BOOL_ENV_KEYS = {
     "TESTING",
     "OTEL_ENABLED",
     "SCHEDULER_ENABLED",
-    "DEBUG",
     "AQTS_STRICT_BOOL",
     "COLLECTOR_OTLP_ENABLED",
     # Commit 3: 알림 재시도 루프 비활성화 플래그 (기본 true).
