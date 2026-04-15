@@ -11,6 +11,7 @@
 |------|------|-----------|
 | 1.0 | 2026-04-04 | 초안 작성 |
 | 1.1 | 2026-04-15 | §2.2·§6 개정: `PipelineStateMachine.HALTED` 와 `TradingGuard.kill_switch_on` 을 명확히 분리. §3.5 에 실존 엔드포인트(`/api/system/kill-switch/status|deactivate`) 추가 반영. §4 재개 절차를 kill switch 해제 경로와 일반 재개 경로로 이원화. |
+| 1.1.1 | 2026-04-15 | §7 에 `docs/operations/midday-check-path-a-runbook.md` 크로스링크 추가. 본문 로직 변경 없음 (문서-only). |
 
 ## 1. 목적
 
@@ -156,4 +157,5 @@ kill switch 해제(§3.5)와 파이프라인 재개는 별개의 작업이다. k
 
 - `docs/security/rbac-policy.md` — `/kill-switch/*` 권한 매트릭스
 - `docs/operations/phase1-demo-verification-2026-04-11.md` §10.17 — 엔드포인트 도입 경위
+- `docs/operations/midday-check-path-a-runbook.md` — MIDDAY_CHECK Path A 집행 운영자 체크리스트
 - `docs/security/security-integrity-roadmap.md` §9 — P0-5 후속 항목

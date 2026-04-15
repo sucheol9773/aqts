@@ -1556,3 +1556,82 @@ Path A 를 집행한다. 기대 시퀀스:
 1. **감사 선행 (fail-closed)**. `log_strict` 가 실패하면 해제를 거부한다. 감사 없이 해제되는 경로를 차단해야 "왜 풀렸는가" 의 책임 추적이 가능하다.
 2. **Re-hydrate 를 해제 경로에 내장**. 해제 후 별도 재hydrate API 를 분리하면 "해제는 했지만 hydrate 을 잊음" 형태의 silent miss 가 생긴다. 하나의 트랜잭션(감사→해제→hydrate) 으로 묶고, hydrate 실패는 warning 으로 강등(해제 자체는 유효)하여 hydrate 장애로 해제 자체가 막히는 역효과를 방지했다.
 3. **RBAC 가드와 정적 검사**. `require_admin` 만으로는 신규 라우트가 가드 누락 상태로 머지되는 과거 회귀(9위 RBAC 도입 시 10개 라우터 누락) 를 방지할 수 없다. `check_rbac_coverage.py` 가 AST 전수 스캔으로 자동 차단한다.
+
+#### 집행 런북
+
+Path A 집행 전 과정(전제 T1~T6, token 발급, 타임라인, 실패 분기, 사후 기록) 은 별도 운영자 체크리스트로 분리되었다: **[`docs/operations/midday-check-path-a-runbook.md`](midday-check-path-a-runbook.md)** v1.0. 본 §10.17 은 배경·설계 근거, 런북은 현장 행동 지침을 담당한다.
+
+---
+
+### 10.18 P0 — TradingGuard 교차프로세스 싱글톤 분열 (DEMO dry-run, 2026-04-15)
+
+§10.17 의 `/api/system/kill-switch/*` 엔드포인트 도입 직후, 2026-04-16 11:30 KST Path A 집행을 앞두고 DEMO(localhost:8000) 에서 dry-run 을 수행했다. Dry-run 자체는 9/10 관측 지점이 기대대로 동작했으나, 교차프로세스 검증 단계에서 **§10.17 엔드포인트의 전제 자체가 현재 배포 토폴로지에서 성립하지 않음**이 확인됐다. 내일 11:30 Path A 집행은 취소, Redis-backed state 이전 후 재예행으로 결정했다.
+
+#### 관측 증거
+
+| 관측 | 값 | 해석 |
+|------|-----|------|
+| `docker compose ps` | `aqts-backend` + `aqts-scheduler` 별도 컨테이너 기동 | 프로세스 분리 확정 |
+| `aqts-backend` 환경 | `SCHEDULER_ENABLED=false` | 로그 `"TradingScheduler disabled (SCHEDULER_ENABLED=false, 별도 컨테이너 실행)"` (`backend/main.py:235`) |
+| `aqts-scheduler` 환경 | `SCHEDULER_ENABLED=true` | `ReconciliationRunner` · `handle_midday_check` 는 scheduler 프로세스 전용 |
+| `docker exec aqts-scheduler python -c "g=get_trading_guard(); g.activate_kill_switch(...); print(g._state.kill_switch_on)"` | `True` | scheduler 프로세스의 **subprocess** 가 자기 싱글톤에서 on 관측 — 동일 컨테이너 내 uvicorn 프로세스와도 별개 |
+| `curl -H "Auth…" http://localhost:8000/api/system/kill-switch/status` | `{"kill_switch_on": false, "kill_switch_reason": ""}` | backend 프로세스 싱글톤은 여전히 off |
+| `curl http://localhost:8000/metrics \| grep aqts_trading_guard_kill_switch_active` | `aqts_trading_guard_kill_switch_active 0.0` | backend gauge 도 변화 없음 |
+| `curl -X POST .../kill-switch/deactivate` | `was_on=false, previous_reason=""` | backend 가 해제한 것은 **자기 프로세스의 null 상태**; scheduler 의 on 상태에는 전혀 영향 없음 |
+
+#### 근본 원인
+
+`backend/core/trading_guard.py:401-408` 에 명시된 P0-5 주석은 **한 프로세스 내 singleton 공유** 를 의도했다.
+
+```python
+# P0-5: 프로세스 전역 싱글톤
+# 관리자 API 에서 kill switch 를 활성화했을 때 OrderExecutor 가 즉시 인지해야
+# 하므로 한 프로세스 내에서 상태를 공유한다. …
+_guard_instance: Optional[TradingGuard] = None
+_guard_lock = RLock()
+```
+
+그러나 현재 배포는 `docker-compose.yml` 에서 `backend` (SCHEDULER_ENABLED=false, HTTP API 제공) 와 `scheduler` (SCHEDULER_ENABLED=true, 스케줄러 핸들러 실행) 를 **별도 컨테이너 = 별도 프로세스** 로 기동한다. `ReconciliationRunner.activate_kill_switch` (`backend/core/reconciliation_runner.py:120`) 는 scheduler 프로세스의 `get_trading_guard()` 가 반환하는 싱글톤을 대상으로 호출되고, backend 프로세스의 `/api/system/kill-switch/status` 핸들러는 자기 프로세스의 싱글톤을 조회한다. 두 싱글톤은 **메모리를 공유하지 않는다**.
+
+#### 내일 Path A 집행 시 발생할 손상
+
+| 단계 | 기대 (런북 v1.0) | 실제 (P0 조건 하) |
+|------|-------------------|---------------------|
+| O2 (11:30 직후) | backend API 로 `kill_switch_on=true` + reason | backend 는 여전히 `false`·`""` — 운영자가 "활성화 실패" 로 오판할 소지 |
+| O3 (gauge) | backend `/metrics` 에서 gauge=1 | backend gauge 는 0 — scheduler 의 gauge 는 backend `/metrics` 에 노출되지 않는다 |
+| §4.4 해제 | admin 이 POST `/kill-switch/deactivate` 로 scheduler 의 kill switch 해제 | backend 싱글톤만 해제 (이미 off 였으므로 noop). scheduler 는 계속 on 상태로 모든 주문 거부 |
+| V3 감사 선행 | audit 행에 실제 release 가 기록됨 | audit 행은 남지만 scheduler kill switch 는 해제되지 않음 — **감사 없이 해제되는 경로** 는 아니나, **감사 행과 실제 state 가 불일치** 하는 새로운 silent miss |
+
+즉, §10.17 이 해소하려 한 "REPL 기반 감사 없는 해제" 는 차단됐지만, 그 대체 경로로 **엔드포인트 호출이 실제 scheduler kill switch 에 영향을 주지 못하는** 더 은밀한 결손이 잠재해 있었다. 외부 관찰 (CI 테스트 9건 all PASS, DEMO 9/10 관측 정상) 은 정상으로 보인다.
+
+#### 테스트 갭
+
+`backend/tests/test_kill_switch_routes.py` 9건은 전부 **단일 프로세스 TestClient** 에서 실행된다. `TestClient` 는 FastAPI 앱을 호스트 프로세스 내에서 직접 호출하므로, `get_trading_guard()` 가 반환하는 싱글톤은 테스트 코드와 라우트 핸들러 모두 동일하다. 교차프로세스 경로를 재현하지 않으므로 이 결함은 **정의상** 잡을 수 없었다. 알림 파이프라인 Wiring Rule 의 "정의 ≠ 적용" 원칙이 상태 공유 계층에 그대로 적용된다 — 단위 테스트 PASS ≠ 프로덕션 토폴로지 작동.
+
+#### 결정
+
+1. **내일 (2026-04-16) 11:30 KST Path A 집행 취소**. 취소 기록은 본 §10.18 과 런북 SUSPENDED 배너(OPS-006 v1.0.1) 로 단일 진실원천 유지. Path B (사전 flatten) 전환 여부는 별건 (아래 "후속 작업 3" 참조).
+2. **Redis-backed TradingGuard 이행**. `_state` (`kill_switch_on`, `kill_switch_reason`, 기타 카운터·임계) 를 Redis hash 로 이전, pub/sub 으로 프로세스 간 상태 변경 브로드캐스트, 각 프로세스의 in-process cache 는 구독으로 갱신.
+3. **교차프로세스 통합 테스트 추가**. docker-compose 실행 환경에서 scheduler → backend / backend → scheduler 양방향 전파를 실측 검증하는 테스트를 `tests/integration/` 하위에 신설.
+4. **재예행 후에만 재개**. Path A 런북(OPS-006) 의 §0.1 재개 조건 4개 모두 충족 후 v1.1 로 번호 승격.
+
+#### 후속 작업
+
+| # | 작업 | 우선순위 | 시점 기준 |
+|---|------|----------|-----------|
+| 1 | Redis 상태 schema 설계 + 직렬화 규약 문서화 (`docs/security/trading-guard-redis-migration.md` v0.2 완성) | P0 | 승인 즉시 착수 |
+| 2 | `TradingGuard` Redis 이전 구현 + 단위 테스트 (`TradingGuardState` 10개 필드 전체, Lua script 원자 업데이트, seq counter) | P0 | Commit A 승인 후 |
+| 3 | 교차프로세스 통합 테스트 (`tests/integration/test_trading_guard_cross_process.py`) — 양방향 전파, 자동/수동 활성화, 해제, Redis down 시나리오, seq gap 즉시 reconcile | P0 | Commit C 머지 후 |
+| 4 | CI 전수 PASS (ruff/black/check_*/pytest) + cosign 서명 이미지 배포 | P0 | Commit D PASS 후 |
+| 5 | DEMO 재예행 (오늘 dry-run 과 동일 시나리오 + 교차프로세스 관측 추가) | P0 | 배포 후 |
+| 6 | 최소 1 거래일 이상 양 프로세스 gauge 일치 관측 (안정화 기간) | P0 | 재예행 PASS 후 |
+| 7 | Path A 런북 SUSPENDED 해제 (v1.1) 및 다음 MIDDAY_CHECK 일정에 대한 운영책임자 별건 결정 | P0 | §0.1 재개 조건 5건 + 안정화 관측 후 |
+| 8 | 본 §10.18 에 재예행 결과(O1~O3/V1~V4 + 교차프로세스 확인) 추가 | P0 | 재예행 직후 |
+
+**시간 데드라인 제거 근거**: 2026-04-16 11:30 KST Path A 집행은 조건 충족 여부와 무관하게 **무조건 취소**한다. 시간 데드라인은 검증 품질을 데드라인에 맞추는 인센티브를 생성하며, 특히 kill switch 같은 fail-closed 안전 시스템에서는 그 인센티브 자체가 위험원이다. 내일 11:30 MIDDAY_CHECK 는 Path B(사전 flatten) 로 전환하거나 운영책임자 판단에 따라 skip 한다. 상세 근거: `docs/security/trading-guard-redis-migration.md` v0.2 §10 결정 3번.
+
+#### 회고 — 운영 절차 silent miss 의 2차 확장
+
+§10.17 이 "해제 경로 자체의 silent miss" 를 해소했다면, §10.18 은 "해제 경로가 **실제 상태** 에 도달하는지의 silent miss" 를 해소한다. RBAC Wiring Rule (헬퍼 정의 ≠ 라우트 적용), 공급망 Wiring Rule (빌드 산출물 ≠ 배포 적용), 알림 파이프라인 Wiring Rule (router 정의 ≠ lifespan 주입) 과 동일한 사고 — **"A 를 만들었다 ≠ A 가 실제 시스템 상태에 영향을 준다"** — 가 이번엔 "HTTP 엔드포인트 정의 ≠ 공유 상태 조작" 의 형태로 재등장했다.
+
+내일 집행 전 이 결함을 DEMO dry-run 에서 발견할 수 있었던 것은 §10.17 에서 운영자 체크리스트를 별도 런북으로 분리하고 실측 dry-run 단계를 전제 조건으로 삽입했기 때문이다. 런북 분리 없이 엔드포인트만 배포했다면, 내일 11:30 에 처음으로 실상황에서 문제가 드러났을 것이다. "정의 ≠ 적용" 은 코드 계층뿐 아니라 운영 절차 계층에서도 반복적으로 분리·검증돼야 한다는 교훈이 재확인됐다.
