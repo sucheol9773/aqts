@@ -1214,3 +1214,67 @@ INFO | realtime_manager:start              | 체결 통보 구독 완료 (dual s
 두 줄이 모두 출력될 때만 dual safety net 의 realtime 레이어가 활성화된 것이다. 한 줄만 출력되면 wiring 결손이므로 본 회귀 테스트가 CI 에서 재발을 차단한다.
 
 #### 테스트 (4106 passed)
+
+### 10.14 Scheduler stdout block-buffering Silence Error 회귀 (2026-04-15)
+
+> **관측**
+>
+> - `docker compose ps` 상 `aqts-scheduler` 가 49 분째 `healthy` 로 보고
+> - `docker compose logs scheduler --tail 400` 및 `--since 2h` 모두 **0 bytes** 출력
+> - `docker inspect` 의 healthcheck `Log[*].ExitCode=0`, `Output=""` 로 녹색
+> - `/metrics` 의 `aqts_reconciliation_runs_total` 에 `{result=...}` 샘플 라인 부재 — 16:00 KST POST_MARKET 이 트리거됐는지 외부에서 판단 불가
+>
+> 표면적으로는 스케줄러가 정상 동작 중인데 관측 레이어가 통째로 비어 있어, reconcile 이 돌았는지 / 기동 시 `ReconciliationRunner wired` 가 찍혔는지 / `PortfolioLedger hydrated` 가 성공했는지 **아무것도 확인할 수 없는 상태** 로 49 분이 경과했다.
+
+#### 진단 경로 (관찰 우선 원칙 준수)
+
+| 단계 | 명령 | 결과 | 해석 |
+|---|---|---|---|
+| 1 | `cat /proc/1/cmdline` | `python scheduler_main.py` | PID 1 = 스케줄러 본체. 프로세스 사망 가설 기각. |
+| 2 | heartbeat 파일 age | `age_seconds=4.6` ~ `14.9` | `_scheduler_loop` iteration 이 매 주기 돌고 있음. 따라서 `setup_logging()` 이후의 main loop 에는 진입 완료. |
+| 3 | `ls -la /proc/1/fd/1` | `pipe:[35132000]` | stdout 이 pipe 로 연결됨 — docker json-file 로그 드라이버로 수집되는 정상 구조. |
+| 4 | `grep PYTHON` in `/proc/1/environ` | `PYTHON_VERSION=3.11.15` / `PYTHON_SHA256=...` 두 건뿐 | **`PYTHONUNBUFFERED` 가 부재**. |
+| 5 | `grep -E '^(LOG_|ENVIRONMENT|IMAGE_)' /proc/1/environ` | `ENVIRONMENT=development`, `LOG_LEVEL=INFO`, `LOG_DIR=./logs`, `IMAGE_NAMESPACE=sucheol9773` | `.env` 주입은 정상. 단순히 `PYTHONUNBUFFERED` 만 빠져 있었다. |
+
+CPython 런타임은 stdout 이 TTY 가 아닌 pipe 에 연결된 경우 **기본 4KB block-buffer** 로 동작한다. scheduler 는 heartbeat touch 외에는 거의 출력이 없는 조용한 프로세스이므로, 4KB 버퍼가 채워지는 데 수 시간이 걸리고 그 전까지는 `logger.info(...)` 호출 결과가 컨테이너 내부 프로세스 메모리에 쌓이기만 할 뿐 pipe 를 거쳐 docker 로 넘어가지 않는다. 이로 인해 `docker compose logs` 가 **0 bytes** 를 반환하면서도 프로세스는 정상이라는 모순된 관측이 성립한다.
+
+#### CLAUDE.md "Silence Error 의심 원칙" 의 신규 하위 패턴
+
+기존 4 개 패턴(silent miss / try/except swallow / 조건 분기 우회 / 타입·포맷 불일치) 에 더해 **"출력 채널 버퍼링 silent miss"** 가 추가된다. 특징:
+
+- 프로세스는 정상 동작하고 내부적으로는 log 를 생산한다.
+- 하지만 관측 레이어(docker logs, Loki 수집, Fluentd 파이프) 에는 도달하지 않는다.
+- healthcheck 가 "기능 작동" 을 판정하지 못하고 "프로세스 fd 정상" 만 판정하기 때문에 외부에서는 정상으로 보인다.
+- 관측 부재 상태에서 **wiring 결손이 존재하더라도 발견 불가** — 본 건에서는 `ReconciliationRunner wired` 로그가 실제로 찍혔는지조차 확인 불가였다.
+
+본 회귀는 Wiring Rule 의 관측 도메인 확장이기도 하다 — "logger 호출 = 관측됨" 이라는 동치는 stdout 버퍼링 앞에서 깨진다.
+
+#### Fix
+
+| 계층 | 변경 |
+|---|---|
+| `docker-compose.yml` (scheduler 서비스 `environment:`) | `PYTHONUNBUFFERED: "1"` 추가. CPython stdout/stderr 버퍼링을 비활성화하여 모든 write 가 즉시 pipe 로 flush. 주석에 회귀 경위와 근거 기재. |
+
+적용 범위는 **scheduler 서비스로 한정**. backend 는 uvicorn 이 자체 StreamHandler 를 통해 flush 를 강제하므로 동일 증상이 현재까지 보고되지 않았다. `docker compose logs backend --tail=400` 으로 실제 출력이 관측된다는 점에서도 범위 차이가 확정된다. CLAUDE.md "bug fix 에 무관한 변경 끼워넣지 않기" 원칙에 따라 backend 서비스는 본 커밋에서 건드리지 않는다.
+
+#### 검증 절차 (배포 후 수행)
+
+```bash
+docker compose up -d --force-recreate scheduler
+sleep 10
+docker compose logs scheduler --tail 100 | head -30
+```
+
+기대 관측:
+
+- `Logging initialized. Level: INFO, Env: development` (setup_logging 의 마지막 라인)
+- `PortfolioLedger hydrated from DB (positions=N)`
+- `ReconciliationRunner wired (KIS broker ↔ PortfolioLedger)` (kis_client 가 None 이 아닐 때)
+
+세 라인이 모두 관측되면 scheduler bootstrap 의 전체 wiring 경로가 검증된다. 하나라도 누락되면 별개 wiring 결손이 이 뒤에 숨어 있었다는 뜻이며, 지금까지 버퍼링에 가려져 있었음을 의미한다.
+
+#### 운영 영향
+
+- **P0-2 reconcile 검증 진행 불가 원인 제거**: 16:00 KST POST_MARKET 트리거가 실제로 발화했는지, reconcile 이 broker 13건 vs ledger 0건 의 mismatch 를 어떻게 처리했는지는 본 수정 후 배포된 스케줄러에서 로그로 직접 확인 가능해진다.
+- **관측 신뢰도 복구**: 지금까지 "healthy = 동작 중" 으로 간주해 온 판단이 stdout 버퍼링 앞에서 무효화됐음을 CI/운영 문서에 명시. 향후 scheduler 계열 프로세스를 추가할 때 compose 파일의 `environment:` 에 `PYTHONUNBUFFERED: "1"` 이 포함되는지 review 체크리스트에 반영 필요.
+

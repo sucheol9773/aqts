@@ -137,6 +137,14 @@ services:
       - .env
     environment:
       SCHEDULER_ENABLED: "true"
+      # P1-관측: Python stdout block-buffering 으로 인한 로그 침묵 방지.
+      # scheduler 는 FastAPI 가 아니라 조용한 idle 루프 (heartbeat touch 외
+      # 거의 출력 없음) 이므로, 기본 4KB block buffer 가 가득 차는 데 수
+      # 시간이 걸려 docker 가 stdout 을 장시간 0 bytes 로 관측한다. healthy
+      # 가 유지되므로 외부에서는 "정상이지만 로그 없음" 이라는 Silence
+      # Error 패턴이 된다. PYTHONUNBUFFERED=1 로 버퍼링을 비활성화하여
+      # 모든 logger.info/warning 이 즉시 pipe 로 flush 되도록 강제한다.
+      PYTHONUNBUFFERED: "1"
     command: ["python", "scheduler_main.py"]
     depends_on:
       postgres:
