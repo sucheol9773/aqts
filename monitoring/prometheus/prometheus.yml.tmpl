@@ -37,3 +37,17 @@ scrape_configs:
         labels:
           service: "aqts-backend"
           role: "canary"
+
+  # 호스트 VM 메트릭 (디스크/CPU/메모리/네트워크).
+  # docker-compose.yml 의 node-exporter service 가 /host 에 rootfs 를 read-only
+  # 로 마운트하여 노출한다. host 라벨은 환경변수 HOST_LABEL 로 주입되어
+  # entrypoint 에서 sed 로 치환된다 (alertmanager 와 동일 패턴).
+  # 단일 VM 환경에서는 기본값 aqts-server 로 충분하고, 호스트가 늘어나면
+  # compose 환경변수만 바꿔 멀티 호스트 식별이 가능하다.
+  - job_name: "aqts-node-exporter"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: ["node-exporter:9100"]
+        labels:
+          service: "aqts-host"
+          host: "${HOST_LABEL}"

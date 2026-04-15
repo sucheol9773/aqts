@@ -435,6 +435,56 @@ jobs:
             echo "✅ All verification checks passed"
           VERIFY_SCRIPT
 
+      # ── Step 3.5: 배포 후 디스크 정리 (자동 prune) ──
+      # 배경 (2026-04-16):
+      #   Commit 4 배포 직후 단일-VM 의 루트 디스크가 72.9% → 49.4% 로 떨어진
+      #   사건이 있었고, 그 과정에서 docker CLI 의 prune 리포트(3.241GB 회수)
+      #   와 실제 파일시스템 변동(11GB) 사이에 ~7.9GB 격차가 관측됐다. 원인은
+      #   overlay2 diff blocks / containerd content store 중복분이 manifest-level
+      #   prune 리포트에 집계되지 않는 Docker CLI 의 under-report 특성이었다.
+      #   상세: docs/operations/cd-auto-prune-2026-04-16.md §1–§3.
+      #
+      # 본 스텝은 "배포가 verify 까지 녹색일 때만" 실행되어, 이전 이미지
+      # (sha-xxxx + latest 태그 제외) 중 until=48h 보다 오래된 dangling 이미지를
+      # 자동 회수한다. 48h 는 롤백 윈도우 (최근 2회 배포분) 를 안전 여유로
+      # 확보하기 위한 값이다 — 롤백 경로가 GHCR 에서 직접 pull 하므로 로컬
+      # 이미지 삭제가 롤백 불가능을 만들지는 않지만, 네트워크 장애가 겹치는
+      # worst case 에 대한 방어선이다.
+      #
+      # 실패 은폐 방지:
+      #   - prune 자체 실패는 workflow 를 중단시키지 않는다 (|| true). 배포는
+      #     이미 verify 까지 녹색이므로 cleanup 실패가 서비스 영향을 주지
+      #     않는다. 대신 출력을 stdout 에 남겨 Actions 로그에서 확인 가능.
+      #   - SSH heredoc 내부이므로 docker CLI 에 stdin 을 넘기지 않도록
+      #     `</dev/null` 로 격리한다 (§4.7/§4.8 회귀와 동일한 discipline).
+      #   - prune 전후의 `df -h /` 를 기록하여 실 회수량을 관측. Prometheus
+      #     의 AqtsDiskUsageHigh 알림과 독립적인 in-band 관측점.
+      - name: Post-deploy cleanup (prune old images)
+        if: success()
+        env:
+          SERVER_IP: ${{ secrets.GCP_SERVER_IP }}
+          SERVER_USER: ${{ secrets.GCP_SERVER_USER }}
+          PRUNE_FILTER: "until=48h"
+        run: |
+          ssh -T -i ~/.ssh/gcp_key ${SERVER_USER}@${SERVER_IP} \
+            PRUNE_FILTER="${PRUNE_FILTER}" \
+            bash -s << 'PRUNE_SCRIPT'
+            set -u
+            echo "═══ Disk usage (before prune) ═══"
+            df -h / </dev/null || true
+
+            echo "═══ docker image prune (filter=${PRUNE_FILTER}) ═══"
+            # -a 는 모든 unused image 가 대상이지만, docker 는 현재 실행 중인
+            # 컨테이너가 사용하는 이미지를 built-in 으로 보호한다. 추가로
+            # until 필터가 이번 배포의 이미지(갓 pull, createdAt 48h 이내)를
+            # 보호한다. 따라서 backend/scheduler 의 현재 이미지와 latest 태그는
+            # 삭제 대상이 아니다.
+            docker image prune -a -f --filter "${PRUNE_FILTER}" </dev/null || true
+
+            echo "═══ Disk usage (after prune) ═══"
+            df -h / </dev/null || true
+          PRUNE_SCRIPT
+
       # ── Step 4: 실패 시 자동 롤백 ──
       # 이전 SHA 의 이미지를 GHCR 에서 verify + pull (서명 검증 동일 강제)
       - name: Rollback on failure
