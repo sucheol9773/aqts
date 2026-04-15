@@ -1170,3 +1170,47 @@ wiring 검증 테스트:
 | `tests/test_scheduler_idempotency.py` | `today_kst_str()`, `now_kst()` import, yesterday 키도 KST 기준 |
 
 #### 테스트 (4103 passed, gen_status 제외)
+
+---
+
+### 10.13 RealtimeManager 체결 통보 wiring Silence Error 회귀 (2026-04-15)
+
+> **관측 (서버 로그)**
+>
+> ```
+> aqts-scheduler | WARNING | kis_websocket:subscribe_exec_notice:666 | [KISWebSocket] KIS_HTS_ID 미설정 — 체결 통보 구독 불가
+> aqts-scheduler | INFO    | realtime_manager:start:169          | [RealtimeManager] 체결 통보 구독 완료 (dual safety net)
+> ```
+
+#### 원인 분석
+
+`KISWebSocket.subscribe_exec_notice()` 는 **예외를 던지지 않고 `False` 반환** 으로 실패를 표현한다 (HTS ID 미설정, 미연결, TR 전송 실패 등). 커밋 `fbf7232` 에서 `RealtimeManager.start()` 의 wiring 코드는 이 반환값을 **버리고** try/except 의 예외만 체크했기 때문에, 실패 경로가 **정상 경로를 그대로 통과** 하여 거짓 "구독 완료" 로그가 남았다.
+
+CLAUDE.md §"코드 수정 시 Silence Error 의심 원칙" 의 두 가지 대표 패턴이 동시에 발현:
+
+1. **조건 분기 우회**: 피호출자의 early-return(`False`) 이 호출자의 "다른 경로" 로 분류되지 못함.
+2. **try/except swallow (역방향)**: 호출자는 *예외가 없으면 성공* 으로 간주했지만, 피호출자는 *예외 대신 `False`* 로 실패를 전달하는 계약.
+
+외부 관찰 관점에서 이는 Alerting Pipeline Wiring Rule 의 "정의 ≠ 적용" 실패 사례다 — subscribe_exec_notice 를 정의하고 호출했지만, 반환값을 확인하지 않음으로써 wiring 이 실제로 살아있는지 관측 불가 상태가 됐다.
+
+#### Fix
+
+| 계층 | 변경 |
+|---|---|
+| `core/data_collector/realtime_manager.py` | `exec_subscribed = await subscribe_exec_notice()` 로 반환값 캡처 후 분기. True → INFO "구독 완료", False → WARNING "구독 미활성(폴링 폴백만 동작)" + 원인 참조 가이드. |
+| `tests/test_ws_execution_notice.py::test_exec_notice_false_return_logs_warning_not_success` | `AsyncMock(return_value=False)` 로 프로덕션 실패 모드를 재현. loguru 싱크로 캡처하여 ① "구독 완료" 로그가 남지 **않음**, ② "구독 미활성" WARNING 이 정확히 남음, ③ 레벨이 WARNING(INFO 가 아님) 임을 3중 검증. |
+
+수정 전 코드의 의사 재현 결과: 새 테스트가 실패(success_msgs=1, warning_msgs=0) 하여 테스트가 실제로 regression 을 잡음을 확인했다 (제로 False-positive 테스트).
+
+#### 운영 조치 (후속)
+
+`KIS_HTS_ID` 환경변수 자체는 서버 `.env` 에 주입되어야 하는 **config 결손** 으로, 본 커밋의 코드 변경 범위가 아니다. 주입 후에는 서버 로그에 다음이 관측되어야 한다:
+
+```
+INFO | kis_websocket:subscribe_exec_notice | 체결 통보 구독 완료: 국내=H0STCNI9, 해외=H0GSCNI9
+INFO | realtime_manager:start              | 체결 통보 구독 완료 (dual safety net)
+```
+
+두 줄이 모두 출력될 때만 dual safety net 의 realtime 레이어가 활성화된 것이다. 한 줄만 출력되면 wiring 결손이므로 본 회귀 테스트가 CI 에서 재발을 차단한다.
+
+#### 테스트 (4106 passed)

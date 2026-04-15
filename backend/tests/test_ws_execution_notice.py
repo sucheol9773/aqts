@@ -636,3 +636,57 @@ class TestRealtimeManagerExecNoticeWiring:
             result = await mgr.start(["005930"])
 
         assert result is True  # 실패해도 시세 수신은 정상
+
+    @pytest.mark.asyncio
+    async def test_exec_notice_false_return_logs_warning_not_success(self):
+        """Silence Error 회귀: subscribe_exec_notice() 가 False 를 반환하는
+        경로(예: KIS_HTS_ID 미설정)에서 '구독 완료' 로그가 남으면 안 된다.
+
+        2026-04-15 서버 관측 회귀:
+            WARNING | kis_websocket | KIS_HTS_ID 미설정 — 체결 통보 구독 불가
+            INFO    | realtime_manager | 체결 통보 구독 완료 (dual safety net)
+        이 두 줄이 동시에 출력되어 실제로는 구독 실패인데 외부 관찰로는
+        성공으로 보였다. 본 테스트는 False-return 경로에서 INFO '구독 완료'
+        가 기록되지 않고 WARNING '구독 미활성' 이 기록됨을 강제한다.
+
+        loguru 로그 캡처: 프로젝트는 config.logging.logger (loguru) 를
+        사용하므로 pytest caplog 이 아니라 loguru 싱크로 캡처해야 한다.
+        """
+        from config.logging import logger as project_logger
+
+        captured: list[tuple[str, str]] = []
+
+        def _sink(message):
+            captured.append((message.record["level"].name, message.record["message"]))
+
+        sink_id = project_logger.add(_sink, level="DEBUG")
+        try:
+            mock_ws = AsyncMock()
+            mock_ws.connect = AsyncMock(return_value=True)
+            mock_ws.subscribe_batch = AsyncMock(return_value=1)
+            # 예외 아님 — 정상 return False (프로덕션 실패 모드)
+            mock_ws.subscribe_exec_notice = AsyncMock(return_value=False)
+
+            with patch(
+                "core.data_collector.kis_websocket.KISRealtimeClient",
+                return_value=mock_ws,
+            ):
+                from core.data_collector.realtime_manager import RealtimeManager
+
+                mgr = RealtimeManager()
+                result = await mgr.start(["005930"])
+        finally:
+            project_logger.remove(sink_id)
+
+        assert result is True  # 시세 수신 파이프라인은 정상
+
+        success_msgs = [(lvl, m) for lvl, m in captured if "체결 통보 구독 완료" in m]
+        warning_msgs = [(lvl, m) for lvl, m in captured if "체결 통보 구독 미활성" in m]
+
+        assert not success_msgs, (
+            "Silence Error 회귀: subscribe_exec_notice() 가 False 를 반환했는데도 "
+            f"'구독 완료' 로그가 기록됐다. 관측된 메시지={success_msgs}"
+        )
+        assert warning_msgs, "'구독 미활성' WARNING 이 반드시 기록되어야 한다. " f"실제 기록={captured}"
+        # 레벨까지 검증: WARNING 이어야 한다 (INFO 면 운영에서 sev 누락)
+        assert warning_msgs[0][0] == "WARNING", f"'구독 미활성' 은 WARNING 레벨이어야 한다. 실제={warning_msgs[0][0]}"

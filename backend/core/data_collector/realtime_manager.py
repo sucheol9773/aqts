@@ -158,15 +158,29 @@ class RealtimeManager:
 
         # ── 체결 통보 구독 (dual safety net) ──
         # WebSocket 연결이 성공한 시점에서만 체결 통보를 구독한다.
-        # 실패해도 시세 수신에는 영향 없음 (best-effort).
+        # 실패해도 시세 수신에는 영향 없음 (best-effort, 폴링 폴백 활성).
+        #
+        # Silence Error 방지: subscribe_exec_notice()는 실패 시 False를
+        # 반환하며 예외를 던지지 않는다 (KIS_HTS_ID 미설정, 미연결 등).
+        # 반환값을 명시적으로 확인하지 않으면 "구독 완료" 로그가 거짓
+        # 성공으로 남는다. CLAUDE.md "코드 수정 시 Silence Error 의심
+        # 원칙" 의 대표 패턴(조건 분기 우회 + try/except swallow) 이다.
         try:
             from core.order_executor.ws_execution_handler import (
                 handle_execution_notice,
             )
 
             self._ws_client.on_exec_notice = handle_execution_notice
-            await self._ws_client.subscribe_exec_notice()
-            logger.info("[RealtimeManager] 체결 통보 구독 완료 (dual safety net)")
+            exec_subscribed = await self._ws_client.subscribe_exec_notice()
+            if exec_subscribed:
+                logger.info("[RealtimeManager] 체결 통보 구독 완료 (dual safety net)")
+            else:
+                logger.warning(
+                    "[RealtimeManager] 체결 통보 구독 미활성 — WebSocket 실시간 "
+                    "체결 수신 불가, 폴링 폴백(settlement_poller)만 동작. "
+                    "원인은 KISWebSocket 레이어 로그 참조 "
+                    "(대표: KIS_HTS_ID 미설정 / 미연결 / TR 전송 실패)."
+                )
         except Exception as e:
             logger.warning(f"[RealtimeManager] 체결 통보 구독 실패 (폴링 폴백): {e}")
 
