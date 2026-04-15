@@ -108,12 +108,7 @@ class AuditLogger:
             await self._write(action_type, module, description, before_state, after_state, metadata)
         except Exception as e:
             AUDIT_WRITE_FAILURES_TOTAL.labels(action_type=action_type, mode="strict").inc()
-            logger.critical(
-                "Audit write failed (fail-closed) action=%s module=%s err=%s",
-                action_type,
-                module,
-                e,
-            )
+            logger.critical(f"Audit write failed (fail-closed) action={action_type} module={module} err={e}")
             try:
                 await self._db.rollback()
             except Exception:  # noqa: BLE001

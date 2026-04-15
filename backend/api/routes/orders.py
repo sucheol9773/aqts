@@ -275,7 +275,7 @@ async def create_order(
         )
     except IdempotencyStoreUnavailable:
         # 저장 실패해도 주문은 이미 실행됨 — 응답은 반환하되 로그로 경보.
-        logger.error("Order idempotency store_result failed (order already executed) key=%s", key)
+        logger.error(f"Order idempotency store_result failed (order already executed) key={key}")
 
     return api_body
 
@@ -430,7 +430,7 @@ async def create_batch_orders(
             body=api_body.model_dump(mode="json"),
         )
     except IdempotencyStoreUnavailable:
-        logger.error("Batch order idempotency store_result failed (orders executed) key=%s", key)
+        logger.error(f"Batch order idempotency store_result failed (orders executed) key={key}")
 
     return api_body
 

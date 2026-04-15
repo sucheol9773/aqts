@@ -99,9 +99,8 @@ class ReconciliationRunner:
         if result.matched:
             RECONCILIATION_RUNS_TOTAL.labels(result="matched").inc()
             logger.info(
-                "Reconciliation matched: broker_total=%.2f internal_total=%.2f",
-                result.broker_total,
-                result.internal_total,
+                f"Reconciliation matched: broker_total={result.broker_total:.2f} "
+                f"internal_total={result.internal_total:.2f}"
             )
             return result
 

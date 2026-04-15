@@ -1364,3 +1364,82 @@ docker compose logs scheduler --tail 100 | head -30
 - **향후 회귀 방지**: 새 loguru 호출을 작성할 때 IDE/리뷰어가 자연히 stdlib logging 스타일을 타이핑할 수 있으므로, 정적 검사기가 CI 에서 차단하는 것이 현실적 방어선이다. 신규 loguru 호출 PR 은 `check_loguru_style.py` 가 0 violations 임을 확인한 뒤 머지한다.
 - **CLAUDE.md Silence Error 원칙 확장**: "출력 채널 버퍼링 silent miss" (§10.14) 와 병렬로 "로그 포맷 라이브러리 mismatch" 계열이 존재함을 원칙에 반영할지는 후속 판단 사항. 정적 검사기로 강제되므로 당장의 코드 원칙 추가는 보류한다.
 
+### 10.16 정적 검사기 regex→AST 마이그레이션 (2026-04-15)
+
+§10.15 의 수정(commit `fcc2c71`) 을 배포한 직후 2차 관측에서 백엔드(서버 역할) 로그에 여전히 literal `%d` 가 남아 있음을 발견했다. 원인은 코드 결함이 아니라 **§10.15 에서 추가한 정적 검사기 자체의 커버리지 결손**이었다. 이는 CLAUDE.md "정의 ≠ 적용" Wiring Rule 의 정적 방어선 도메인 확장이다 — **"검사기를 정의했다 ≠ 검사기가 모든 위반을 잡는다"**.
+
+#### 관측
+
+2차 배포 후 백엔드 로그 (`sha-fcc2c71`) 에서:
+
+```
+2026-04-15 08:16:xx.xxx | INFO | main:lifespan:207 | PortfolioLedger hydrated from DB (positions=%d)
+```
+
+scheduler 는 §10.15 수정으로 literal `%d` 가 사라졌지만, **백엔드(FastAPI) 의 동일 로직 `backend/main.py:207`** 은 수정에서 누락돼 있었다. §10.15 의 10건 표에는 `scheduler_main.py:105` 만 기록돼 있었고 backend/main.py 의 중복 구현은 수집 단계에서 탈락했다.
+
+#### 원인 — regex 의 구조적 한계
+
+§10.15 가 추가한 `scripts/check_loguru_style.py` 의 정규식 ::
+
+    r"logger\s*\.\s*(?:info|warning|error|debug|critical|trace|success|exception)"
+    r"\s*\(\s*[^,()]*?%[ds][^,()]*?[\"'],\s*[^)]"
+
+의 `[^,()]*?` 는 **메시지 문자열 내부에 괄호가 있으면 매치 종결**한다. `backend/main.py:207` 의 메시지 `"PortfolioLedger hydrated from DB (positions=%d)"` 는 닫는 괄호가 `%d` 뒤에 있지만, **여는 괄호 `(`** 가 `%d` 앞에 있어 regex 가 그 지점에서 매치를 끊는다. 결과적으로 `scheduler_main.py:105` 와 구조적으로 완전히 동일한 호출이 정적 검사를 silently 통과했다.
+
+추가 수기 grep (`grep -rn 'logger\.\(...\)(\s*"[^"]*%[dsfx]'` 계열) 도 같은 편향을 공유했다 — 문자열 내용에 의존하는 정적 분석을 regex 로 구현하면 **이스케이프/괄호/멀티라인/주석** 을 전부 커버하기 위해 패턴이 지수적으로 복잡해진다. 현실적 해답은 regex 가 아니라 AST 다.
+
+#### 수정 — AST 기반 재구현
+
+정적 검사기를 AST 기반으로 전면 재작성했다 (`scripts/check_loguru_style.py`):
+
+1. 파일별로 `ast.parse()` 로 파싱.
+2. `ast.walk(tree)` 로 `Call` 노드 순회.
+3. `func` 가 `Attribute` 이고 `value.id == "logger"`, `attr` 가 loguru 레벨 메서드(`trace/debug/info/success/warning/error/critical/exception/log`) 이면 후보.
+4. 첫 번째 positional arg (단, `logger.log(LEVEL, msg, ...)` 는 두 번째) 가 `Constant(str)` 이고 메시지에 `%[-+ 0-9.#]*[diouxXeEfFgGcrsa]` 형태의 포맷 지시자가 포함되며 **뒤에 추가 positional arg 가 존재**하는 경우만 위반으로 집계.
+5. 파일 import 에서 `from config.logging import logger` 또는 `from loguru import logger` 를 확인해 stdlib logging 파일은 대상에서 제외.
+6. `%%` (이스케이프) 는 negative lookbehind `(?<!%)` 로 제외하여 오탐 방지.
+
+이 구조는 메시지 문자열의 내용(괄호, 이스케이프, 멀티라인 문자열, 따옴표 혼합) 에 무관하게 정확한 판정을 보장한다.
+
+#### AST 재스캔으로 추가 발견된 위반
+
+AST 기반 검사기를 전체 백엔드에 재실행한 결과, regex 가 놓쳤던 **5 개 호출 지점**이 추가로 식별됐다:
+
+| # | 파일:라인 | 레벨 | regex 누락 이유 |
+|---|---|---|---|
+| 11 | `backend/main.py:207` | INFO | 메시지 내부 `(positions=%d)` 의 `(` 로 `[^,()]*?` 매치 끊김 |
+| 12 | `backend/api/routes/orders.py:278` | ERROR | 메시지 내부 `(order already executed)` 의 `(` 로 매치 끊김 |
+| 13 | `backend/api/routes/orders.py:433` | ERROR | 메시지 내부 `(orders executed)` 의 `(` 로 매치 끊김 |
+| 14 | `backend/core/reconciliation_runner.py:101` | INFO | `%.2f` (regex 는 `%[ds]` 만 커버, `%f` 미포함) |
+| 15 | `backend/db/repositories/audit_log.py:111` | CRITICAL | `%s` 가 세 번 등장하지만 멀티 posarg 호출이 multi-line 으로 작성돼 regex 의 `[^,()]*?` 비탐욕 한계에 걸림 |
+
+11~13 은 §10.15 와 구조적으로 동일한 회귀 패턴이고, 14 는 `%f` 포맷 지시자를 regex 가 아예 대상에서 제외했던 커버리지 구멍이며, 15 는 **감사 로그 fail-closed critical 경로** 로 §10.15 표 #6~8 과 동일한 "kill switch 발화 시 진단 손실" 에 해당한다. 특히 #15 는 `AuditWriteFailure` 가 re-raise 되기 직전의 CRITICAL 이 literal 로 버려지는 상태였다 — 503 `AUDIT_UNAVAILABLE` 응답 원인이 로그에만 의존하는 사후분석 상황에서 action/module/err 전량 손실은 운영자 책임 추적을 불가능하게 만든다.
+
+5건 모두 f-string 으로 치환 (동일 일관성 원칙).
+
+#### 정적 방어선 강화
+
+- `scripts/check_loguru_style.py` 는 AST 기반으로 재구현.
+- `backend/tests/test_check_loguru_style.py` 추가 (11 테스트):
+  - 회귀 사례 4종 (괄호 포함 메시지 / `%s` key= 형태 / `%.2f` 포맷 / 멀티 arg audit 패턴)
+  - 오탐 방지 5종 (f-string / loguru `{}` / 메시지 내 `%` 단독 / `%%` 이스케이프 / stdlib logging 분리)
+  - `logger.log(LEVEL, msg, ...)` 특수 호출 메시지 위치 검사
+  - 백엔드 전체 스캔 0 violations 불변 검증
+- Doc Sync 워크플로의 `Run loguru style check` 스텝은 동일 (AST 구현으로 내부 교체만 됐다).
+
+#### 회고 — 정의 ≠ 적용의 정적 방어선 확장
+
+§10.15 가 "코드에 있는 silent miss 를 정적 방어로 막겠다" 는 의도 자체는 정확했지만, 구현 수단(regex) 이 **방어해야 할 패턴의 표현 범위를 넘지 못한다**는 사실을 고려하지 못했다. regex 는 문자열의 **경계 검출 (token-level)** 에 적합하고, **문자열 내용의 의미 판정 (parse-level)** 에는 부적합하다. "문자열 리터럴의 어떤 문자에도 맞춰야 한다" 는 요구사항은 본질적으로 파서가 필요한 작업이다.
+
+이 사고 — 정적 방어선의 **구현 수단이 방어 대상을 전수 커버하는가** — 는 RBAC Wiring Rule (헬퍼 정의 ≠ 모든 라우트에 적용), 공급망 Wiring Rule (서명 도구 정의 ≠ 배포 경로에서 검증), 알림 파이프라인 Wiring Rule (상태 머신 정의 ≠ Router 주입) 과 동일한 **"정의 ≠ 적용"** 원칙이 정적 검사 도메인으로 확장된 사례다. CI 가 녹색이어도 검사기의 커버리지 자체가 불완전하면 결손은 잠복한다.
+
+#### 검증 절차
+
+1. `python scripts/check_loguru_style.py` — 0 violations.
+2. `python -m pytest backend/tests/test_check_loguru_style.py -v` — 11 passed.
+3. `python -m pytest backend/tests/ -q --tb=short` — 전체 회귀 없음 (이전 4107 + 신규 11 + gen_status 동기화 = 4118 passed 예상).
+4. 배포 후 백엔드 로그에서:
+   - `docker logs aqts-backend --since <재기동 시각> 2>&1 | grep "PortfolioLedger hydrated"` — `positions=0` 또는 `positions=N` (literal `%d` 아님).
+   - `docker logs aqts-backend --since <재기동 시각> 2>&1 | grep -E "%[dsfx]" | grep -v "logger"` — 0 건 (stdlib logging 제외).
+
