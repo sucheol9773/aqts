@@ -93,7 +93,16 @@ CD Post-deploy cleanup 스텝은 SSH heredoc 내부에서 실행되므로 `docke
 
 ### 3.4 `.github/workflows/cd.yml`
 
-`Post-deploy verification` 다음, `Rollback on failure` 이전에 `Post-deploy cleanup (prune old images)` 스텝 삽입. `if: success()` 로 verify 가 녹색일 때만 실행. 실패 은폐 방지를 위해:
+두 스텝을 `Post-deploy verification` 직후에 순서대로 삽입한다. 둘 다 `if: success()` 로 verify 녹색일 때만 실행.
+
+**Step 3.4 — `Prometheus config/rules drift 시 재기동`** (§4.2 회귀 방어선):
+
+- 서버의 git 로 `git diff --name-only ${PREV_SHA} HEAD -- monitoring/prometheus/prometheus.yml.tmpl monitoring/prometheus/rules/` 를 수행하여 구성 파일 변경 여부를 산출.
+- 변경 있음 → `docker compose restart prometheus </dev/null` → 30초 내 `/api/v1/rules` groups≥1 어서트. 어서트 실패 시 `exit 1` 로 rollback 경로 트리거.
+- 변경 없음 → 스킵 (스크랩 윈도우 1회 누락 회피).
+- `PREV_SHA=='none'` 또는 git resolve 불가 시 강제 재기동 (최초 배포 / 서버 재프로비저닝 대비).
+
+**Step 3.5 — `Post-deploy cleanup (prune old images)`**: 기존 구성 유지. 실패 은폐 방지:
 
 - `|| true` 로 prune 실패를 workflow 실패로 승격시키지 않는다 (cleanup 실패가 이미 성공한 배포를 rollback 시키면 안 됨).
 - `df -h /` 전후 출력으로 실 회수량을 Actions 로그에 보존.
@@ -118,27 +127,53 @@ CD Post-deploy cleanup 스텝은 SSH heredoc 내부에서 실행되므로 `docke
 | 메트릭 노출 | `curl -s http://localhost:9100/metrics \| grep -c '^node_filesystem_size_bytes'` | > 0 |
 | **rule_files glob 로딩 (신규)** | `curl -s http://localhost:9090/api/v1/rules \| python3 -c "import sys,json; print(len(json.load(sys.stdin)['data']['groups']))"` | ≥ 1 (아래 silent miss 회귀 방어) |
 | 알림 규칙 로드 | Prometheus UI `/rules` → `aqts_host_system` 그룹 | 3개 rule 모두 `ok` |
+| **CD 조건부 prometheus 재기동 스텝 존재 (신규)** | `grep -n "Prometheus config/rules drift 시 재기동" .github/workflows/cd.yml` | step 이 Post-deploy verification 과 cleanup 사이에 위치하고, SSH heredoc 내부에서 `docker compose restart prometheus` + `/api/v1/rules` groups≥1 어서트를 수행 (아래 §4.2 CD silence miss 회귀 방어) |
 | CD prune 실행 | Actions UI 의 `Post-deploy cleanup` step | `df -h /` before/after 출력 + prune 결과 텍스트 존재 |
 
 ### 4.1 Silent Miss 회귀 사례 — `rule_files` 상대 경로 (2026-04-16)
 
-Step A 초판 배포 후 검증에서 `aqts_host_system` 그룹이 Prometheus `/api/v1/rules` 에 전혀 나타나지 않았다. 관찰:
+Step A 초판 배포 후 검증에서 Prometheus `/api/v1/rules` 가 `{"data":{"groups":[]}}` 를 반환했다. 즉 신규 `aqts_host_system` (3 rule) 뿐 아니라 기존 8개 그룹 — `aqts_availability` (3), `aqts_api_performance` (4), `aqts_circuit_breaker` (3), `aqts_data_collection` (2), `aqts_trading` (4), `aqts_kis_recovery` (4), `aqts_security_integrity` (14), `aqts_alert_pipeline` (2) — **총 9개 그룹 39개 rule 전체가 로드되지 않은 상태**로 동작했다. critical/kill-switch 경로에 해당하는 `aqts_security_integrity` 와 `aqts_availability` 가 포함되어 있어 관측 공백의 범위가 Step A 의 신규 추가분을 넘어섰다.
+
+관찰:
 
 - `docker compose ps prometheus`: `Up 16 minutes (healthy)` — 재생성 성공.
 - `/tmp/prometheus.yml` 1651B, entrypoint sed 로 `host: "aqts-server"` 정상 주입.
 - `Loading configuration file` / `Completed loading ... rules=61.491µs` — config 로드 에러 없음.
 - `/etc/prometheus/rules/aqts_alerts.yml` 30KB 로 마운트 정상.
-- `curl .../api/v1/rules`: `{"data":{"groups":[]}}` — **0개 그룹**.
+- `curl .../api/v1/rules`: `{"data":{"groups":[]}}` — **0개 그룹** (9개 중 하나도 로드 안 됨).
 - `docker compose exec prometheus ls /tmp/rules/`: `No such file or directory`.
 - `docker compose exec prometheus pwd`: `/prometheus`.
 
-원인: Prometheus 는 `rule_files:` 의 상대 경로 glob 을 **config 파일 디렉터리 기준**으로 해석한다. 본 커밋에서 config 렌더링 위치를 `/etc/prometheus/prometheus.yml` → `/tmp/prometheus.yml` 로 옮기면서 `rules/*.yml` 이 `/tmp/rules/*.yml` 로 resolve 되어 빈 glob 을 반환했다. 빈 glob 은 Prometheus 가 에러로 처리하지 않으므로 "config 로드 성공 + 규칙 0개 + 에러 없음" 의 silent miss 경로로 빠졌다.
+원인: Prometheus 는 `rule_files:` 의 상대 경로 glob 을 **config 파일 디렉터리 기준**으로 해석한다. 본 커밋에서 config 렌더링 위치를 `/etc/prometheus/prometheus.yml` → `/tmp/prometheus.yml` 로 옮기면서 `rules/*.yml` 이 `/tmp/rules/*.yml` 로 resolve 되어 빈 glob 을 반환했다. 빈 glob 은 Prometheus 가 에러로 처리하지 않으므로 "config 로드 성공 + 규칙 0개 + 에러 없음" 의 silent miss 경로로 빠졌다. CLAUDE.md "키/식별자 변경" 패턴 — config 파일 경로를 이동하면서 해당 경로 기준으로 resolve 되는 상대 경로 consumer(`rule_files`) 를 grep 하지 않은 결손이 직접 원인이다.
 
 해결: `prometheus.yml.tmpl` 의 `rule_files` 를 절대 경로 `/etc/prometheus/rules/*.yml` 로 변경. 렌더링 위치와 무관하게 컨테이너 내 실 마운트 위치를 직접 참조한다.
 
-회귀 방어선: 위 표의 "rule_files glob 로딩" 행을 영구 체크포인트로 승격. 배포 후 이 수치가 0 이면 같은 은폐 회귀가 발생한 것으로 간주한다.
+회귀 방어선: 위 표의 "rule_files glob 로딩" 행을 영구 체크포인트로 승격. 배포 후 이 수치가 0 이면 같은 은폐 회귀가 발생한 것으로 간주한다. 아울러 §4.2 의 조건부 재기동 스텝이 CD 에서 동일한 어서트를 실행하여 2중 방어선을 이룬다.
 
 검증 중 하나라도 실패하면 Silence Error 의심 원칙에 따라 "메트릭이 없어서 알림이 조용히 동작 안 함" 경로로 빠지지 않았는지 점검한다. 특히 §2.1-3 의 scrape 단계가 실패하면 §2.1-4 의 CD prune 은 정상 실행되지만 임계 관찰은 실효적으로 꺼진 상태다. 두 축은 독립이며 한쪽의 성공이 다른 쪽의 건강을 증명하지 않는다.
+
+### 4.2 Silent Miss 회귀 사례 — CD `docker compose up -d` 가 bind-mount 변경을 감지하지 못함 (2026-04-16)
+
+§4.1 수정(`rule_files` 절대 경로) 이 머지/배포됐음에도, `/api/v1/rules` 는 배포 후 약 1시간 동안 여전히 `{"data":{"groups":[]}}` 였다. 관찰:
+
+- `docker compose ps prometheus`: `Up About an hour` — 배포 시점에 **recreate 되지 않음**.
+- 배포 커밋은 `prometheus.yml.tmpl` 만 수정 (compose service 의 image/env/command/volume 정의는 동일).
+- `docker compose logs prometheus` 에도 재시작 흔적 없음.
+- 수동 `docker compose restart prometheus` 후 즉시 `groups: 9` 로 정상화. 기대한 9개 그룹이 모두 로드됨.
+
+원인: `docker compose up -d` 는 compose 파일 자체의 service definition 이 변경되거나, image digest/환경변수/command/volume 정의 등 compose 가 관리하는 입력이 바뀔 때에만 컨테이너를 recreate 한다. bind-mount 된 파일(**템플릿과 규칙 파일**) 의 **내용 변경** 은 compose 의 change-detection 입력이 아니므로 "변경 없음" 으로 판단하여 기존 컨테이너를 그대로 둔다. Prometheus 가 `SIGHUP` 이전까지 현재 프로세스 메모리의 구 config 를 유지하므로, 수정된 템플릿은 디스크에만 반영되고 실제 동작에는 반영되지 않는다. "CD 가 Deploy to server ✓ 로 성공 로그를 남겼고, 외부 관측점(`/api/v1/rules` 그룹 수) 이 CD 파이프라인에 없었다" 는 조합이 1시간의 결손 은폐를 만들었다.
+
+해결: `.github/workflows/cd.yml` 에 `Prometheus config/rules drift 시 재기동` 스텝을 Post-deploy verification 과 Post-deploy cleanup 사이에 삽입 (§3.4 / 구현 커밋 참조). 핵심 로직:
+
+1. 서버의 git 로 `git diff --name-only ${PREV_SHA} HEAD -- monitoring/prometheus/prometheus.yml.tmpl monitoring/prometheus/rules/` 를 실행하여 구성 파일 변경 여부를 산출.
+2. 변경이 있으면 `docker compose restart prometheus` 를 실행. 무변경이면 스킵하여 스크랩 윈도우 1회 누락을 회피.
+3. 재시작 후 최대 30초 동안 `/api/v1/rules` 의 groups count 가 1 이상이 될 때까지 폴링. 0 이면 exit 1 로 실패하여 rollback 경로로 진입시킨다.
+
+왜 `docker compose kill -s HUP prometheus` (reload) 가 아니라 `restart` 인가: Prometheus 의 SIGHUP 은 rule 파일 reload 를 수행하지만, entrypoint 가 sed 로 `${HOST_LABEL}` 을 치환해서 `/tmp/prometheus.yml` 을 생성하는 파이프라인이 있으므로 템플릿 변경이 치환 산출물로 재반영되려면 프로세스를 다시 기동해야 한다. `restart` 는 entrypoint 재실행을 보장하므로 두 축(템플릿·규칙) 모두 한 번에 커버한다. TSDB 데이터는 `prometheus_data` 볼륨에 persistent 하므로 restart 자체에 의한 데이터 손실은 없다.
+
+왜 `PREV_SHA == 'none'` / resolve 불가 시 강제 재기동인가: 최초 배포 또는 서버 재프로비저닝 직후에는 직전 상태를 참조할 수 없으므로, 현재 디스크의 템플릿이 실제 프로세스 메모리와 동일한지 보장할 수 없다. 이 경우 안전 우선 (재기동) 정책을 취한다.
+
+회귀 방어선: 표의 "CD 조건부 prometheus 재기동 스텝 존재" 행을 영구 체크포인트로 등록. 이 스텝이 cd.yml 에 존재하지 않는 상태로 merge 되면 같은 은폐 경로가 재생성된 것이다. 재기동 후 groups≥1 어서트는 §4.1 의 `rule_files` 상대 경로 silent miss 회귀에 대한 2중 방어선이기도 하다 — 어느 한 축이 미래에 다시 풀려도 다른 축이 차단한다.
 
 ## 5. 롤백 영향
 

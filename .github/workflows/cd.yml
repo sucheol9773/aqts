@@ -435,6 +435,86 @@ jobs:
             echo "✅ All verification checks passed"
           VERIFY_SCRIPT
 
+      # ── Step 3.4: Prometheus config/rules drift 시 재기동 ──
+      # 배경 (2026-04-16 회귀 — CD Silence Miss):
+      #   `monitoring/prometheus/prometheus.yml.tmpl` 또는 `rules/*.yml` 만
+      #   변경되는 커밋은 `docker compose up -d` 가 prometheus 컨테이너를
+      #   recreate 하지 않는다. compose 의 change-detection 입력(image digest,
+      #   env, command, volume definition)은 동일한데, bind-mount 된 파일
+      #   내용 변경은 그 집합 안에 들어가지 않기 때문이다. 결과적으로
+      #   `ed36573` 배포 후 약 1시간 동안 **알림 그룹 9개 전체(총 39개 rule)**
+      #   — aqts_availability, aqts_api_performance, aqts_circuit_breaker,
+      #   aqts_data_collection, aqts_trading, aqts_kis_recovery,
+      #   aqts_security_integrity (14 rule), aqts_alert_pipeline,
+      #   aqts_host_system — 가 이전 프로세스의 구 config 로 로드된 채 동작했고,
+      #   CD 는 `Deploy to server ✓` 로 성공 로그를 남겨 결손이 은폐됐다.
+      #
+      # 방어선:
+      #   1. 템플릿/규칙 파일이 변경된 배포에서만 `docker compose restart
+      #      prometheus` 로 새 config 를 실제로 재로드한다. 구성 무변경
+      #      배포에서는 스킵하여 스크랩 윈도우 1회 누락을 회피한다.
+      #   2. 재시작 후 `/api/v1/rules` 의 groups count 가 1 이상인지 외부에서
+      #      어서트. 0 이면 실패로 간주하여 rollback 경로로 진입시킨다.
+      #      이는 `rule_files` 상대 경로 silent miss(§4.1) 에 대한 2중 방어선
+      #      이기도 하다 — config 내부는 절대 경로로 잠그고, CD 는 실제
+      #      로드된 groups 수로 관측한다.
+      #
+      # SSH heredoc 규약: `docker compose restart` 는 stdin 을 attach 하지
+      # 않는 non-interactive 명령이지만, 방어적으로 `</dev/null` 로 격리.
+      # `docker compose run` 이 아니므로 `-T` 플래그 대상이 아님 (check_cd_stdin_guard 통과).
+      - name: Prometheus config/rules drift 시 재기동
+        if: success()
+        env:
+          SERVER_IP: ${{ secrets.GCP_SERVER_IP }}
+          SERVER_USER: ${{ secrets.GCP_SERVER_USER }}
+          PREV_SHA: ${{ steps.snapshot.outputs.previous_sha }}
+        run: |
+          ssh -T -i ~/.ssh/gcp_key ${SERVER_USER}@${SERVER_IP} \
+            PREV_SHA="${PREV_SHA}" \
+            bash -s << 'PROM_RESTART_SCRIPT'
+            set -u
+            cd ~/aqts
+
+            # 이전 배포 SHA 가 'none' 이거나 현재 git 에서 resolve 되지 않으면
+            # (최초 배포 또는 서버 재프로비저닝 직후) 안전하게 강제 재기동.
+            if [ "${PREV_SHA}" = "none" ] || ! git cat-file -e "${PREV_SHA}" 2>/dev/null; then
+              echo "이전 배포 SHA (${PREV_SHA}) 부재 또는 resolve 불가 — 재기동 강제"
+              CHANGED=1
+            else
+              # 서버의 현재 HEAD 는 Deploy Step 1 의 reset --hard 로
+              # origin/main (= 이번 배포 SHA) 로 맞춰져 있다.
+              CHANGED=$(git diff --name-only "${PREV_SHA}" HEAD \
+                -- 'monitoring/prometheus/prometheus.yml.tmpl' \
+                   'monitoring/prometheus/rules/' \
+                | wc -l)
+            fi
+            echo "prometheus 구성 변경 파일 수: ${CHANGED}"
+            if [ "${CHANGED}" -le 0 ]; then
+              echo "prometheus 구성 무변경 — 재기동 생략"
+              exit 0
+            fi
+
+            echo "═══ prometheus 구성 변경 감지 → docker compose restart ═══"
+            docker compose restart prometheus </dev/null
+
+            echo "═══ rule_files 로딩 어서트 (최대 30초 대기) ═══"
+            for i in $(seq 1 15); do
+              GROUPS=$(curl -sf http://localhost:9090/api/v1/rules 2>/dev/null \
+                | python3 -c "import sys,json; print(len(json.load(sys.stdin)['data']['groups']))" 2>/dev/null \
+                || echo 0)
+              if [ "${GROUPS}" -ge 1 ]; then
+                echo "✅ rule_files 로드 완료 — groups=${GROUPS} (after $((i*2))s)"
+                exit 0
+              fi
+              sleep 2
+            done
+
+            echo "❌ rule_files 로드 실패 — 30초 대기 후에도 groups=0"
+            echo "   (rule_files 상대 경로 silent miss 또는 PromQL 파싱 에러 의심)"
+            docker compose logs prometheus --tail=40
+            exit 1
+          PROM_RESTART_SCRIPT
+
       # ── Step 3.5: 배포 후 디스크 정리 (자동 prune) ──
       # 배경 (2026-04-16):
       #   Commit 4 배포 직후 단일-VM 의 루트 디스크가 72.9% → 49.4% 로 떨어진
