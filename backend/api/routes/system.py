@@ -10,8 +10,9 @@ import uuid
 from typing import Optional
 
 import pandas as pd
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
@@ -28,13 +29,15 @@ from core.notification.telegram_transport import create_transport as create_tele
 from core.order_executor.executor import OrderExecutor
 from core.order_executor.quote_provider_kis import KISQuoteProvider
 from core.pipeline import InvestmentDecisionPipeline
+from core.portfolio_ledger import get_portfolio_ledger
 from core.portfolio_manager.construction import PortfolioConstructionEngine
 from core.portfolio_manager.profile import InvestorProfile, InvestorProfileManager
 from core.portfolio_manager.rebalancing import RebalancingEngine
 from core.scheduler_idempotency import is_executed, mark_executed
+from core.trading_guard import get_trading_guard
 from core.utils.timezone import now_kst, to_kst_iso
 from db.database import RedisManager, async_session_factory, get_db_session
-from db.repositories.audit_log import AuditLogger
+from db.repositories.audit_log import AuditLogger, AuditWriteFailure
 
 # ── 리밸런싱 분산 락 설정 ──
 REBALANCING_LOCK_KEY = "rebalancing:lock"
@@ -691,4 +694,199 @@ async def get_circuit_breaker_status(
     return APIResponse(
         success=True,
         data=CircuitBreakerRegistry.status(),
+    )
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# TradingGuard Kill Switch — 상태 조회 + 수동 해제
+# -------------------------------------------------------------------------
+# RBAC Wiring Rule 준수: 상태는 require_viewer, 해제는 require_admin.
+# 감사 fail-closed (audit log_strict 실패 시 해제하지 않고 503 AUDIT_UNAVAILABLE).
+# 해제 성공 시 PortfolioLedger 를 재hydrate 하여 DB ↔ cache 동기화.
+#
+# 배경: docs/operations/trading-halt-policy.md v1.1 §4 에 정의된 수동 해제 경로를
+# 실제 HTTP API 로 구현. TradingGuard.deactivate_kill_switch() 는 이전까지
+# 메서드로만 존재했으며(정의 ≠ 적용), 외부에서 해제할 수 있는 경로가 없었다.
+# 회고: docs/operations/phase1-demo-verification-2026-04-11.md §10.17.
+# ═════════════════════════════════════════════════════════════════════════
+
+
+class KillSwitchDeactivateRequest(BaseModel):
+    """Kill switch 수동 해제 요청 본문.
+
+    실수로 인한 해제를 방지하기 위해 사유와 이중 확인 플래그를 모두 요구한다.
+    사유는 감사 로그에 영구 기록되어 사후 감사의 근거가 된다.
+    """
+
+    reason: str = Field(
+        ...,
+        min_length=10,
+        max_length=500,
+        description="해제 사유 (감사 로그에 영구 기록됨, 최소 10자).",
+    )
+    confirm: bool = Field(
+        ...,
+        description="실수 방지 이중 확인 — 반드시 true 여야 해제가 진행된다.",
+    )
+
+
+class KillSwitchStatus(BaseModel):
+    """TradingGuard kill switch 현재 상태 snapshot."""
+
+    kill_switch_on: bool = Field(..., description="kill switch 활성 여부")
+    kill_switch_reason: str = Field(..., description="활성화 사유 (비활성 시 빈 문자열)")
+    daily_realized_pnl: float = Field(..., description="오늘 실현 손익 (원)")
+    daily_order_count: int = Field(..., description="오늘 주문 횟수")
+    consecutive_losses: int = Field(..., description="연속 손실 횟수")
+    current_drawdown: float = Field(..., description="현재 drawdown (0.0~1.0)")
+    peak_portfolio_value: float = Field(..., description="고점 포트폴리오 가치 (원)")
+    current_portfolio_value: float = Field(..., description="현재 포트폴리오 가치 (원)")
+    last_updated: str = Field(..., description="마지막 상태 갱신 시각 (ISO 8601 UTC)")
+
+
+class KillSwitchDeactivateResponse(BaseModel):
+    """Kill switch 해제 결과."""
+
+    was_on: bool = Field(..., description="해제 직전 활성화 여부")
+    previous_reason: str = Field(..., description="해제 직전 활성화 사유")
+    deactivated_at: str = Field(..., description="해제 시각 (ISO 8601 KST)")
+    ledger_rehydrated: bool = Field(..., description="PortfolioLedger 재hydrate 성공 여부")
+    ledger_positions_count: int = Field(..., description="재hydrate 후 in-memory 포지션 개수")
+    operator: str = Field(..., description="해제를 수행한 관리자 username")
+
+
+@router.get(
+    "/kill-switch/status",
+    response_model=APIResponse[KillSwitchStatus],
+)
+async def get_kill_switch_status(
+    current_user=Depends(require_viewer),
+):
+    """TradingGuard kill switch 현재 상태 조회.
+
+    어떤 운영자든 (viewer 이상) 상태를 확인할 수 있다. 해제 권한은 별도.
+    """
+    state = get_trading_guard().state
+    snapshot = KillSwitchStatus(
+        kill_switch_on=state.kill_switch_on,
+        kill_switch_reason=state.kill_switch_reason,
+        daily_realized_pnl=state.daily_realized_pnl,
+        daily_order_count=state.daily_order_count,
+        consecutive_losses=state.consecutive_losses,
+        current_drawdown=round(state.current_drawdown, 4),
+        peak_portfolio_value=state.peak_portfolio_value,
+        current_portfolio_value=state.current_portfolio_value,
+        last_updated=state.last_updated.isoformat(),
+    )
+    return APIResponse(success=True, data=snapshot)
+
+
+@router.post(
+    "/kill-switch/deactivate",
+    response_model=APIResponse[KillSwitchDeactivateResponse],
+)
+async def deactivate_kill_switch(
+    body: KillSwitchDeactivateRequest,
+    current_user=Depends(require_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """TradingGuard kill switch 수동 해제.
+
+    절차:
+      1. ``confirm=true`` 확인 — false 면 400.
+      2. ``log_strict`` 로 감사 기록 선행 — 실패 시 503 AUDIT_UNAVAILABLE
+         (**해제하지 않고 반환**; fail-closed).
+      3. 감사 성공 후 ``TradingGuard.deactivate_kill_switch()`` 호출.
+      4. ``PortfolioLedger.hydrate()`` 재호출로 DB ↔ cache 동기화
+         (실패해도 해제 자체는 유효; warning 로그만 기록).
+
+    보안:
+      - require_admin (RBAC Wiring Rule).
+      - reason + confirm 이중 확인으로 실수 방지.
+      - before/after 상태가 감사 로그에 영구 기록.
+    """
+    if not body.confirm:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "success": False,
+                "error_code": "CONFIRM_REQUIRED",
+                "message": "confirm 필드가 true 여야 해제가 진행됩니다.",
+            },
+        )
+
+    guard = get_trading_guard()
+    was_on = guard.state.kill_switch_on
+    previous_reason = guard.state.kill_switch_reason
+
+    # 1) 감사 fail-closed: audit 실패 시 해제하지 않는다.
+    audit = AuditLogger(db)
+    try:
+        await audit.log_strict(
+            action_type="KILL_SWITCH_DEACTIVATE",
+            module="trading_guard",
+            description=(
+                f"Kill switch manual deactivation (was_on={was_on}) " f"by {current_user.username}: {body.reason}"
+            ),
+            before_state={
+                "kill_switch_on": was_on,
+                "kill_switch_reason": previous_reason,
+            },
+            after_state={
+                "kill_switch_on": False,
+                "kill_switch_reason": "",
+            },
+            metadata={
+                "user_id": current_user.id,
+                "username": current_user.username,
+                "release_reason": body.reason,
+            },
+        )
+    except AuditWriteFailure:
+        logger.critical(
+            f"Kill switch deactivation refused — audit fail-closed " f"(was_on={was_on}, user={current_user.username})"
+        )
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "success": False,
+                "error_code": "AUDIT_UNAVAILABLE",
+                "message": "감사 시스템 일시 장애로 해제가 차단되었습니다",
+                "retry_after_seconds": 30,
+            },
+        )
+
+    # 2) 감사 통과 후에만 해제.
+    guard.deactivate_kill_switch()
+
+    # 3) Ledger 재hydrate — cache 가 stale 하면 다음 reconcile 에서 재차단되므로
+    #    해제 직후 DB 에서 실제 포지션을 다시 읽어 cache 를 덮어쓴다.
+    ledger = get_portfolio_ledger()
+    ledger_rehydrated = False
+    positions_count = 0
+    try:
+        if ledger.repository is not None:
+            await ledger.hydrate()
+            ledger_rehydrated = True
+        positions_count = len(ledger.get_positions())
+    except Exception as e:  # noqa: BLE001 — ledger 재hydrate 실패는 해제 자체를 무효화하지 않는다.
+        logger.warning(f"Kill switch deactivated but ledger rehydrate failed (user={current_user.username}): {e}")
+
+    deactivated_at = now_kst().isoformat()
+    logger.warning(
+        f"Kill switch deactivated manually: was_on={was_on} "
+        f"user={current_user.username} reason={body.reason!r} "
+        f"ledger_rehydrated={ledger_rehydrated} positions={positions_count}"
+    )
+
+    return APIResponse(
+        success=True,
+        data=KillSwitchDeactivateResponse(
+            was_on=was_on,
+            previous_reason=previous_reason,
+            deactivated_at=deactivated_at,
+            ledger_rehydrated=ledger_rehydrated,
+            ledger_positions_count=positions_count,
+            operator=current_user.username,
+        ),
     )
