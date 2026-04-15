@@ -1278,3 +1278,89 @@ docker compose logs scheduler --tail 100 | head -30
 - **P0-2 reconcile 검증 진행 불가 원인 제거**: 16:00 KST POST_MARKET 트리거가 실제로 발화했는지, reconcile 이 broker 13건 vs ledger 0건 의 mismatch 를 어떻게 처리했는지는 본 수정 후 배포된 스케줄러에서 로그로 직접 확인 가능해진다.
 - **관측 신뢰도 복구**: 지금까지 "healthy = 동작 중" 으로 간주해 온 판단이 stdout 버퍼링 앞에서 무효화됐음을 CI/운영 문서에 명시. 향후 scheduler 계열 프로세스를 추가할 때 compose 파일의 `environment:` 에 `PYTHONUNBUFFERED: "1"` 이 포함되는지 review 체크리스트에 반영 필요.
 
+### 10.15 loguru `%` posarg silent 관측 결손 (2026-04-15)
+
+§10.14 에서 버퍼링 회복 후 scheduler 로그를 처음 관측한 시점에 발견된 2차 결손이다. §10.14 의 primary 원인(compose 의 `PYTHONUNBUFFERED` 부재) 과는 독립된 코드 레벨 결함이지만 성질이 동일한 "silent 관측 결손" 이라 같은 회고에 귀속한다.
+
+#### 관측
+
+재기동 후 첫 로그에서 한 줄이 다음과 같이 찍혔다.
+
+```
+2026-04-15 07:58:18.296 | INFO | __main__:main:105 | PortfolioLedger hydrated from DB (positions=%d)
+```
+
+`%d` 가 literal 로 출력됐다. 해당 호출은 `scheduler_main.py:105` 에서 `logger.info("PortfolioLedger hydrated from DB (positions=%d)", len(...))` 로 작성돼 있었다. loguru 는 stdlib `logging` 의 `%` posarg 포맷을 해석하지 않고 오직 `{}` 포맷과 f-string 만 해석하므로, 뒤에 붙은 `len(...)` 인자는 전부 버려지고 메시지 문자열이 literal 로 기록됐다.
+
+#### 전수 조사 범위
+
+`backend/` 전체에서 동일 패턴을 grep 한 결과 **10 개 호출 지점** 이 식별됐다 (모두 `from config.logging import logger` 또는 `from loguru import logger` 경로):
+
+| # | 파일:라인 | 레벨 | 영향 |
+|---|---|---|---|
+| 1 | `scheduler_main.py:105` | INFO | hydrate 시 포지션 개수 손실 |
+| 2 | `scheduler_main.py:144` | WARNING | ReconciliationRunner 미등록 시 원인 진단 정보 손실 |
+| 3 | `core/reconciliation_providers.py:73` | ERROR | KIS 잔고 조회 실패 시 exception 전문 손실 |
+| 4 | `core/reconciliation_runner.py:89` | ERROR | reconcile provider 실패 시 exception 전문 손실 |
+| 5 | `core/reconciliation_runner.py:110` | CRITICAL | **mismatch 발생 시 count / diff_abs / mismatches 손실** |
+| 6 | `core/order_executor/executor.py:272` | CRITICAL | **TradingGuard 주문 차단 시 ticker/side/reason 손실** |
+| 7 | `core/order_executor/executor.py:334` | CRITICAL | **Post-trade slippage 초과 시 ticker/reference/fill/order_id 손실** |
+| 8 | `core/order_executor/executor.py:362` | CRITICAL | **PortfolioLedger refuse 시 ticker/qty/order_id/exception 손실** |
+| 9 | `core/order_executor/quote_provider_kis.py:189` | WARNING | KIS 시세 fetch 실패 시 ticker/market/exception 손실 |
+| 10 | `api/middleware/rate_limiter.py:118, 137` | WARNING/ERROR | rate-limit 초과/storage 장애 시 route/key/exception 손실 |
+
+특히 6~8 번은 kill switch / price-guard / ledger invariant 라는 **가장 관측이 필요한 순간의 진단 정보**가 전량 literal 로 버려지는 상태였다. reconcile mismatch 경로(5번) 는 내일 16일 11:30 KST 의 MIDDAY_CHECK 에서 실제로 발화할 가능성이 있어, 지금 수정하지 않았다면 mismatch 를 관측만 하고 그 상세(어떤 종목이 얼마나 차이가 나는지)는 로그에 남지 않는 상태로 kill switch 만 발동했을 것이다.
+
+제외된 경로: `scripts/create_admin.py` 는 stdlib `logging.getLogger("create_admin")` 을 사용하므로 `%s` posarg 포맷이 정상 동작한다. 본 수정 대상에서 명시적으로 제외한다.
+
+#### 왜 그동안 발견되지 않았는가
+
+1. **런타임 에러가 아니다**: loguru 는 `%s` 가 붙은 메시지를 단순 문자열로 기록할 뿐 예외를 내지 않는다. CI/테스트 어디에서도 실패하지 않는다.
+2. **테스트가 메시지 정확 일치를 검증하지 않았다**: 대부분의 테스트는 "logger.error 가 호출됐는가" 수준까지만 assert 했고, 메시지 포맷이 올바른지는 검증하지 않았다.
+3. **critical 경로가 평상시 발화하지 않는다**: TradingGuard/slippage/ledger-refuse 같은 path 는 회귀 시에만 발화하므로, DEMO 운영 6개월 동안 한 번도 literal `%s` 로그가 관측된 적이 없었다. §10.14 가 버퍼링을 풀지 않았다면 지금도 잠복했을 결손이다.
+
+#### 수정
+
+전부 f-string 으로 치환. 예시 ::
+
+    # before
+    logger.critical(
+        "TradingGuard 주문 차단: ticker=%s side=%s reason=%s",
+        request.ticker, request.side.value, guard_result.reason,
+    )
+    # after
+    logger.critical(
+        f"TradingGuard 주문 차단: ticker={request.ticker} "
+        f"side={request.side.value} reason={guard_result.reason}"
+    )
+
+이유:
+- 기존 코드에도 이미 f-string 패턴(`scheduler_main.py:110` `f"PortfolioLedger hydrate 실패: {e}"`)이 섞여 있어 스타일 일관성에 부합.
+- loguru 의 `{}` 포맷도 기술적으로 올바른 대안이지만, 본 수정에서는 동일 파일 내 일관성을 우선해 f-string 으로 통일했다. 성능 측면에서도 모두 INFO 이상 레벨이라 lazy 포맷의 이득이 사실상 없다.
+
+#### 정적 방어선
+
+동일 회귀 재발 방지를 위해 정적 검사기를 추가한다.
+
+- 위치: `scripts/check_loguru_style.py`
+- 대상: `backend/**/*.py` 중 `from config.logging import logger` 또는 `from loguru import logger` 를 import 한 파일만 스캔 (stdlib logging 사용 파일은 스캔에서 제외).
+- 검출 패턴: `logger.(info|warning|error|debug|critical|trace|success|exception)(...)` 호출 내부에서 `%d` 또는 `%s` 가 메시지 문자열에 포함되고 그 뒤에 추가 인자가 있는 경우.
+- CI 통합: `.github/workflows/doc-sync-check.yml` 의 `doc-sync` job 에 `Run loguru style check` 스텝으로 등록. 기존 `check_bool_literals` / `check_rbac_coverage` / `check_cd_stdin_guard` 와 동일한 "wiring 결손 정적 방어" 계열이다.
+- Exit code: 0 = PASS, 1 = FAIL (CI 차단).
+
+커밋 시점 기준 ✓ PASS (0 violations).
+
+#### 검증 절차
+
+배포 후 scheduler 로그에서 다음을 확인한다.
+
+1. `docker logs aqts-scheduler --since <재기동 시각> 2>&1 | grep "PortfolioLedger hydrated"` — 출력 라인에 `positions=%d` 가 아닌 `positions=0` 또는 `positions=N` (실제 숫자) 이 찍혀야 한다.
+2. 내일 16일 11:30 KST MIDDAY_CHECK 발화 시 `Reconciliation mismatch detected: count=13 diff_abs=...` 형태로 (flatten 하지 않은 경우) 실제 숫자가 찍히는지 확인. 만약 사전에 HTS flatten 을 완료했으면 `Reconciliation matched` 로그가 대신 찍힌다.
+3. 장기적으로는 `logger.critical` 경로가 발화할 때 log aggregator 쿼리에서 `%s`/`%d` literal 이 0 건 관측되는지 monitor 대시보드에 카운터를 추가하는 것도 고려 (현재는 정적 검사기로 충분하다고 판단하나, 실행 경로 회귀까지 잡으려면 런타임 메트릭이 필요).
+
+#### 운영 영향
+
+- **관측 신뢰도 2차 복구**: §10.14 로 "로그가 도달하는 경로" 를 고쳤고, §10.15 로 "로그의 내용이 정확한지" 를 고쳤다. 두 층을 함께 복구하지 않으면 한쪽만 통과시키는 부분 수정에 머물렀을 것이다.
+- **향후 회귀 방지**: 새 loguru 호출을 작성할 때 IDE/리뷰어가 자연히 stdlib logging 스타일을 타이핑할 수 있으므로, 정적 검사기가 CI 에서 차단하는 것이 현실적 방어선이다. 신규 loguru 호출 PR 은 `check_loguru_style.py` 가 0 violations 임을 확인한 뒤 머지한다.
+- **CLAUDE.md Silence Error 원칙 확장**: "출력 채널 버퍼링 silent miss" (§10.14) 와 병렬로 "로그 포맷 라이브러리 mismatch" 계열이 존재함을 원칙에 반영할지는 후속 판단 사항. 정적 검사기로 강제되므로 당장의 코드 원칙 추가는 보류한다.
+

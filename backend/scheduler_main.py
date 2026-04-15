@@ -102,10 +102,9 @@ async def main():
     try:
         portfolio_ledger = configure_portfolio_ledger(SqlPortfolioLedgerRepository(async_session_factory))
         await portfolio_ledger.hydrate()
-        logger.info(
-            "PortfolioLedger hydrated from DB (positions=%d)",
-            len(portfolio_ledger.get_positions()),
-        )
+        # loguru 는 stdlib logging 의 % 포맷 posarg 를 해석하지 않으므로
+        # f-string 으로 직접 포맷한다. 회고: phase1-demo-verification-2026-04-11 §10.15.
+        logger.info(f"PortfolioLedger hydrated from DB (positions={len(portfolio_ledger.get_positions())})")
     except Exception as e:
         logger.error(f"PortfolioLedger hydrate 실패: {e}")
         raise
@@ -141,9 +140,7 @@ async def main():
         logger.info("ReconciliationRunner wired (KIS broker ↔ PortfolioLedger)")
     else:
         logger.warning(
-            "ReconciliationRunner 미등록 — kis_client=%s backtest=%s",
-            kis_client is not None,
-            settings.kis.is_backtest,
+            f"ReconciliationRunner 미등록 — kis_client={kis_client is not None} " f"backtest={settings.kis.is_backtest}"
         )
 
     await scheduler.start()

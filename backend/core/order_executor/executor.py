@@ -270,11 +270,9 @@ class OrderExecutor:
                 reason_code = self._map_guard_reason_code(guard_result.reason)
                 TRADING_GUARD_BLOCKS_TOTAL.labels(reason_code=reason_code).inc()
                 logger.critical(
-                    "TradingGuard 주문 차단: ticker=%s side=%s reason_code=%s reason=%s",
-                    request.ticker,
-                    request.side.value,
-                    reason_code,
-                    guard_result.reason,
+                    f"TradingGuard 주문 차단: ticker={request.ticker} "
+                    f"side={request.side.value} reason_code={reason_code} "
+                    f"reason={guard_result.reason}"
                 )
                 raise TradingGuardBlocked(guard_result.reason, reason_code=reason_code)
 
@@ -332,12 +330,10 @@ class OrderExecutor:
                 )
                 if exceeded:
                     logger.critical(
-                        "Post-trade slippage exceeded: ticker=%s side=%s " "reference=%.4f fill=%.4f order_id=%s",
-                        request.ticker,
-                        request.side.value,
-                        reference_quote.price,
-                        result.avg_price,
-                        result.order_id,
+                        f"Post-trade slippage exceeded: ticker={request.ticker} "
+                        f"side={request.side.value} "
+                        f"reference={reference_quote.price:.4f} "
+                        f"fill={result.avg_price:.4f} order_id={result.order_id}"
                     )
 
             # P1-정합성: 체결이 확정된 경우에만 ledger 에 반영.
@@ -360,12 +356,9 @@ class OrderExecutor:
                     # 주문은 이미 브로커에 체결되어 롤백 불가하므로, 사후
                     # 관측만 하고 reconcile 사이클이 mismatch 를 잡도록 둔다.
                     logger.critical(
-                        "PortfolioLedger refused fill: ticker=%s side=%s qty=%d order_id=%s err=%s",
-                        request.ticker,
-                        request.side.value,
-                        result.filled_quantity,
-                        result.order_id,
-                        ledger_exc,
+                        f"PortfolioLedger refused fill: ticker={request.ticker} "
+                        f"side={request.side.value} qty={result.filled_quantity} "
+                        f"order_id={result.order_id} err={ledger_exc}"
                     )
 
             # 결과를 데이터베이스에 저장

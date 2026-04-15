@@ -86,7 +86,9 @@ class ReconciliationRunner:
             internal_positions = await _maybe_await(self.internal_provider.get_positions())
         except Exception as exc:
             RECONCILIATION_RUNS_TOTAL.labels(result="error").inc()
-            logger.error("Reconciliation provider failure: %s", exc)
+            # loguru f-string 포맷 — stdlib logging 의 % posarg 는 해석되지 않음.
+            # 회고: phase1-demo-verification-2026-04-11 §10.15.
+            logger.error(f"Reconciliation provider failure: {exc}")
             raise
 
         result = self.engine.reconcile(broker_positions, internal_positions)
@@ -106,10 +108,8 @@ class ReconciliationRunner:
         RECONCILIATION_RUNS_TOTAL.labels(result="mismatch").inc()
         RECONCILIATION_MISMATCHES_TOTAL.inc(mismatch_count)
         logger.critical(
-            "Reconciliation mismatch detected: count=%d diff_abs=%.2f mismatches=%s",
-            mismatch_count,
-            diff_abs,
-            result.mismatches,
+            f"Reconciliation mismatch detected: count={mismatch_count} "
+            f"diff_abs={diff_abs:.2f} mismatches={result.mismatches}"
         )
 
         if mismatch_count > self.mismatch_threshold:

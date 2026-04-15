@@ -246,8 +246,7 @@ async def create_order(
     except AuditWriteFailure:
         logger.critical(
             "Post-exec audit write failed — order may be executed without audit trail. "
-            "Manual reconciliation required. idem=%s",
-            key,
+            f"Manual reconciliation required. idem={key}"
         )
         try:
             store.release_claim(user_id, route, key)
@@ -406,8 +405,7 @@ async def create_batch_orders(
     except AuditWriteFailure:
         logger.critical(
             "Post-exec batch audit write failed — orders may be executed without audit trail. "
-            "Manual reconciliation required. idem=%s",
-            key,
+            f"Manual reconciliation required. idem={key}"
         )
         try:
             store.release_claim(user_id, route, key)

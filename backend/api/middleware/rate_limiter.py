@@ -115,12 +115,7 @@ async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) 
     """429 핸들러 — 정상 throttle 작동."""
     route = request.url.path
     RATE_LIMIT_EXCEEDED_TOTAL.labels(route=route).inc()
-    logger.warning(
-        "Rate limit exceeded: key=%s route=%s detail=%s",
-        composite_rate_key(request),
-        route,
-        exc.detail,
-    )
+    logger.warning(f"Rate limit exceeded: key={composite_rate_key(request)} " f"route={route} detail={exc.detail}")
     return JSONResponse(
         status_code=429,
         content={
@@ -134,11 +129,7 @@ async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) 
 async def rate_limit_storage_unavailable_handler(request: Request, exc: StorageError) -> JSONResponse:
     """Redis 장애 등 storage 백엔드 실패 → 503 (fail-closed)."""
     RATE_LIMIT_STORAGE_FAILURE_TOTAL.inc()
-    logger.error(
-        "Rate limit storage unavailable: route=%s err=%s",
-        request.url.path,
-        exc.__class__.__name__,
-    )
+    logger.error(f"Rate limit storage unavailable: route={request.url.path} " f"err={exc.__class__.__name__}")
     return JSONResponse(
         status_code=503,
         content={

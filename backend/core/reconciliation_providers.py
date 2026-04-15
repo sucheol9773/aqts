@@ -70,7 +70,9 @@ class KISBrokerPositionProvider:
         try:
             response = await self.kis_client.get_kr_balance()
         except Exception as exc:
-            logger.error("KIS get_kr_balance 실패: %s", exc)
+            # loguru f-string 포맷 — % posarg 를 해석하지 않아 exception 전문이
+            # 로그에 남도록 강제한다. 회고: phase1-demo-verification-2026-04-11 §10.15.
+            logger.error(f"KIS get_kr_balance 실패: {exc}")
             raise BrokerPositionParseError(f"KIS upstream error: {exc}") from exc
         return self._parse(response)
 

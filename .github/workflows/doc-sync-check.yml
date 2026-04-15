@@ -50,3 +50,10 @@ jobs:
         # regression §4.7 (docker exec -i) 와 §4.8 (-T 없는 docker compose run)
         # 두 건의 CD 회귀에 대한 정적 방어선이다.
         run: python scripts/check_cd_stdin_guard.py
+
+      - name: Run loguru style check
+        # loguru 는 stdlib logging 의 '%' posarg 포맷을 해석하지 않는다.
+        # ``logger.error("failure: %s", exc)`` 같은 호출은 실제로는 "failure: %s"
+        # literal 만 기록되고 exception 전문이 사라지는 silent 관측 결손이 된다.
+        # 회고: docs/operations/phase1-demo-verification-2026-04-11.md §10.15.
+        run: python scripts/check_loguru_style.py

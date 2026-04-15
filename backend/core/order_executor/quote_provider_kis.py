@@ -186,12 +186,7 @@ class KISQuoteProvider:
         except QuoteFetchError:
             raise
         except Exception as exc:
-            logger.warning(
-                "KISQuoteProvider upstream failure: ticker=%s market=%s err=%s",
-                ticker,
-                market.value,
-                exc,
-            )
+            logger.warning(f"KISQuoteProvider upstream failure: ticker={ticker} " f"market={market.value} err={exc}")
             raise QuoteFetchError(ticker, f"KIS upstream error: {exc}") from exc
         finally:
             QUOTE_FETCH_LATENCY_SECONDS.labels(market=market.value).observe(time.monotonic() - start)
