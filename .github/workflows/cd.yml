@@ -123,15 +123,37 @@ jobs:
             git checkout -f main
             git reset --hard origin/main
 
-            echo "═══ Step 2: Ensure cosign installed ═══"
-            if ! command -v cosign >/dev/null 2>&1; then
-              echo "cosign 미설치 → 설치 진행 (${COSIGN_VERSION})"
+            echo "═══ Step 2: Ensure cosign pinned to ${COSIGN_VERSION} ═══"
+            # 회귀 방지 (2026-04-16): 기존 `if ! command -v cosign` 가드는
+            # "cosign 바이너리 존재 여부"만 검사하여, 서버에 구버전(v2.4.0)이
+            # 남아 있으면 ${COSIGN_VERSION} 재설치 블록이 통째로 스킵됐다.
+            # CI 가 v3.0.5 로 서명한 이미지를 v2.4.0 으로 verify 하니
+            # "no signatures found" 가 발생. Silent miss (조건 분기 우회)
+            # 패턴의 전형. 이제는 실제 버전을 비교하고 불일치 시 재설치한 뒤
+            # 설치 후 버전을 어서트하여 다음 스텝 진입 전에 실패시킨다.
+            INSTALLED_COSIGN_VERSION=""
+            if command -v cosign >/dev/null 2>&1; then
+              INSTALLED_COSIGN_VERSION="$(cosign version 2>/dev/null | awk '/^GitVersion:/ {print $2}')"
+              echo "현재 설치된 cosign: ${INSTALLED_COSIGN_VERSION:-<확인 불가>}"
+            else
+              echo "cosign 미설치"
+            fi
+            if [ "${INSTALLED_COSIGN_VERSION}" != "${COSIGN_VERSION}" ]; then
+              echo "버전 불일치 또는 미설치 → ${COSIGN_VERSION} 재설치"
               curl -sSLo /tmp/cosign \
                 "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign-linux-amd64"
               sudo install -m 0755 /tmp/cosign /usr/local/bin/cosign
               rm -f /tmp/cosign
+            else
+              echo "설치된 버전이 핀(${COSIGN_VERSION}) 과 일치 — 재설치 생략"
             fi
             cosign version
+            POST_COSIGN_VERSION="$(cosign version 2>/dev/null | awk '/^GitVersion:/ {print $2}')"
+            if [ "${POST_COSIGN_VERSION}" != "${COSIGN_VERSION}" ]; then
+              echo "❌ cosign 버전 고정 실패: expected=${COSIGN_VERSION}, got=${POST_COSIGN_VERSION:-<empty>}"
+              exit 1
+            fi
+            echo "✅ cosign ${POST_COSIGN_VERSION} 고정됨"
 
             echo "═══ Step 3: Verify image signature (cosign keyless) ═══"
             # CI 가 GitHub Actions OIDC 신원으로 keyless 서명한 이미지만 통과
@@ -423,12 +445,14 @@ jobs:
           PREV_SHA: ${{ steps.snapshot.outputs.previous_sha }}
           IMAGE_NAMESPACE: ${{ env.IMAGE_NAMESPACE }}
           REPO_FULL: ${{ github.repository }}
+          COSIGN_VERSION: ${{ env.COSIGN_VERSION }}
         run: |
           echo "🔄 Rolling back to ${PREV_SHA}..."
           ssh -T -i ~/.ssh/gcp_key ${SERVER_USER}@${SERVER_IP} \
             IMAGE_NAMESPACE="${IMAGE_NAMESPACE}" \
             PREV_SHA="${PREV_SHA}" \
             REPO_FULL="${REPO_FULL}" \
+            COSIGN_VERSION="${COSIGN_VERSION}" \
             bash -s << 'ROLLBACK_SCRIPT'
             set -e
             cd ~/aqts
@@ -440,6 +464,29 @@ jobs:
             echo "═══ Rollback: reverting compose/config to ${PREV_SHA} ═══"
             git fetch origin main
             git reset --hard ${PREV_SHA}
+
+            echo "═══ Rollback: Ensure cosign pinned to ${COSIGN_VERSION} ═══"
+            # deploy Step 2 의 pin 로직이 실패했을 경로에서도 rollback 이
+            # 구버전 cosign 을 사용하지 않도록 동일한 버전 어서트를 수행한다.
+            # deploy Step 2 가 성공한 경우에는 INSTALLED 이 COSIGN_VERSION 과
+            # 일치하여 재설치 생략 경로로 빠진다.
+            INSTALLED_COSIGN_VERSION=""
+            if command -v cosign >/dev/null 2>&1; then
+              INSTALLED_COSIGN_VERSION="$(cosign version 2>/dev/null | awk '/^GitVersion:/ {print $2}')"
+            fi
+            if [ "${INSTALLED_COSIGN_VERSION}" != "${COSIGN_VERSION}" ]; then
+              echo "rollback: cosign 버전 불일치 (${INSTALLED_COSIGN_VERSION:-<미설치>}) → ${COSIGN_VERSION} 재설치"
+              curl -sSLo /tmp/cosign \
+                "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign-linux-amd64"
+              sudo install -m 0755 /tmp/cosign /usr/local/bin/cosign
+              rm -f /tmp/cosign
+            fi
+            POST_COSIGN_VERSION="$(cosign version 2>/dev/null | awk '/^GitVersion:/ {print $2}')"
+            if [ "${POST_COSIGN_VERSION}" != "${COSIGN_VERSION}" ]; then
+              echo "❌ rollback: cosign 버전 고정 실패: expected=${COSIGN_VERSION}, got=${POST_COSIGN_VERSION:-<empty>}"
+              exit 1
+            fi
+            echo "✅ rollback cosign ${POST_COSIGN_VERSION} 고정됨"
 
             echo "═══ Verify previous image signature ═══"
             # 10위(SBOM/cosign) 도입 이전 SHA 는 GHCR 에 이미지/서명이 모두 없을 수 있다.

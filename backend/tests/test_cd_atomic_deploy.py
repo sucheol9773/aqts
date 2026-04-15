@@ -150,3 +150,79 @@ class TestComposeImageAlignment:
             f"backend/scheduler 가 동일 이미지 참조를 공유하지 않는다. "
             f"expected 2 occurrences, found {content.count(expected_image)}"
         )
+
+
+class TestCosignVersionPinning:
+    """CD 의 cosign 설치 블록은 서버에 남아 있는 구버전 바이너리를 감지하고
+    ${COSIGN_VERSION} 로 재설치한 뒤 설치 후 버전을 어서트해야 한다.
+
+    회귀 사례 (2026-04-16): `if ! command -v cosign` 만 검사하여 서버에
+    남아 있던 v2.4.0 이 그대로 재사용됐다. CI 가 v3.0.5 로 서명한
+    이미지를 v2.4.0 으로 verify 하니 "no signatures found" 발생. Silent
+    miss (조건 분기 우회) 패턴.
+
+    이 테스트는 deploy 와 rollback 두 경로 모두에 대해 다음을 강제한다:
+      1. 현재 설치 버전을 `cosign version | awk` 로 실제 파싱한다.
+      2. 버전이 COSIGN_VERSION 과 다르면 재설치 블록으로 진입한다.
+      3. 설치 후 버전을 다시 어서트하고, 불일치면 exit 1 한다.
+    """
+
+    def test_deploy_compares_installed_cosign_version(self, cd_content: str) -> None:
+        deploy_start = cd_content.index("DEPLOY_SCRIPT")
+        deploy_end = cd_content.index("DEPLOY_SCRIPT", deploy_start + 1)
+        deploy_block = cd_content[deploy_start:deploy_end]
+        # 현재 버전 파싱
+        assert "INSTALLED_COSIGN_VERSION=" in deploy_block
+        assert "cosign version 2>/dev/null | awk '/^GitVersion:/ {print $2}'" in deploy_block
+        # 버전 비교 분기
+        assert '"${INSTALLED_COSIGN_VERSION}" != "${COSIGN_VERSION}"' in deploy_block
+
+    def test_deploy_asserts_post_install_cosign_version(self, cd_content: str) -> None:
+        deploy_start = cd_content.index("DEPLOY_SCRIPT")
+        deploy_end = cd_content.index("DEPLOY_SCRIPT", deploy_start + 1)
+        deploy_block = cd_content[deploy_start:deploy_end]
+        # 설치 후 재파싱 + 실패 경로
+        assert "POST_COSIGN_VERSION=" in deploy_block
+        assert '"${POST_COSIGN_VERSION}" != "${COSIGN_VERSION}"' in deploy_block
+        # 어서트 실패 시 배포 중단
+        pin_start = deploy_block.index("POST_COSIGN_VERSION")
+        pin_block = deploy_block[pin_start : pin_start + 600]
+        assert "exit 1" in pin_block
+
+    def test_deploy_guards_against_presence_only_check(self, cd_content: str) -> None:
+        """과거 회귀 패턴인 `if ! command -v cosign` 단독 가드가 다시
+        deploy 경로로 들어오지 않는지 확인한다. deploy 블록 안에서
+        `command -v cosign` 이 등장하더라도 반드시 버전 비교와 함께
+        사용되어야 한다."""
+        deploy_start = cd_content.index("DEPLOY_SCRIPT")
+        deploy_end = cd_content.index("DEPLOY_SCRIPT", deploy_start + 1)
+        deploy_block = cd_content[deploy_start:deploy_end]
+        if "command -v cosign" in deploy_block:
+            # 같은 스텝 내 버전 비교가 반드시 있어야 한다.
+            assert "INSTALLED_COSIGN_VERSION" in deploy_block, (
+                "cosign 설치 블록이 버전 비교 없이 presence-only 체크로 회귀했다. " "2026-04-16 회귀 사례를 참조하라."
+            )
+
+    def test_rollback_compares_installed_cosign_version(self, cd_content: str) -> None:
+        rb_start = cd_content.index("ROLLBACK_SCRIPT")
+        rb_block = cd_content[rb_start:]
+        assert "INSTALLED_COSIGN_VERSION=" in rb_block
+        assert '"${INSTALLED_COSIGN_VERSION}" != "${COSIGN_VERSION}"' in rb_block
+
+    def test_rollback_asserts_post_install_cosign_version(self, cd_content: str) -> None:
+        rb_start = cd_content.index("ROLLBACK_SCRIPT")
+        rb_block = cd_content[rb_start:]
+        assert "POST_COSIGN_VERSION=" in rb_block
+        assert '"${POST_COSIGN_VERSION}" != "${COSIGN_VERSION}"' in rb_block
+        pin_start = rb_block.index("POST_COSIGN_VERSION")
+        pin_block = rb_block[pin_start : pin_start + 600]
+        assert "exit 1" in pin_block
+
+    def test_rollback_env_passes_cosign_version(self, cd_content: str) -> None:
+        """rollback SSH heredoc 은 COSIGN_VERSION 을 명시적으로 전달해야 한다.
+        전달이 누락되면 rollback 경로 안에서 비어 있어 어서트 실패로 빠진다."""
+        rollback_step_start = cd_content.index("Rollback on failure")
+        rollback_step_end = cd_content.index("ROLLBACK_SCRIPT", rollback_step_start)
+        step_header = cd_content[rollback_step_start:rollback_step_end]
+        assert "COSIGN_VERSION: ${{ env.COSIGN_VERSION }}" in step_header
+        assert 'COSIGN_VERSION="${COSIGN_VERSION}"' in step_header
