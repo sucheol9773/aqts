@@ -59,6 +59,19 @@ ignore:
   # 후속: 3.12 메이저 업그레이드 시 일괄 해소 (별도 PR — torch/sb3 호환성 검증 필요).
   - vulnerability: CVE-2026-4519   # 2026-06-06
   - vulnerability: CVE-2025-13836  # 2026-06-06 (3.11 backport 없음, 3.13.11+ 에서만 fix)
+  # CVE-2026-4786 (High, CVSS 7, 2026-04-13 공개, fix 미출시) — CVE-2026-4519 의 완화책
+  # 우회. URL 에 "tion" 포함 시 webbrowser.open() 이 shell command injection 가능.
+  # 영향: `grep -rn "webbrowser" backend/` zero matches — 서버사이드 컨테이너는
+  # webbrowser 모듈 자체를 import 하지 않음. 데스크탑 API 로 런타임 무관.
+  - vulnerability: CVE-2026-4786   # 2026-06-06 (webbrowser.open 미사용, 3.12 업그레이드와 함께 해소)
+  # CVE-2026-6100 (Critical, CVSS 9.1, 2026-04-13 공개, fix 미출시) — lzma.LZMADecompressor
+  # / bz2.BZ2Decompressor / gzip.GzipFile 인스턴스 재사용 시 MemoryError 이후 use-after-free.
+  # 일회성 헬퍼(lzma.decompress() 등)는 미영향.
+  # 영향: `grep -rn "import lzma\|import bz2\|import gzip" backend/ --include="*.py"` 0건.
+  # `grep -rn "LZMADecompressor\|BZ2Decompressor\|GzipFile(" backend/` 0건. transitive
+  # 의존이 내부적으로 사용할 수 있으나, Decompressor 인스턴스를 재사용하며 MemoryError 를
+  # 포착·무시하는 특수 패턴은 현실적으로 거의 발생하지 않음. 3.12 업그레이드와 함께 해소.
+  - vulnerability: CVE-2026-6100   # 2026-06-06 (Decompressor 재사용 패턴 미사용, 3.12 업그레이드와 함께 해소)
 
   # ─── Python 패키지 (backend/.pip-audit-ignore 와 동일 추적) ───
   # protobuf: OTel 1.27+ 업그레이드 PR 대기
