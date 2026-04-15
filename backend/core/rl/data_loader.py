@@ -267,12 +267,14 @@ class RLDataLoader:
 
     @staticmethod
     def _build_db_url() -> str:
-        """환경변수에서 DB URL 구성"""
-        import os
+        """환경변수에서 DB URL 구성.
 
-        host = os.getenv("POSTGRES_HOST", "localhost")
-        port = os.getenv("POSTGRES_PORT", "5432")
-        user = os.getenv("POSTGRES_USER", "aqts")
-        password = os.getenv("POSTGRES_PASSWORD", "aqts")
-        db = os.getenv("POSTGRES_DB", "aqts")
-        return f"postgresql://{user}:{password}@{host}:{port}/{db}"
+        단일 진실원천: ``config.settings.DatabaseSettings`` (env_prefix=``DB_``).
+        기존에는 ``POSTGRES_*`` 를 직접 읽었으나 이는 ``.env.example`` /
+        ``DatabaseSettings`` 와 드리프트를 일으켜 운영-개발 환경 불일치의
+        원인이 됐다. 공용 파서를 재사용해 env 키 해석을 한 군데로 모은다
+        (RBAC Wiring Rule 의 설정 도메인 확장 — "정의 ≠ 적용").
+        """
+        from config.settings import DatabaseSettings
+
+        return DatabaseSettings().sync_url

@@ -842,33 +842,83 @@ class TestRLDataLoaderDB:
     """RLDataLoader — DB 관련 경로 커버리지"""
 
     def test_build_db_url_with_env(self, monkeypatch):
-        """_build_db_url — 환경변수에서 DB URL 구성"""
+        """_build_db_url — DB_* 환경변수에서 DB URL 구성.
+
+        2026-04-16 드리프트 감사 (P1-D) 이후 ``DatabaseSettings`` 단일
+        진실원천을 경유하므로 env 키는 ``DB_*`` 만 유효하다.
+        """
         from core.rl.data_loader import RLDataLoader
 
-        monkeypatch.setenv("POSTGRES_HOST", "testhost")
-        monkeypatch.setenv("POSTGRES_PORT", "5433")
-        monkeypatch.setenv("POSTGRES_USER", "testuser")
-        monkeypatch.setenv("POSTGRES_PASSWORD", "testpass")
-        monkeypatch.setenv("POSTGRES_DB", "testdb")
+        monkeypatch.setenv("DB_HOST", "testhost")
+        monkeypatch.setenv("DB_PORT", "5433")
+        monkeypatch.setenv("DB_USER", "testuser")
+        monkeypatch.setenv("DB_PASSWORD", "testpass")
+        monkeypatch.setenv("DB_NAME", "testdb")
 
         url = RLDataLoader._build_db_url()
+        # DatabaseSettings.sync_url 은 postgresql+psycopg2:// 스킴을 사용
+        assert url.startswith("postgresql+psycopg2://")
         assert "testhost" in url
         assert "5433" in url
         assert "testuser" in url
         assert "testdb" in url
 
     def test_build_db_url_defaults(self, monkeypatch):
-        """_build_db_url — 환경변수 없을 때 기본값"""
+        """_build_db_url — DB_PASSWORD 만 주어졌을 때 DatabaseSettings 기본값 사용.
+
+        DatabaseSettings 는 ``password`` 를 required 로 선언하므로
+        DB_PASSWORD 없이 호출하면 ValidationError 가 올라온다. 이는 운영에서
+        비밀번호 미설정 배포를 차단하는 의도된 게이트이며, 이 테스트는 그 외
+        필드의 기본값(host=postgres, port=5432, name=aqts, user=aqts_user)
+        을 검증한다.
+        """
         from core.rl.data_loader import RLDataLoader
 
-        monkeypatch.delenv("POSTGRES_HOST", raising=False)
-        monkeypatch.delenv("POSTGRES_PORT", raising=False)
-        monkeypatch.delenv("POSTGRES_USER", raising=False)
-        monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
-        monkeypatch.delenv("POSTGRES_DB", raising=False)
+        for key in ("DB_HOST", "DB_PORT", "DB_USER", "DB_NAME"):
+            monkeypatch.delenv(key, raising=False)
+        # 구 키도 제거하여 의도치 않은 pick-up 방지
+        for key in (
+            "POSTGRES_HOST",
+            "POSTGRES_PORT",
+            "POSTGRES_USER",
+            "POSTGRES_PASSWORD",
+            "POSTGRES_DB",
+        ):
+            monkeypatch.delenv(key, raising=False)
+        monkeypatch.setenv("DB_PASSWORD", "dummy-pw-for-default-test")
 
         url = RLDataLoader._build_db_url()
-        assert "localhost" in url
+        assert url.startswith("postgresql+psycopg2://")
+        assert "postgres" in url  # host default
+        assert "5432" in url  # port default
+        assert "aqts_user" in url  # user default
+        # db name default "aqts" 는 user "aqts_user" 의 substring 이라
+        # 구분 위해 경로 마지막 세그먼트로 검사
+        assert url.endswith("/aqts")
+
+    def test_build_db_url_requires_password(self, monkeypatch):
+        """_build_db_url — DB_PASSWORD 미설정 시 ValidationError.
+
+        비밀번호 없이 DB 연결 시도를 방지하는 운영 게이트. DatabaseSettings
+        에서 password 가 required Field 이므로 이 어서트가 깨지면 공용
+        파서의 required 계약이 깨진 것이다.
+        """
+        from pydantic import ValidationError
+
+        from core.rl.data_loader import RLDataLoader
+
+        for key in (
+            "DB_HOST",
+            "DB_PORT",
+            "DB_USER",
+            "DB_NAME",
+            "DB_PASSWORD",
+            "POSTGRES_PASSWORD",
+        ):
+            monkeypatch.delenv(key, raising=False)
+
+        with pytest.raises(ValidationError):
+            RLDataLoader._build_db_url()
 
     def test_load_from_db_connection_failure(self):
         """load_from_db — DB 연결 실패 시 예외"""
