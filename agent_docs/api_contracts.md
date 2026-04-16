@@ -54,7 +54,7 @@
 | POST | `/users` | `users.py:109` | `require_admin` | 생성 |
 | PATCH | `/users/{user_id}` | `users.py:173` | `require_admin` | 수정 |
 | POST | `/users/{user_id}/password-reset` | `users.py:256` | `require_admin` | 패스워드 초기화 |
-| POST | `/users/{user_id}/…` | `users.py:294` | `require_admin` | (신원 관리 추가 액션) |
+| POST | `/users/{user_id}/lock` | `users.py:294` | `require_admin` | 계정 잠금/해제 |
 | DELETE | `/users/{user_id}` | `users.py:340` | `require_admin` | 삭제 |
 
 ### 2.3 Profile (`/api/profile`, `profile.py`)
