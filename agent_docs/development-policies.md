@@ -269,6 +269,74 @@ risk-off/cooldown, 회복 조건 등 상태(state)가 전환되는 로직을 작
 - **수동 점검**: 운영자는 `docs/security/supply-chain-policy.md` §7 의 절차로 임의 시점에 `cosign verify` 를 직접 실행할 수 있어야 한다.
 - **회고 — 도구 정의 ≠ 게이트 작동**: SBOM/서명을 만드는 것과 그 산출물이 실제로 배포되는지는 다른 문제다. 빌드/검증/실행이 동일 digest 를 따라가지 않으면 통제는 형식적이다. RBAC Wiring Rule 과 동일한 사고 — "정의했다 ≠ 적용했다" — 가 공급망에도 그대로 적용된다.
 
+### 13.1 GitHub Actions Node 20 → Node 24 마이그레이션 Contingency Plan
+
+GitHub 는 2026-06-02 부터 러너 기본을 Node 24 로 전환하며, 2026-09-16 에 Node 20 runtime 을 **완전히 제거**한다. 공급망 보안 파이프라인(`syft`, `grype`, `cosign`) 이 의존하는 서드파티 액션이 그때까지 Node 24 로 migrate 되지 않으면, 9-16 이후 CI/CD 가 빨간불로 멈춰 배포가 차단된다. 이 절은 해당 리스크의 관찰 방법과 대응 경로를 단일 진실원천으로 둔다.
+
+**Phase 1 — 즉시 bump (2026-04-21, PR #11 완료 예정)**
+
+다음 8종 15건은 Node 24 를 지원하는 stable 메이저 버전이 이미 릴리스되어 있어 현 시점에 bump 한다.
+
+| 액션 | 이전 | 이후 | Node 24 릴리스 |
+|---|---|---|---|
+| `actions/checkout` | v4 | v5 | 2025-09 |
+| `actions/setup-python` | v5 | v6 | 2025 Q4 |
+| `actions/upload-artifact` | v4 | v6 | 2025-11 (v5 는 예비 지원, v6 가 default node24) |
+| `docker/setup-buildx-action` | v3 | v4 | 2025-12-19 |
+| `docker/login-action` | v3 | v4 | 2026-03-03 |
+| `docker/metadata-action` | v5 | v6 | 2026 Q1 |
+| `docker/build-push-action` | v6 | v7 | 2026-03-05 (v7.0.0) |
+| `github/codeql-action/upload-sarif` | v3 | v4 | 2025-10-07 |
+
+**Phase 2 — 업스트림 의존 (2026-05 ~ 07 월 단위 모니터링)**
+
+다음 3종은 Node 24 stable 릴리스가 아직 없다. 업스트림 릴리스 노트를 월 단위로 재확인하고, Node 24 가 나오는 즉시 1줄 bump PR 을 머지한다.
+
+| 액션 | 최신 stable | 현재 runtime | 관찰 대상 |
+|---|---|---|---|
+| `anchore/sbom-action` | v0.22.x (2026-01) | node20 | [releases](https://github.com/anchore/sbom-action/releases) |
+| `anchore/scan-action` | v7.2.x | node20 | [releases](https://github.com/anchore/scan-action/releases) |
+| `sigstore/cosign-installer` | v4.1.1 | node20 (공식 확인 시점 기준) | [releases](https://github.com/sigstore/cosign-installer/releases) |
+
+**모니터링 방법**: 매월 1일 위 세 개 releases 페이지를 확인하고 `runs.using: node24` 로 전환된 첫 태그를 기록. 전환이 확인되면 같은 날 1줄 bump PR 을 연다. 세 개 모두 전환되면 본 §13.1 에 완료 표기 후 Phase 3 는 불필요 상태가 된다.
+
+**Phase 3 — CLI Fallback (2026-08-01 강제 deadline, 9-16 hard removal 45일 전)**
+
+8월 1일 시점에도 Phase 2 의 3종 중 하나라도 Node 24 미지원이 남아있으면, 해당 액션을 CLI 직접 호출 경로로 **대체**한다. 세 도구 모두 Go 바이너리이므로 Node runtime 과 무관하며, 기능 동등성이 유지된다.
+
+CLI fallback 스크립트는 **선제적으로 `scripts/ci/install_syft.sh`, `install_grype.sh`, `install_cosign.sh` 로 작성**하여 저장소에 둔다. 실제 워크플로 치환은 Phase 2 성공 시 불필요하므로 CI/CD 에 연결하지 않는다. 치환 시 적용 패턴:
+
+```yaml
+# (A) anchore/sbom-action 대체
+- name: Install Syft
+  run: bash scripts/ci/install_syft.sh
+- name: Generate SBOM
+  run: syft "${IMAGE_REF}" -o cyclonedx-json=sbom.cdx.json
+
+# (B) anchore/scan-action 대체
+- name: Install Grype
+  run: bash scripts/ci/install_grype.sh
+- name: Scan container
+  run: grype "${IMAGE_REF}" --fail-on high -o sarif=grype.sarif
+  # fail-on high 가 즉시 exit 1 → 게이트 효과는 동일
+
+# (C) sigstore/cosign-installer 대체
+- name: Install cosign
+  run: bash scripts/ci/install_cosign.sh v3.0.5
+  # 버전 인자는 CI sign / CD verify 동기화 (cd.yml COSIGN_VERSION)
+```
+
+**Wiring 검증 포인트 (Phase 3 치환 시)**
+
+- `syft` / `grype` / `cosign` 버전을 `--version` 으로 출력해 사람이 읽을 수 있는 로그 흔적 남기기
+- `grype` SARIF 업로드 경로(`github/codeql-action/upload-sarif@v4`) 와 파일명 일치 확인
+- `cosign verify` 의 OIDC certificate-identity 정규식과 issuer 는 현재 값 그대로 유지 (CI/CD 동기화는 §13 본문 참조)
+- 치환 후 첫 배포는 `docs/security/supply-chain-policy.md` §7 의 수동 검증 절차로 SBOM attestation + signature 가 정상 부착됐는지 확인
+
+**회고/교훈 — 외부 의존 리스크의 가시화**
+
+Node 20 deprecation 같은 외부 일정은 CI 경고로만 전파되므로 **우선순위 문서에 명시하지 않으면 누락된다**. 본 절은 `CLAUDE.md` §9 의 TODO 항목 "GitHub Actions Node 20→24 bump" 와 짝을 이루어, 월 단위 모니터링 → 8월 1일 강제 전환 → 9-16 hard deadline 의 타임라인을 SSOT 로 유지한다. 외부 의존 리스크는 발견 즉시 deadline-기반으로 문서화하는 것이 본 프로젝트의 표준 대응 방식이다.
+
 ## 14. 알림 파이프라인 Wiring Rule (Alerting Pipeline Wiring Rule)
 
 알림 파이프라인은 **다층 wiring** 으로 구성된다. 각 레이어를 정의한 것과 실제로 적용(주입·기동·노출)한 것은 독립적으로 누락될 수 있으므로, RBAC Wiring Rule / 공급망 Wiring Rule 과 동일한 원칙 — **"정의했다 ≠ 적용했다"** — 이 적용된다.
