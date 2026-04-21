@@ -55,6 +55,13 @@ import re
 import sys
 from pathlib import Path
 
+# scripts/ 는 패키지가 아니므로 공통 util 을 import 하기 위해 현재 디렉토리를
+# sys.path 에 명시적으로 추가. pyproject.toml [tool.ruff.lint] 가 E402 를
+# ignore 하므로 아래 import 가 본 줄 뒤에 오는 것이 허용된다.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _check_utils import iter_python_files  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 BACKEND = ROOT / "backend"
 
@@ -175,9 +182,14 @@ def _scan_file(path: Path) -> list[tuple[int, str, str]]:
 
 
 def scan() -> list[tuple[Path, int, str, str]]:
-    """백엔드 전체를 순회하면서 위반을 수집."""
+    """백엔드 전체를 순회하면서 위반을 수집.
+
+    ``iter_python_files`` 가 ``backend/.venv/`` / ``__pycache__`` / 기타
+    vendored 디렉토리를 사전에 제외하므로, 로컬 venv 에 포함된 서드파티
+    패키지의 수만 개 파일을 AST 파싱하는 비용을 피한다.
+    """
     results: list[tuple[Path, int, str, str]] = []
-    for path in sorted(BACKEND.rglob("*.py")):
+    for path in sorted(iter_python_files(BACKEND)):
         for line_no, level, snippet in _scan_file(path):
             results.append((path.relative_to(ROOT), line_no, level, snippet))
     return results

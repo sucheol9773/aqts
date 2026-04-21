@@ -20,6 +20,13 @@ import re
 import sys
 from pathlib import Path
 
+# scripts/ 는 패키지가 아니므로 공통 util 을 import 하기 위해 현재 디렉토리를
+# sys.path 에 명시적으로 추가. pyproject.toml [tool.ruff.lint] 가 E402 를
+# ignore 하므로 아래 import 가 본 줄 뒤에 오는 것이 허용된다.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _check_utils import iter_python_files  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 
 # 알려진 bool 환경변수 (표준 표기 강제 대상)
@@ -51,18 +58,18 @@ PYTHON_EXEMPT = {
     ROOT / "scripts" / "check_bool_literals.py",
 }
 
-PYTHON_GLOBS = ["backend/**/*.py", "scripts/**/*.py"]
+# Python 파일 스캔 루트. iter_python_files() 가 venv/build/cache 를 제외한다
+# (상세: scripts/_check_utils.py).
+PYTHON_ROOTS = [ROOT / "backend", ROOT / "scripts"]
 ENV_FILE_GLOBS = [".env", ".env.example", ".env.*"]
 COMPOSE_GLOBS = ["docker-compose*.yml", ".github/workflows/*.yml"]
 
 
 def check_python_files() -> list[str]:
     errors: list[str] = []
-    for pattern in PYTHON_GLOBS:
-        for path in ROOT.glob(pattern):
+    for py_root in PYTHON_ROOTS:
+        for path in iter_python_files(py_root):
             if path in PYTHON_EXEMPT:
-                continue
-            if "__pycache__" in path.parts:
                 continue
             try:
                 lines = path.read_text(encoding="utf-8").splitlines()
