@@ -88,7 +88,7 @@ opentelemetry-instrumentation-redis==0.46b0
 opentelemetry-exporter-otlp-proto-grpc==1.25.0
 
 # ── Utilities ──
-python-dotenv==1.0.1
+python-dotenv==1.2.2
 loguru==0.7.2
 tenacity==8.4.1
 pytz==2024.1

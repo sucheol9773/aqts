@@ -214,3 +214,49 @@ fi
 - **환경변수 값을 바꾸는 변경은 "해당 값이 참조되는 경로로 들어가는지" 를 먼저 관찰한다**. env 수정이 silently 무시되는 경로가 있는지 grep 으로 전수 확인. 본 건에서는 `COSIGN_VERSION` 이 `if ! command -v` 블록 **안에서만** 참조되고, 그 블록으로 들어가는 조건이 server 상태에 의존했다.
 - **presence check + version pin 의 혼용은 드리프트를 재생산한다**. 버전 pin 이 존재하는 파이프라인에서는 presence-only 가드를 금지한다. 설치 블록은 반드시 "현재 버전 파싱 → 비교 → 불일치 시 재설치 → post-install 어서트" 4 단계로 구성한다.
 - **"어제 고친 버그가 오늘 같은 증상으로 재발"하면 분기 경로를 의심한다**. 외부 증상은 동일해도 원인 지점이 다를 수 있다 — 본 2차 회귀의 원인은 1차(CI)와 완전히 다른 파일(`cd.yml`)의 완전히 다른 로직이었다.
+
+## 10. 회고 — 2026-04-22 `python-dotenv` GHSA-mf9w-mj56-hr94 (CVE-2026-28684)
+
+### 증상
+
+2026-04-21 늦은 시점부터 CI 의 `Python 의존성 CVE 스캔 (pip-audit)` Step 이 다음 advisory 를 차단:
+
+```
+Found 1 known vulnerability, ignored 3 in 1 package
+Name            Version  ID                     Fix Versions
+python-dotenv   1.0.1    GHSA-mf9w-mj56-hr94    1.2.2
+```
+
+본 Step 은 `chore/python-version-align` (PR #13) 이 포함하는 변경과 무관하게 차단되었다 — `python-dotenv` 는 PR #13 범위에 없다.
+
+### 원인
+
+- Advisory published 2026-04-19, updated 2026-04-21 14:38 UTC. pip-audit 의 vulndb 가 2026-04-21 오후 동기화 직후부터 탐지 시작.
+- CVSS 6.6 / Moderate. CWE-59 + CWE-61 (symlink following).
+- Attack vector: `set_key()` / `unset_key()` 경로에서 `shutil.copy2()` / `shutil.move()` 이 symlink 를 따라가며 cross-device rename fallback 시 symlink target 으로 리다이렉트 → 공격자가 `.env` 경로에 사전 배치한 symlink 로 임의 파일 덮어쓰기 가능.
+- Fix: upstream 1.2.2 (https://github.com/theskumar/python-dotenv/commit/790c5c02991100aa1bf41ee5330aca75edc51311).
+
+### Reachability 평가
+
+AQTS 코드베이스 grep 결과:
+
+- `load_dotenv()` 사용처 4건 — `scripts/run_backtest.py:34`, `scripts/run_walk_forward.py:28`, `scripts/run_hyperopt.py:39`, `scripts/backfill_market_data.py:194`
+- `set_key` / `unset_key` 사용처 **0건**
+
+취약 API (쓰기 경로) 는 사용되지 않으므로 운영상 exploit 경로는 **현재 없음**. 그러나 향후 동적 `.env` 기록 기능이 추가될 가능성 + advisory 가 존재하는 의존성을 그대로 핀하는 위험 (supply-chain hygiene) 을 고려하여 **ignore 가 아닌 업그레이드** 를 선택했다.
+
+### Fix
+
+- `backend/requirements.txt` 라인 91: `python-dotenv==1.0.1` → `python-dotenv==1.2.2`
+- 1.0.1 → 1.2.2 CHANGELOG 주요 변경 (load 경로 영향 0):
+  - 1.1.0: 기본 인코딩 `None` → `"utf-8"` (안전성 개선, 회귀 없음)
+  - 1.1.1: `dotenv_values` 반환 타입 `OrderedDict` → `dict` (Python 3.7+ dict 순서 보존 → 사실상 호환)
+  - 1.2.0: `Path` 타입 인자 공식 지원 (기존 str 경로 API 유지)
+  - 1.2.1 / 1.2.2: 버그픽스 + 본 CVE 패치
+- `.pip-audit-ignore` 수정 없음 — 업그레이드로 해소했으므로 예외 등록 불필요.
+
+### 운영 원칙 업데이트
+
+- **"reachability 가 없어도 업그레이드 가능하면 업그레이드"**. Fix 버전이 CHANGELOG 상 호환되는 범위(minor + patch)에 있고 breaking change 가 없다면, 공급망 hygiene 을 위해 reachability 논리로 ignore 를 추가하기보다 업그레이드로 해소한다. ignore 는 (a) fix 가 아직 없거나 (b) fix 에 수용 불가한 breaking change 가 있을 때만.
+- **advisory publish timestamp 와 CI 차단 시점의 lag 를 기록**. pip-audit 의 vulndb 동기화 주기가 있으므로, CI 가 "갑자기" 실패하기 시작한 경우 해당 advisory 의 published/updated 시각을 확인하여 "내가 한 변경이 원인인가 vs 외부 DB 업데이트가 원인인가" 를 먼저 분리한다.
+- **PR 스코프 규율 우선**. CVE 차단은 `chore/python-version-align` (PR #13) CI 에서 먼저 관측되었지만, CVE 픽스는 py311 정합성과 완전히 orthogonal 한 공급망 이슈이므로 별도 브랜치 (`chore/bump-python-dotenv-1.2.2`) 로 분리 처리했다 (CLAUDE.md §7 "bug fix 커밋에 무관한 '이왕 고치는 김에' 변경을 끼워넣지 않는다"). 한 PR 에 두 주제를 섞으면 나중에 `git blame` / revert 단위가 오염되고, 본 CVE 픽스가 `chore/python-version-align` 이외 다른 브랜치로 확산되는 시점도 지연된다.
