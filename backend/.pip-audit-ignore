@@ -3,10 +3,15 @@
 # 형식: <CVE_ID 또는 GHSA_ID>  # <만료일 YYYY-MM-DD> <근거>
 #
 # 규칙:
-#   1. 모든 항목은 만료일을 명시한다 (영구 예외 금지)
-#   2. 만료일 이후에는 자동으로 무효화되어 CI 가 다시 차단한다 (수동 갱신 필요)
-#   3. 사유는 "운영상 영향 없음" 같은 추상적 표현 금지 — 구체적 코드 경로 명시
-#   4. 새 항목 추가 시 PR 설명에 반드시 근거 + 후속 조치 일정 기재
+#   1. 모든 항목은 만료일을 명시한다 (영구 예외 금지). 만료일 없음 또는 YYYY-MM-DD
+#      형식 위반 시 CI 파서가 ::warning 을 남기고 ignore 를 무시 → 해당 CVE 가
+#      pip-audit 에서 재노출되어 --strict 로 CI 차단.
+#   2. 만료일 이후에는 자동으로 무효화되어 CI 가 다시 차단한다. `.github/workflows/ci.yml`
+#      의 pip-audit 스텝에서 매 빌드마다 TODAY (UTC) 와 만료일을 비교하여 과거면
+#      --ignore-vuln 플래그에 포함시키지 않는다 (수동 갱신 금지 — 재노출 후 근본 해소 또는
+#      갱신 PR 작성이 정규 경로).
+#   3. 사유는 "운영상 영향 없음" 같은 추상적 표현 금지 — 구체적 코드 경로 명시.
+#   4. 새 항목 추가 시 PR 설명에 반드시 근거 + 후속 조치 일정 기재.
 
 # protobuf 4.25.9 — opentelemetry-exporter-otlp-proto-grpc==1.25.0 가 protobuf<5 핀.
 # 영향 코드 경로: backend/core/observability/tracing.py 의 OTLP gRPC export 경로만 사용.
