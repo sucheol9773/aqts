@@ -255,13 +255,11 @@ class FinancialCollectorService:
         try:
             # universe 테이블에서 ticker 정확 매칭만 시도
             # LIKE 패턴 매칭은 false positive 위험이 있어 사용하지 않음
-            query = text(
-                """
+            query = text("""
                 SELECT ticker, name FROM universe
                 WHERE ticker = :corp_code
                 LIMIT 1
-            """
-            )
+            """)
             result = await self._db.execute(query, {"corp_code": corp_code})
             row = result.fetchone()
 
@@ -531,8 +529,7 @@ class FinancialCollectorService:
 
         logger.info(f"Saving {len(statements)} financial statements to DB")
 
-        query = text(
-            """
+        query = text("""
             INSERT INTO financial_statements
             (ticker, market, report_date, period_type,
              revenue, operating_income, net_income, total_assets, total_liabilities,
@@ -551,8 +548,7 @@ class FinancialCollectorService:
                 total_equity = EXCLUDED.total_equity,
                 eps = EXCLUDED.eps,
                 accounting_standard = EXCLUDED.accounting_standard
-        """
-        )
+        """)
 
         try:
             records = [self._to_db_record(stmt) for stmt in statements]
@@ -671,8 +667,7 @@ class FinancialCollectorService:
         for ticker in tickers:
             try:
                 # 최신 재무제표 조회
-                stmt_query = text(
-                    """
+                stmt_query = text("""
                     SELECT
                         ticker, revenue, operating_income, net_income,
                         total_assets, total_liabilities, total_equity, eps
@@ -680,8 +675,7 @@ class FinancialCollectorService:
                     WHERE ticker = :ticker
                     ORDER BY report_date DESC
                     LIMIT 1
-                """
-                )
+                """)
 
                 result = await self._db.execute(stmt_query, {"ticker": ticker})
                 stmt_row = result.fetchone()
@@ -703,14 +697,12 @@ class FinancialCollectorService:
                 }
 
                 # 현재가 조회 (DB에서)
-                price_query = text(
-                    """
+                price_query = text("""
                     SELECT close FROM market_ohlcv
                     WHERE ticker = :ticker AND market = 'KRX' AND interval = '1d'
                     ORDER BY time DESC
                     LIMIT 1
-                """
-                )
+                """)
                 price_result = await self._db.execute(price_query, {"ticker": ticker})
                 price_row = price_result.fetchone()
                 current_price = float(price_row[0]) if price_row else None
@@ -744,8 +736,7 @@ class FinancialCollectorService:
 
                 # 시장 데이터 포함시
                 if include_market_data:
-                    market_query = text(
-                        """
+                    market_query = text("""
                         SELECT
                             close,
                             (SELECT (close / LAG(close, 252) OVER (ORDER BY time) - 1)
@@ -764,8 +755,7 @@ class FinancialCollectorService:
                         WHERE ticker = :ticker AND interval = '1d'
                         ORDER BY time DESC
                         LIMIT 1
-                    """
-                    )
+                    """)
 
                     market_result = await self._db.execute(market_query, {"ticker": ticker})
                     market_row = market_result.fetchone()

@@ -184,15 +184,13 @@ class MarketDataCollector:
         """
         result = {"missing_filled": 0, "outliers_flagged": 0, "excluded": False}
 
-        query = text(
-            """
+        query = text("""
             SELECT time, close, volume
             FROM market_ohlcv
             WHERE ticker = :ticker AND market = :market AND interval = '1d'
             ORDER BY time DESC
             LIMIT 60
-        """
-        )
+        """)
         rows = await self._db.execute(query, {"ticker": ticker, "market": market})
         data = rows.fetchall()
 
@@ -276,8 +274,7 @@ class MarketDataCollector:
         if not records:
             return 0
 
-        query = text(
-            """
+        query = text("""
             INSERT INTO market_ohlcv (time, ticker, market, open, high, low, close, volume, interval)
             VALUES (:time, :ticker, :market, :open, :high, :low, :close, :volume, :interval)
             ON CONFLICT (time, ticker, interval) DO UPDATE SET
@@ -286,8 +283,7 @@ class MarketDataCollector:
                 low = EXCLUDED.low,
                 close = EXCLUDED.close,
                 volume = EXCLUDED.volume
-        """
-        )
+        """)
 
         await self._db.execute(query, records)
         await self._db.commit()
