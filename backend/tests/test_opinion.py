@@ -643,9 +643,7 @@ class TestOpinionGenerator:
     def test_parse_response_code_fence_handling(self, _mock_env):
         """마크다운 코드 펜스 제거"""
         response = MagicMock()
-        response.content = [
-            MagicMock(
-                text="""```json
+        response.content = [MagicMock(text="""```json
 {
   "action": "BUY",
   "conviction": 0.75,
@@ -654,9 +652,7 @@ class TestOpinionGenerator:
   "market_context": "테스트",
   "risk_factors": []
 }
-```"""
-            )
-        ]
+```""")]
 
         generator = OpinionGenerator()
         opinion = generator._parse_response("005930", OpinionType.STOCK, response)
