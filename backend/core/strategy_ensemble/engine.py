@@ -409,13 +409,11 @@ class StrategyEnsembleEngine:
             from db.database import async_session_factory
 
             async with async_session_factory() as session:
-                query = text(
-                    """
+                query = text("""
                     SELECT strategy_type, weight
                     FROM strategy_weights
                     WHERE risk_profile = :profile
-                """
-                )
+                """)
                 rows = await session.execute(query, {"profile": self._risk_profile.value})
                 data = rows.fetchall()
 
@@ -434,15 +432,13 @@ class StrategyEnsembleEngine:
 
             async with async_session_factory() as session:
                 for strategy_type, weight in weights.items():
-                    query = text(
-                        """
+                    query = text("""
                         INSERT INTO strategy_weights (strategy_type, weight, risk_profile, updated_at)
                         VALUES (:strategy_type, :weight, :profile, NOW())
                         ON CONFLICT (strategy_type, risk_profile) DO UPDATE SET
                             weight = :weight,
                             updated_at = NOW()
-                    """
-                    )
+                    """)
                     await session.execute(
                         query,
                         {
@@ -464,16 +460,14 @@ class StrategyEnsembleEngine:
 
             async with async_session_factory() as session:
                 data = signal.to_dict()
-                query = text(
-                    """
+                query = text("""
                     INSERT INTO ensemble_signals
                         (time, ticker, final_signal, final_confidence,
                          component_signals, weights_used, risk_profile)
                     VALUES
                         (:time, :ticker, :final_signal, :final_confidence,
                          :component_signals, :weights_used, :risk_profile)
-                """
-                )
+                """)
                 await session.execute(query, data)
                 await session.commit()
         except Exception as e:
@@ -493,15 +487,13 @@ class StrategyEnsembleEngine:
             from db.database import async_session_factory
 
             async with async_session_factory() as session:
-                query = text(
-                    """
+                query = text("""
                     INSERT INTO weight_update_history
                         (risk_profile, old_weights, new_weights, method,
                          performance_metrics, reason)
                     VALUES
                         (:profile, :old_w, :new_w, :method, :perf, :reason)
-                """
-                )
+                """)
                 await session.execute(
                     query,
                     {
