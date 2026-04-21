@@ -26,7 +26,7 @@
 
 ### 1.2 베이스 이미지
 
-`backend/Dockerfile` 은 `python:3.11-slim-bookworm` 을 사용하나, `backend/pyproject.toml` 의 `target-version = "py310"` / `target-version = ["py310"]` 와 **버전 표기가 불일치**한다. 현재 환경 기준 코드 작성 규칙(development-policies.md §6) 상 Dockerfile 기준으로 동작하므로, pyproject 타깃을 py311 로 정렬할지 여부는 별도 이슈로 추적한다 (팀메이트 4 / Tests·Doc-Sync 큐).
+`backend/Dockerfile` 은 `python:3.11-slim-bookworm` 을 사용하며 (rolling 3.11 태그, 패치는 3.11.14+), `backend/pyproject.toml` 의 `[tool.ruff]` / `[tool.black]` 모두 `target-version = "py311"` 로 정렬되어 있다. 레포 루트의 `.python-version` = `3.11.14` 로 로컬 pyenv 기준도 동일 버전으로 고정한다 (CI `PYTHON_VERSION: "3.11"` 과 일치). 본 정렬은 2026-04-21 `chore/python-version-align` 브랜치에서 py310 → py311 상향으로 확정되었다 — 3.11 전용 문법(`typing.Self`, `except*`, `TaskGroup` 등) 은 현재 사용처가 없으나 향후 도입 시 즉시 가능하도록 타깃을 런타임과 일치시켰다.
 
 ---
 

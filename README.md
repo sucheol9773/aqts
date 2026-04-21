@@ -64,7 +64,7 @@ aqts/
 │       ├── docker-setup-guide.md    # OPS-007: Docker 환경 세팅 가이드
 │       └── deployment-roadmap.md    # OPS-008: 배포 및 검증 로드맵
 ├── backend/
-│   ├── Dockerfile                   # 멀티 스테이지 빌드 (Python 3.11.9)
+│   ├── Dockerfile                   # 멀티 스테이지 빌드 (Python 3.11.14+)
 │   ├── requirements.txt             # Python 의존성
 │   ├── pyproject.toml               # pytest/ruff/black 설정
 │   ├── main.py                      # FastAPI 엔트리포인트 (Lifespan, GracefulShutdown)
