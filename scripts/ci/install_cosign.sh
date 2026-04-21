@@ -68,11 +68,16 @@ else
 fi
 
 echo "═══ cosign installed — asserting version pin ═══"
-POST_VERSION="$(cosign version 2>/dev/null | awk '/^GitVersion:/ {print $2}')"
+# ⚠️ 반드시 ${INSTALL_PREFIX}/cosign 의 full-path 로 호출한다. bare `cosign`
+# 은 PATH 룩업이므로 INSTALL_PREFIX 가 PATH 에 없거나 PATH 상 더 오래된
+# cosign 이 먼저 있으면 방금 설치한 바이너리가 아닌 엉뚱한 것을 검증하게
+# 되어 false success / false failure 를 낼 수 있다 (silent miss 패턴,
+# development-policies.md §8, §13.1).
+POST_VERSION="$("${INSTALL_PREFIX}/cosign" version 2>/dev/null | awk '/^GitVersion:/ {print $2}')"
 if [[ "${POST_VERSION}" != "${COSIGN_VERSION}" ]]; then
-    echo "❌ cosign version pin failed: expected=${COSIGN_VERSION}, got=${POST_VERSION:-<empty>}"
+    echo "❌ cosign version pin failed: expected=${COSIGN_VERSION}, got=${POST_VERSION:-<empty>} (binary=${INSTALL_PREFIX}/cosign)"
     exit 1
 fi
 
-echo "✅ cosign ${POST_VERSION} 고정됨"
-cosign version
+echo "✅ cosign ${POST_VERSION} 고정됨 (binary=${INSTALL_PREFIX}/cosign)"
+"${INSTALL_PREFIX}/cosign" version

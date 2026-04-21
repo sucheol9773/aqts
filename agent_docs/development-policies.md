@@ -328,7 +328,7 @@ CLI fallback 스크립트는 **선제적으로 `scripts/ci/install_syft.sh`, `in
 
 **Wiring 검증 포인트 (Phase 3 치환 시)**
 
-- `syft` / `grype` / `cosign` 버전을 `--version` 으로 출력해 사람이 읽을 수 있는 로그 흔적 남기기
+- `syft` / `grype` / `cosign` 버전을 **반드시 `${INSTALL_PREFIX}/<tool>` full-path 로** 출력해 사람이 읽을 수 있는 로그 흔적 남기기. bare `cosign version` / `syft --version` / `grype --version` 은 PATH 룩업이므로, `INSTALL_PREFIX` 가 PATH 에 없거나 PATH 상 더 오래된 동명 바이너리가 먼저 있으면 **방금 설치한 바이너리가 아닌 엉뚱한 것을 검증**하게 되어 false success / false failure 를 낸다 (silent miss, §8). `scripts/ci/install_{syft,grype,cosign}.sh` 는 이 규칙을 반영한 상태 — 해당 스크립트를 수정할 때 full-path 호출을 유지한다. Phase 3 YAML 치환 단계에서도 ad-hoc 으로 `run: cosign version` 을 넣지 않고, 반드시 설치 스크립트가 출력한 검증 로그에 의존하거나 명시적으로 `run: /usr/local/bin/cosign version` 처럼 full-path 로 호출한다.
 - `grype` SARIF 업로드 경로(`github/codeql-action/upload-sarif@v4`) 와 파일명 일치 확인
 - `cosign verify` 의 OIDC certificate-identity 정규식과 issuer 는 현재 값 그대로 유지 (CI/CD 동기화는 §13 본문 참조)
 - 치환 후 첫 배포는 `docs/security/supply-chain-policy.md` §7 의 수동 검증 절차로 SBOM attestation + signature 가 정상 부착됐는지 확인

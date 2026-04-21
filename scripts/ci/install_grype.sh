@@ -38,4 +38,9 @@ curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh \
     | sh -s -- -b "${INSTALL_PREFIX}" "${GRYPE_VERSION}"
 
 echo "═══ grype installed ═══"
-grype --version
+# ⚠️ 반드시 ${INSTALL_PREFIX}/grype 의 full-path 로 호출한다. bare `grype`
+# 는 PATH 룩업이므로 INSTALL_PREFIX 가 PATH 에 없거나 PATH 상 더 오래된
+# grype 가 먼저 있으면 방금 설치한 바이너리가 아닌 엉뚱한 것을 검증하게
+# 되어 false success / false failure 를 낼 수 있다 (silent miss 패턴,
+# development-policies.md §8, §13.1).
+"${INSTALL_PREFIX}/grype" --version

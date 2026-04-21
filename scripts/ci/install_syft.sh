@@ -43,4 +43,9 @@ else
 fi
 
 echo "═══ syft installed ═══"
-syft --version
+# ⚠️ 반드시 ${INSTALL_PREFIX}/syft 의 full-path 로 호출한다. bare `syft` 는
+# PATH 룩업이므로 INSTALL_PREFIX 가 PATH 에 없거나 PATH 상 더 오래된 syft
+# 가 먼저 있으면 방금 설치한 바이너리가 아닌 엉뚱한 것을 검증하게 되어
+# false success / false failure 를 낼 수 있다 (silent miss 패턴,
+# development-policies.md §8, §13.1).
+"${INSTALL_PREFIX}/syft" --version
