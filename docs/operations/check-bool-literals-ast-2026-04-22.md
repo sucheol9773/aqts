@@ -36,12 +36,13 @@
 
 ### 3.1 AST 분류기 (`scripts/check_bool_literals.py`)
 
-핵심 헬퍼 4 종과 분류기 `_classify` 로 구성한다.
+핵심 헬퍼 5 종과 분류기 `_classify` 로 구성한다.
 
 - `_attr_chain(node)`: `a.b.c` 형태의 `Attribute`/`Name` 체인을 점으로 연결한 문자열로 반환. `os.environ.get` 같은 체인을 식별할 때 사용. 하위 노드가 이 두 타입이 아니면 `None`.
 - `_is_env_call(node)`: 노드가 `ast.Call` 이고 그 func 의 체인이 `{"os.environ.get", "os.getenv"}` 중 하나이면 True. frozenset 상수(`_ENV_CALL_FUNCS`) 로 미리 고정.
-- `_is_string_constant(node)`: `ast.Constant` + `isinstance(value, str)`.
-- `_is_string_container(node)`: `ast.Tuple | ast.List | ast.Set` 이며 원소 중 하나 이상이 문자열 상수.
+- `_is_string_constant(node)`: `ast.Constant` + `isinstance(value, str)`. 주로 `compare_eq` 판정에 사용.
+- `_is_bool_literal_constant(node)`: `ast.Constant` 이며 값이 `_BOOL_LITERAL_TOKENS = {"true", "false", "1", "0", "yes", "no", "on", "off"}` 중 하나(대소문자 무시). `env_bool()` (`backend/core/utils/env.py::_TRUE_VALUES|_FALSE_VALUES`) 의 허용 토큰과 정확히 동일해야 한다.
+- `_is_string_container(node)`: `ast.Tuple | ast.List | ast.Set` 이며 원소 중 하나 이상이 **bool 리터럴 토큰 상수**. 임의 문자열 상수가 아니라 bool 토큰으로 제한하는 이유는 §3.4 에서 상술.
 
 분류기 `_classify(node) -> str | None` 는 세 가지 패턴을 반환한다.
 
@@ -62,16 +63,31 @@
 
 ### 3.3 테스트 하니스 (`backend/tests/test_check_bool_literals.py`)
 
-23개 테스트로 구성하며 6 그룹으로 분할한다.
+27개 테스트로 구성하며 6 그룹으로 분할한다.
 
 1. **Regex backward compat (5)**: regex 구현이 이미 잡던 5 패턴 — `os.environ.get(...) == "true"`, `os.getenv(...) == "true"`, `.lower()` on `os.environ.get`, `.lower()` on `os.getenv`, tuple `in` 멤버십 — 이 AST 구현에서도 그대로 잡힌다.
 2. **AST 신규 커버리지 (7)**: 위 §1.1 의 4 결손 각각 + `NotEq`/`NotIn` + `list`/`set` 컨테이너. 특히 중첩 괄호·멀티라인·Yoda-style 역전은 regex 로는 잡지 못하던 케이스이므로 **전환 가치의 직접 증빙** 이다.
-3. **False positive 방지 (5)**: `env_bool(...)` 헬퍼 호출은 허용, 문자열 리터럴 안의 코드 모양은 무시, 주석 줄 무시, `other_func(...) == "true"` 같은 무관한 호출 무시, `os.getenv(...) == 42` 같은 문자열 아닌 비교 무시.
+3. **False positive 방지 (9)**: `env_bool(...)` 헬퍼 호출은 허용, 문자열 리터럴 안의 코드 모양은 무시, 주석 줄 무시, `other_func(...) == "true"` 같은 무관한 호출 무시, `os.getenv(...) == 42` 같은 문자열 아닌 비교 무시, enum-style `in/not in` 멤버십(`("prod", "staging")`) 무시, bool 토큰이 섞인 혼합 컨테이너는 여전히 감지, 대소문자 다른 bool 토큰(`"TRUE"`/`"False"`) 도 감지.
 4. **Syntax error 회피 (1)**: 파싱 실패 파일은 조용히 skip.
 5. **면제 파일 (2)**: `backend/core/utils/env.py` 와 `scripts/check_bool_literals.py` 는 자기 자신이므로 스캔 제외. 현재 레포 전체에 대해 `check_python_files` 가 0 errors 를 반환하는 회귀 고정.
 6. **설정 파일 KV-regex (3)**: 비표준 값 감지, 표준 값 통과, 화이트리스트 밖 키 무시.
 
 테스트 패턴은 `test_check_loguru_style.py` 와 동일하게 `importlib.util.spec_from_file_location` 으로 체커 모듈을 임시 로드하고, `tmp_path` 에 샘플 `.py` 를 작성한 뒤 `_scan_file(path)` 를 직접 호출한다. `check_python_files` / `check_config_files` 는 ROOT 상수에 의존하므로 monkeypatch 로 ROOT 를 임시 디렉토리로 치환한다.
+
+### 3.4 Codex P2 회귀 방어 — `in_container` 판정 범위 축소
+
+초기 AST 구현(`ac9818f`) 의 `_is_string_container` 는 "하나 이상의 문자열 상수를 원소로 갖는 Tuple/List/Set" 을 모두 매칭했다. Codex 리뷰 봇이 이를 P2 이슈로 지적 — `os.getenv("APP_ENV") in ("prod", "staging")` 같은 enum-style 멤버십 검사가 **ad-hoc bool 파싱이 아님에도** `in_container` 로 잡혀 CI 에서 정당한 enum 비교를 차단할 수 있었다.
+
+이는 regex 구현과의 **동치성도 깨는** 회귀다. 기존 regex `r'os\.environ\.get\([^)]*\)\s*in\s*\([^)]*["\']true'` 는 컨테이너에 `"true"` 가 포함된 경우에만 매칭했으므로, enum 비교는 regex 시절부터 통과 대상이었다.
+
+해소: `_BOOL_LITERAL_TOKENS` frozenset 과 `_is_bool_literal_constant` 헬퍼를 도입하여, 컨테이너 원소 중 하나라도 bool 리터럴 토큰(대소문자 무시) 이어야 `_is_string_container` 가 True 를 반환하도록 제한. 토큰 집합은 `env_bool()` 의 허용 토큰(`_TRUE_VALUES | _FALSE_VALUES` = `{true, false, 1, 0, yes, no, on, off}`) 과 정확히 동일하게 유지한다 — 어느 한쪽이 넓거나 좁으면 "env_bool 이 허용하는데 검사기는 차단" 혹은 반대의 드리프트가 생긴다.
+
+부가 회귀 방어 테스트 4 건 추가 (§3.3 그룹 3 의 증가분):
+
+- `test_enum_style_in_membership_is_not_flagged` — `os.getenv("APP_ENV") in ("prod", "staging")` 통과.
+- `test_enum_style_not_in_membership_is_not_flagged` — `not in` 형태도 통과.
+- `test_mixed_container_with_bool_literal_is_still_flagged` — `("prod", "true")` 처럼 bool 토큰이 하나라도 섞이면 의심스러우므로 여전히 감지.
+- `test_case_insensitive_bool_literal_in_container_is_detected` — `("TRUE", "False")` 도 감지 (`env_bool()` 이 대소문자 무시이므로 동치성 유지).
 
 ---
 
@@ -81,10 +97,10 @@
 
 ```bash
 cd backend && python -m pytest tests/test_check_bool_literals.py -v --tb=short
-# 23 passed in 10.83s
+# 27 passed in 1.14s
 ```
 
-전 테스트 통과. 특히 §3.3 그룹 2 의 regex 결손 3종 (nested_call, multiline, reversed_compare) 이 AST 구현에서 통과하는 것이 본 전환의 핵심 증빙이다.
+전 테스트 통과. 특히 §3.3 그룹 2 의 regex 결손 3종 (nested_call, multiline, reversed_compare) 이 AST 구현에서 통과하는 것이 본 전환의 핵심 증빙이다. 그룹 3 의 enum-style 멤버십 4 건은 §3.4 Codex P2 회귀 방어의 회귀 고정.
 
 ### 4.2 기존 코드베이스 회귀 없음
 
@@ -104,7 +120,7 @@ python scripts/check_doc_sync.py --verbose                          # ✓ SYNC C
 python scripts/gen_status.py --update                               # total_tests = 4076
 ```
 
-`gen_status.py` 업데이트로 `README.md` · `docs/FEATURE_STATUS.md` · `docs/operations/release-gates.md` 의 "총 테스트 수" 표기가 4,053 → 4,076 으로 자동 갱신(+23, 본 커밋이 추가한 테스트 수와 일치). SSOT cascade 정상 동작.
+`gen_status.py` 업데이트로 `README.md` · `docs/FEATURE_STATUS.md` · `docs/operations/release-gates.md` 의 "총 테스트 수" 표기가 4,053 → 4,080 으로 자동 갱신(+27, AST 전환 23 건 + Codex P2 회귀 방어 4 건). SSOT cascade 정상 동작.
 
 ---
 

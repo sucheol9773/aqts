@@ -224,6 +224,48 @@ def test_env_call_with_non_string_comparison_is_not_flagged(tmp_path: Path) -> N
     assert _scan(source, tmp_path) == []
 
 
+def test_enum_style_in_membership_is_not_flagged(tmp_path: Path) -> None:
+    """Enum-style 멤버십 검사는 ad-hoc bool 파싱이 아니므로 오탐 금지.
+
+    회귀 방어: Codex review P2 (2026-04-22, PR #19) — 초기 AST 구현의
+    ``_is_string_container`` 는 임의 문자열 컨테이너를 모두 매칭하여
+    ``os.getenv("APP_ENV") in ("prod", "staging")`` 같은 정당한 enum
+    비교까지 ``in_container`` 로 잡았다. ``_is_bool_literal_constant`` 로
+    판정 술어를 bool 리터럴 토큰 집합 (``env_bool()`` 허용 집합과 동일) 로
+    좁혀 회귀 해소. 기존 regex 구현 (``...in \\([^)]*["\\\']true``) 도
+    ``"true"`` 가 포함된 컨테이너만 매칭했으므로 동치성 복원.
+    """
+    source = 'import os\nif os.getenv("APP_ENV") in ("prod", "staging"):\n    pass\n'
+    assert _scan(source, tmp_path) == []
+
+
+def test_enum_style_not_in_membership_is_not_flagged(tmp_path: Path) -> None:
+    """``not in`` 형태의 enum 비교도 동일하게 오탐 금지."""
+    source = 'import os\nif os.environ.get("REGION") not in ("us", "eu", "ap"):\n' "    pass\n"
+    assert _scan(source, tmp_path) == []
+
+
+def test_mixed_container_with_bool_literal_is_still_flagged(tmp_path: Path) -> None:
+    """bool 리터럴 토큰이 하나라도 섞여 있으면 여전히 ad-hoc bool 파싱으로
+    본다. enum + bool 혼합 컨테이너는 설계상 의심스러우므로 검출 유지.
+    """
+    source = 'import os\nif os.environ.get("X") in ("prod", "true"):\n    pass\n'
+    violations = _scan(source, tmp_path)
+    assert len(violations) == 1
+    assert violations[0][1] == "in_container"
+
+
+def test_case_insensitive_bool_literal_in_container_is_detected(tmp_path: Path) -> None:
+    """bool 리터럴 토큰 매칭은 대소문자를 무시한다 (``env_bool()`` 호환).
+
+    ``"TRUE"``, ``"False"``, ``"Yes"`` 등도 모두 bool 파싱 의도로 간주.
+    """
+    source = 'import os\nif os.environ.get("X") in ("TRUE", "False"):\n    pass\n'
+    violations = _scan(source, tmp_path)
+    assert len(violations) == 1
+    assert violations[0][1] == "in_container"
+
+
 # ═════════════════════════════════════════════════════════════════════════
 # 4. 구문 오류 파일은 조용히 skip 된다 (부분 파싱 안 함).
 # ═════════════════════════════════════════════════════════════════════════
