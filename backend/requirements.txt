@@ -12,6 +12,10 @@ python-multipart==0.0.26
  
 # ── Database ──
 sqlalchemy==2.0.31
+# SQLAlchemy 2.0 async 엔진은 greenlet 에 의존하지만 transitive dep 이라 환경에 따라 누락되면
+# `ValueError: the greenlet library is required` 가 발생하고, `orders.py` 같은 광범위 except 블록에서
+# 조용히 `success=False` 로 삼켜지는 silent miss (CLAUDE.md §8) 를 유발. 명시 고정으로 재발 방지.
+greenlet==3.4.0
 asyncpg==0.29.0
 alembic==1.13.1
 psycopg2-binary==2.9.9
