@@ -462,16 +462,14 @@ class OpinionGenerator:
             from db.database import async_session_factory
 
             async with async_session_factory() as session:
-                query = text(
-                    """
+                query = text("""
                     INSERT INTO investment_opinions
                         (time, ticker, opinion_type, action, conviction,
                          target_weight, reasoning, market_context, risk_factors, model_used)
                     VALUES
                         (:time, :ticker, :opinion_type, :action, :conviction,
                          :target_weight, :reasoning, :market_context, :risk_factors, :model_used)
-                """
-                )
+                """)
                 await session.execute(
                     query,
                     {

@@ -90,30 +90,26 @@ async def _find_order_by_kis_order_no(
     """
     async with async_session_factory() as session:
         # 1차: order_id로 정확 매칭
-        query = text(
-            """
+        query = text("""
             SELECT order_id, status
             FROM orders
             WHERE order_id = :kis_order_no
             LIMIT 1
-            """
-        )
+            """)
         result = await session.execute(query, {"kis_order_no": kis_order_no})
         row = result.mappings().first()
         if row:
             return dict(row)
 
         # 2차: ticker + SUBMITTED 상태 매칭 (최신 주문)
-        query_fallback = text(
-            """
+        query_fallback = text("""
             SELECT order_id, status
             FROM orders
             WHERE ticker = :ticker
               AND status = :submitted_status
             ORDER BY created_at DESC
             LIMIT 1
-            """
-        )
+            """)
         result = await session.execute(
             query_fallback,
             {

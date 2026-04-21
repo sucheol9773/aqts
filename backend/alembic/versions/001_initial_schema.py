@@ -350,8 +350,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("strategy_type", "risk_profile"),
     )
     # 초기 앙상블 가중치
-    op.execute(
-        """
+    op.execute("""
         INSERT INTO strategy_weights (strategy_type, weight, risk_profile) VALUES
             ('FACTOR', 0.25, 'BALANCED'),
             ('MEAN_REVERSION', 0.10, 'BALANCED'),
@@ -360,8 +359,7 @@ def upgrade() -> None:
             ('ML_SIGNAL', 0.15, 'BALANCED'),
             ('SENTIMENT', 0.10, 'BALANCED')
         ON CONFLICT DO NOTHING
-        """
-    )
+        """)
 
     # ── sentiment_scores (TimescaleDB Hypertable) ──
     op.create_table(

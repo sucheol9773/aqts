@@ -400,8 +400,7 @@ async def trigger_rebalancing(
             market_info: dict[str, Market] = {}
 
             try:
-                pos_query = text(
-                    """
+                pos_query = text("""
                     SELECT ticker,
                            SUM(CASE WHEN side = 'BUY' THEN filled_quantity * filled_price
                                     ELSE -filled_quantity * filled_price END) AS position_value
@@ -410,8 +409,7 @@ async def trigger_rebalancing(
                     GROUP BY ticker
                     HAVING SUM(CASE WHEN side = 'BUY' THEN filled_quantity
                                     ELSE -filled_quantity END) > 0
-                    """
-                )
+                    """)
                 result = await db.execute(pos_query)
                 total_pos_value = 0.0
                 pos_values: dict[str, float] = {}
@@ -635,25 +633,21 @@ async def get_audit_logs(
     try:
         # 쿼리 생성
         if module:
-            query = text(
-                """
+            query = text("""
                 SELECT id, time, action_type, module, description, before_state, after_state, metadata
                 FROM audit_logs
                 WHERE module = :module
                 ORDER BY time DESC
                 LIMIT :limit
-            """
-            )
+            """)
             result = await db.execute(query, {"module": module, "limit": limit})
         else:
-            query = text(
-                """
+            query = text("""
                 SELECT id, time, action_type, module, description, before_state, after_state, metadata
                 FROM audit_logs
                 ORDER BY time DESC
                 LIMIT :limit
-            """
-            )
+            """)
             result = await db.execute(query, {"limit": limit})
 
         rows = result.fetchall()

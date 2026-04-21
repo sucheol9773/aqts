@@ -364,16 +364,14 @@ class ExchangeRateManager:
         """
         try:
             async with async_session_factory() as session:
-                query = sa_text(
-                    """
+                query = sa_text("""
                     INSERT INTO exchange_rates (time, currency_pair, rate, source)
                     VALUES (:time, :currency_pair, :rate, :source)
                     ON CONFLICT (time, currency_pair)
                     DO UPDATE SET
                         rate = EXCLUDED.rate,
                         source = EXCLUDED.source
-                    """
-                )
+                    """)
                 await session.execute(
                     query,
                     {

@@ -372,13 +372,11 @@ class RebalancingEngine:
         """마지막 리밸런싱 시간 조회"""
         try:
             async with async_session_factory() as session:
-                query = text(
-                    """
+                query = text("""
                     SELECT MAX(executed_at)
                     FROM rebalancing_history
                     WHERE user_id = :user_id AND rebalancing_type = 'SCHEDULED'
-                """
-                )
+                """)
                 result = await session.execute(query, {"user_id": user_id})
                 row = result.fetchone()
                 return row[0] if row and row[0] else None
@@ -768,8 +766,7 @@ class RebalancingEngine:
         """리밸런싱 결과를 DB에 기록"""
         try:
             async with async_session_factory() as session:
-                query = text(
-                    """
+                query = text("""
                     INSERT INTO rebalancing_history (
                         user_id, rebalancing_type, trigger_reason,
                         orders, old_summary, new_summary, executed_at
@@ -778,8 +775,7 @@ class RebalancingEngine:
                         :user_id, :type, :reason,
                         :orders, :old_summary, :new_summary, :executed_at
                     )
-                """
-                )
+                """)
                 await session.execute(
                     query,
                     {
