@@ -150,7 +150,7 @@ API: `POST /api/system/param-sensitivity/run`, `GET /latest`, `GET /tornado` ([a
 
 ## 10. 팀 분배 관점
 
-본 영역은 마이그레이션 계획서(`docs/migration/cowork-to-agent-teams-plan.md` §6-1) 의 **팀메이트 1: Strategy/Backtest** 담당입니다. 파일 소유권:
+본 영역은 `agent_docs/governance.md` §2.1 의 **팀메이트 1 — Strategy / Backtest** 담당입니다. 파일 소유권:
 
 - 전속: `backend/core/strategy_ensemble/`, `backend/core/backtest_engine/`, `backend/core/oos/`, `backend/core/hyperopt/`, `backend/core/param_sensitivity/`, `backend/core/quant_engine/`, `backend/core/weight_optimizer.py`, `backend/config/ensemble_config.yaml`, `backend/config/ensemble_config_loader.py`
 - 공유(리드 승인 필요): `backend/config/operational_thresholds.yaml`, `backend/core/utils/`, `backend/config/settings.py`

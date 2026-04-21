@@ -346,4 +346,4 @@ docker compose -f docker-compose.yml run --rm -T backend \
 
 - 이 문서의 모든 섹션(0~15) 은 `docs/archive/CLAUDE-pre-phase1-migration.md` (2026-04-16 284줄 시점) 에서 원문 이반되었다. 향후 규칙 추가/수정은 **반드시 이 문서에만** 반영하며, `CLAUDE.md` 는 포인터만 유지한다.
 - 이반 과정에서 §14.3 의 `docs/architecture/notification-pipeline.md` 링크는 `agent_docs/` 가 프로젝트 루트 하위 한 단계 깊이이므로 `../docs/...` 로 상대 경로를 재작성했다 (내용 동일). 그 외 본문은 문장 단위 무손실이다.
-- 동기 담당: Tests/Doc-Sync 팀메이트 (`docs/migration/cowork-to-agent-teams-plan.md` §6-1).
+- 동기 담당: Tests/Doc-Sync 팀메이트 (`agent_docs/governance.md` §2.4).

@@ -2,7 +2,7 @@
 
 > Cowork → Claude Code Agent Teams 전환 이후의 **팀 운영 규칙**을 한 곳에 정리합니다. "무엇을 코딩하는가"(development-policies.md), "어디에 있는가"(architecture.md) 와 달리, 본 문서는 "누가, 어떤 순서로, 어떻게 협업하는가" 를 다룹니다.
 >
-> 정책의 상세 근거(마이그레이션 단계·외부 참고 자료)는 `docs/migration/cowork-to-agent-teams-plan.md` 에 있으며, 본 문서는 실행 시점에 팀메이트가 참조해야 할 간결한 거버넌스 요약을 제공합니다.
+> Phase 1 마이그레이션의 배경·결정은 커밋 `b656186` (`docs: Phase 1 — Cowork→Agent Teams 마이그레이션`) 의 메시지 본문과 `docs/archive/CLAUDE-pre-phase1-migration.md` (이관 이전 원본 스냅샷) 에 보존되어 있습니다. 본 문서는 **실행 시점의 단일 진실원천** 으로, 팀 소유권 체계는 §2, 외부 참고 자료 도입 심사 절차는 §5 를 기준으로 합니다. Phase 2 이후 외부 도구(StyleSeed, Graphify, agent-skills 등) 도입은 `docs/architecture/` 하위 ADR 로 작성하여 심사합니다.
 
 ---
 
@@ -21,7 +21,7 @@ Claude Code Agent Teams 는 다음 4개 레이어로 구성되며, AQTS 는 각 
 
 ## 2. 팀 구성 (4 Teammate 모델)
 
-마이그레이션 계획 §6-1 의 분배를 AQTS 실 디렉토리에 정렬합니다.
+Phase 1 마이그레이션 커밋 `b656186` 에서 확정된 4-팀메이트 분배를 AQTS 실 디렉토리에 정렬합니다. (분배 근거의 역사적 맥락은 `docs/archive/CLAUDE-pre-phase1-migration.md` 참조.)
 
 ### 2.1 팀메이트 1 — Strategy / Backtest
 
@@ -128,7 +128,7 @@ development-policies.md §14.2 의 3종 확인:
 3. **Wiring 적용 여부**: 기능만 설치하고 호출하지 않으면 회귀. 사용 경로를 통합 테스트로 봉인 (development-policies.md §5).
 4. **문서화**: 도입 이유·대안·롤백 경로를 `docs/architecture/` 하위에 ADR(Architecture Decision Record) 로 남긴다.
 
-마이그레이션 계획 §6-3 ~ §6-8 의 외부 참고(StyleSeed, Graphify, agent-skills 등) 는 심사를 거쳐 단계적 도입합니다.
+Phase 2 이후 외부 참고(StyleSeed, Graphify, agent-skills 등) 는 본 섹션의 1~4 기준으로 심사를 거쳐 단계적으로 도입하며, 각 도입 건은 `docs/architecture/` 하위 ADR 로 문서화합니다.
 
 ---
 
