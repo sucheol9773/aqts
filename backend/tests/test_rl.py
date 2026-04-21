@@ -8,6 +8,8 @@ RL 모듈 단위 테스트 (RL Module Unit Tests)
 - Gymnasium 호환성
 """
 
+import warnings
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -302,9 +304,21 @@ class TestGymCompatibility:
         """gymnasium env_checker 통과"""
         env = TradingEnv(sample_ohlcv, sample_config)
 
-        # Gymnasium 환경 유효성 검사
+        # Gymnasium 환경 유효성 검사.
+        # TradingEnv 는 `gymnasium.register` 에 등록된 spec 이 아니라 직접
+        # 인스턴스화 방식을 쓰기 때문에 env_checker 가
+        # "Not able to test alternative render modes" UserWarning 을 남긴다.
+        # 기능 결함이 아니라 "spec 기반 render mode 교차 검증만 생략됨"이라는
+        # 정보성 경고이므로 pattern 매칭으로 해당 경고만 silence 한다.
+        # (업스트림 gymnasium register 로 전환 시 제거 예정.)
         try:
-            check_env(env.unwrapped)
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r".*Not able to test alternative render modes.*",
+                    category=UserWarning,
+                )
+                check_env(env.unwrapped)
         except Exception as e:
             pytest.fail(f"Environment failed gym checker: {e}")
 
