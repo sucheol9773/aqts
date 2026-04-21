@@ -47,6 +47,8 @@ Response 같이 전부 sync 인 객체는 `MagicMock` 하나로 일원화한다.
 
 회귀 사례 2 (PR #8 재수정, 2026-04-21): `tests/test_coverage_collectors_v2.py::test_disconnect` 에서 `client._receive_task = AsyncMock()` + `done = MagicMock(return_value=False)` 로 수정한 결과, production `disconnect()` 의 `await self._receive_task` 가 `TypeError: object AsyncMock can't be used in 'await' expression` 을 일으켰다. **동시에 발견한 원인**: 원래 테스트(`.done.return_value=False` 만 설정, `done` 자체는 AsyncMock 이라 호출 시 coroutine 반환)는 `not <coroutine>` 이 항상 False 로 평가돼 if-block 을 스킵, cancel+await 경로를 **한 번도 실행하지 못한** silent miss 였다. 올바른 수정은 `asyncio.create_task(asyncio.sleep(3600))` 로 실제 Task 를 만들어 cancel+await 경로를 실제로 검증하는 것. 이후 `task.cancelled()` 어서트로 경로 실행까지 확인한다.
 
+회귀 사례 3 (PR #9, 2026-04-21): `tests/test_system_routes.py::test_trigger_rebalancing_success` 에서 `asyncio.create_task(_run_rebalancing_background(...))` 경로를 검증하기 위해 `patch("api.routes.system.asyncio")` 로 `asyncio.create_task` 만 mock 했으나, **인자로 전달되는 `_run_rebalancing_background(...)` 은 async def 라 호출 시점에 실제 coroutine 을 생성**한다. mock create_task 는 이 coroutine 을 저장만 하고 await 하지 않아 GC 시점에 `RuntimeWarning: coroutine '_run_rebalancing_background' was never awaited` 가 발생했고, pytest warnings summary 에서 경고가 **GC 가 발생한 후속 테스트(`test_trigger_rebalancing_no_profile`)** 로 귀속되어 원인 추적이 어려웠다. 올바른 수정은 `_run_rebalancing_background` 자체를 `patch(..., new=MagicMock(return_value=None))` 으로 교체하여 coroutine 생성 자체를 차단하는 것. **교훈**: `asyncio.create_task(async_fn(...))` 패턴을 테스트할 때는 `create_task` 뿐 아니라 **인자로 들어가는 async fn 까지 동시에 mock** 해야 한다. 하나만 mock 하면 coroutine leak 이 발생한다.
+
 ## 2. 커밋 시 문서화 규칙
 
 - 기능 추가, 변경, 버그 수정 등 **모든 커밋에는 관련 .md 파일 업데이트가 반드시 포함**되어야 한다.
