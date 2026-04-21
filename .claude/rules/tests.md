@@ -1,9 +1,9 @@
 ---
 paths:
   - "backend/tests/**/*.py"
-  - "backend/scripts/check_*.py"
-  - "backend/scripts/post_deploy_smoke.sh"
-  - "backend/scripts/pre_deploy_check.sh"
+  - "scripts/check_*.py"
+  - "scripts/post_deploy_smoke.sh"
+  - "scripts/pre_deploy_check.sh"
   - "scripts/gen_status.py"
 ---
 
@@ -51,6 +51,6 @@ python scripts/check_rbac_coverage.py                  # RBAC 관련 변경 시
 
 ## 소유권 경계
 
-- **팀메이트 4 소유**: `backend/tests/**/*.py`, `backend/scripts/check_*.py`, smoke/pre-deploy 스크립트, `scripts/gen_status.py`, `docs/FEATURE_STATUS.md`, `docs/PRD.md`
+- **팀메이트 4 소유**: `backend/tests/**/*.py`, `scripts/check_*.py`, smoke/pre-deploy 스크립트, `scripts/gen_status.py`, `docs/FEATURE_STATUS.md`, `docs/PRD.md`
 - **리드 전용**: 본 파일(`CLAUDE.md`) 및 `agent_docs/development-policies.md` 는 수정 금지. 규칙 변경 필요 시 메일박스로 리드에게 위임합니다.
 - 다른 팀메이트의 코드(`backend/core/...`, `backend/api/...`)에 직접 테스트를 추가할 때도, 실제 코드 수정은 해당 팀에게 위임하거나 사전 협의합니다.

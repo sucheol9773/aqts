@@ -2,7 +2,6 @@
 paths:
   - "backend/config/**/*.py"
   - "backend/config/**/*.yaml"
-  - "backend/config/**/*.yml"
   - ".env.example"
   - ".env"
 ---
@@ -47,7 +46,7 @@ paths:
 1. `.env.example` 에 키 + 소문자 bool 예시값 추가 (리드 승인 필요)
 2. `backend/config/settings.py` 에 Pydantic 필드 추가 (리드 승인 필요)
 3. 사용처에서 `env_bool()` 경유로 읽기
-4. `backend/scripts/check_bool_literals.py::BOOL_ENV_KEYS` 화이트리스트에 등록
+4. `scripts/check_bool_literals.py::BOOL_ENV_KEYS` 화이트리스트에 등록
 5. `docs/conventions/boolean-config.md` 에 사용 예 추가
 6. 커밋 전 `python scripts/check_bool_literals.py` 0 errors 확인
 

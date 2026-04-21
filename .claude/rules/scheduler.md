@@ -17,7 +17,6 @@ paths:
   - "backend/core/health_checker.py"
   - "docker-compose*.yml"
   - "monitoring/**/*.yml"
-  - "monitoring/**/*.yaml"
   - ".github/workflows/*.yml"
 ---
 
