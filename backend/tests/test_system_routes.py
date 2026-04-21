@@ -203,6 +203,13 @@ class TestSystemRoutes:
         mock_redis.set = AsyncMock(return_value=True)
         mock_redis.delete = AsyncMock()
 
+        # `api.routes.system.asyncio` 만 mock 하면 `asyncio.create_task(...)` 는 MagicMock 이지만
+        # 그 인자로 전달되는 `_run_rebalancing_background(...)` 은 async def 라 호출 시점에
+        # 실제 coroutine 을 생성한다. 이 coroutine 은 mock create_task 에 저장만 되고 await
+        # 되지 않아 GC 시점에 `RuntimeWarning: coroutine '_run_rebalancing_background' was
+        # never awaited` 가 남는다 (경고는 GC 가 일어난 후속 테스트로 귀속되어 test_no_profile
+        # 등에 잘못 붙어 보이는 silent miss 효과까지 유발). `_run_rebalancing_background` 자체
+        # 를 MagicMock 으로 패치해 coroutine 생성 자체를 차단한다.
         with (
             patch("api.routes.system.AuditLogger") as mock_audit,
             patch("api.routes.system.InvestorProfileManager") as mock_pm,
@@ -210,6 +217,10 @@ class TestSystemRoutes:
             patch("api.routes.system.is_executed", new_callable=AsyncMock, return_value=False),
             patch("api.routes.system.asyncio") as mock_asyncio,
             patch("api.routes.system._update_rebalancing_status", new_callable=AsyncMock),
+            patch(
+                "api.routes.system._run_rebalancing_background",
+                new=MagicMock(return_value=None),
+            ) as mock_bg,
         ):
             mock_audit.return_value = AsyncMock()
             mock_pm.return_value.get_profile = AsyncMock(return_value=mock_profile)
@@ -234,6 +245,8 @@ class TestSystemRoutes:
         assert "task_id" in body["data"]
         # 백그라운드 태스크가 create_task 로 생성되었는지 확인
         mock_asyncio.create_task.assert_called_once()
+        # `_run_rebalancing_background` 가 정확히 한 번 호출되었는지도 검증 (wiring 확인).
+        mock_bg.assert_called_once()
 
     async def test_trigger_rebalancing_no_profile(self):
         """POST /rebalancing 프로필 없음 시 실패"""
@@ -369,6 +382,8 @@ class TestSystemRoutes:
         uni_result.fetchall.return_value = [("005930", "IT", "KRX")]
         mock_db.execute.side_effect = [pos_result, uni_result]
 
+        # `_run_rebalancing_background` 자체도 MagicMock 으로 패치해야 coroutine 생성이 차단된다.
+        # (상세 근거는 test_trigger_rebalancing_success 의 주석 및 development-policies.md §1.1 참조)
         with (
             patch("api.routes.system.AuditLogger") as mock_audit,
             patch("api.routes.system.InvestorProfileManager") as mock_pm,
@@ -376,6 +391,10 @@ class TestSystemRoutes:
             patch("api.routes.system.is_executed", new_callable=AsyncMock, return_value=True),
             patch("api.routes.system.asyncio") as mock_asyncio,
             patch("api.routes.system._update_rebalancing_status", new_callable=AsyncMock),
+            patch(
+                "api.routes.system._run_rebalancing_background",
+                new=MagicMock(return_value=None),
+            ) as mock_bg,
         ):
             mock_audit.return_value = AsyncMock()
             mock_pm.return_value.get_profile = AsyncMock(return_value=mock_profile)
@@ -396,6 +415,8 @@ class TestSystemRoutes:
         body = json.loads(response.body.decode())
         assert body["success"] is True
         assert body["data"]["status"] == "accepted"
+        # `_run_rebalancing_background` 가 정확히 한 번 호출되었는지 wiring 검증.
+        mock_bg.assert_called_once()
 
     async def test_trigger_rebalancing_lock_conflict(self):
         """분산 락 획득 실패 시 409 반환"""
