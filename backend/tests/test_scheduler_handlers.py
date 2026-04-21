@@ -162,7 +162,13 @@ class TestCacheEnsembleResults:
     @pytest.mark.asyncio
     async def test_caches_results_to_redis(self):
         """앙상블 결과가 Redis에 캐시되는지"""
-        mock_pipe = AsyncMock()
+        # redis.asyncio Pipeline: `set()` 는 command 를 큐에 쌓고 self 를 반환하는
+        # fluent sync 메서드이고, `execute()` 만 async 이다. `mock_pipe` 전체를
+        # AsyncMock 으로 두면 `pipe.set(...)` 이 coroutine 을 반환하고 production
+        # 코드가 그것을 await 하지 않아 `AsyncMockMixin._execute_mock_call was never
+        # awaited` RuntimeWarning 이 뜬다. set 은 MagicMock, execute 만 AsyncMock.
+        mock_pipe = MagicMock()
+        mock_pipe.execute = AsyncMock()
         mock_redis = MagicMock()
         # pipeline()은 동기 호출이므로 MagicMock 사용
         mock_redis.pipeline.return_value = mock_pipe

@@ -19,6 +19,34 @@
 - 커밋 전에 반드시 전체 테스트를 실행하여 통과를 확인한다.
 - 커밋 전에 반드시 `cd backend && python -m black --check . --config pyproject.toml`로 포맷을 확인한다.
 
+### 1.1 AsyncMock vs MagicMock 선택 규칙
+
+`unittest.mock.AsyncMock` 은 호출 시 coroutine 을 반환하는 mock 이다. Production 코드 경로에 있는 모든 메서드가 **실제로 async 일 때만** 사용한다. Sync 메서드(속성 접근, fluent pipeline, `asyncio.Task.done()` 같은 플래그 조회 등)를 AsyncMock 으로 두면, 호출 결과 coroutine 이 생성되지만 production 코드는 await 하지 않으므로:
+
+1. `RuntimeWarning: coroutine '...AsyncMockMixin._execute_mock_call' was never awaited` 경고가 남는다.
+2. 후속 로직이 coroutine 을 실제 반환값으로 다루려다 AttributeError 등이 발생하고, 광범위 `except Exception` 블록이 이를 삼켜 silent miss (§8) 로 이어진다.
+3. 테스트는 "실패 경로" 가 아닌 "예외 삼킴 경로" 로 통과해 **기능 검증 자체가 무효** 가 된다.
+
+선택 기준:
+
+| 대상 | 실제 타입 | Mock 선택 |
+|---|---|---|
+| `httpx.Response.json()` / `.raise_for_status()` / `.status_code` / `.text` | sync | `MagicMock` |
+| `httpx.AsyncClient.get()` / `.post()` | async | `AsyncMock` |
+| `redis.asyncio.Pipeline.set()` / `.hset()` 등 명령 큐잉 | sync (fluent self 반환) | `MagicMock` |
+| `redis.asyncio.Pipeline.execute()` | async | `AsyncMock` |
+| `redis.asyncio.Redis.pipeline()` | sync | `MagicMock` |
+| `asyncio.Task.done()` / `.cancel()` / `.cancelled()` | sync | `MagicMock` (실제 Task 사용 권장) |
+| `asyncio.Task` 자체 (`await task` 지원) | awaitable | **실제 `asyncio.create_task(...)` 사용**. AsyncMock 은 `__await__` 를 구현하지 않아 `await task` 에서 `TypeError: object AsyncMock can't be used in 'await' expression` 이 발생한다. |
+| SQLAlchemy async `session.execute()` / `commit()` / `close()` | async | `AsyncMock` |
+| SQLAlchemy Result `.scalars().all()` 체이닝 | sync | `MagicMock` |
+
+Response 같이 전부 sync 인 객체는 `MagicMock` 하나로 일원화한다. `asyncio.Task` 처럼 awaitable + sync 플래그 메서드가 혼재한 객체는 **mock 이 아닌 진짜 Task 를 만들어** `asyncio.create_task(_noop())` 로 사용한다. AsyncMock 을 쓰고 `done`/`cancel` 만 override 하는 패턴은 `await task` 경로에서 `TypeError` 가 나므로 금지.
+
+회귀 사례 (PR #8, 2026-04-21): `mock_response = AsyncMock()` + `mock_response.json.return_value = {...}` 패턴이 `economic_collector.py:201` `data = response.json()` 와 만나 RuntimeWarning 3건 + silent miss 의심 경로를 만들었다. `mock_pipe = AsyncMock()` + `pipe.set(...)` 패턴이 `scheduler_handlers.py:947` 캐시 루프에서 동일 증상을 냈다. 수정은 Response/Pipeline 을 MagicMock 으로 일원화하는 것이었다.
+
+회귀 사례 2 (PR #8 재수정, 2026-04-21): `tests/test_coverage_collectors_v2.py::test_disconnect` 에서 `client._receive_task = AsyncMock()` + `done = MagicMock(return_value=False)` 로 수정한 결과, production `disconnect()` 의 `await self._receive_task` 가 `TypeError: object AsyncMock can't be used in 'await' expression` 을 일으켰다. **동시에 발견한 원인**: 원래 테스트(`.done.return_value=False` 만 설정, `done` 자체는 AsyncMock 이라 호출 시 coroutine 반환)는 `not <coroutine>` 이 항상 False 로 평가돼 if-block 을 스킵, cancel+await 경로를 **한 번도 실행하지 못한** silent miss 였다. 올바른 수정은 `asyncio.create_task(asyncio.sleep(3600))` 로 실제 Task 를 만들어 cancel+await 경로를 실제로 검증하는 것. 이후 `task.cancelled()` 어서트로 경로 실행까지 확인한다.
+
 ## 2. 커밋 시 문서화 규칙
 
 - 기능 추가, 변경, 버그 수정 등 **모든 커밋에는 관련 .md 파일 업데이트가 반드시 포함**되어야 한다.

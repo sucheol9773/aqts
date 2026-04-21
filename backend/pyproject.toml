@@ -40,6 +40,10 @@ pythonpath = ["."]
 addopts = "-v --tb=short --cov=core --cov=config --cov=db --cov=api --cov=contracts --cov-report=term-missing --cov-report=html:htmlcov"
 filterwarnings = [
     "ignore::DeprecationWarning",
+    # optuna 4.x TPESampler(multivariate=True) 는 실험 기능 경고를 남긴다.
+    # backend/core/hyperopt/optimizer.py 에서 의도적으로 사용 중이므로
+    # ExperimentalWarning 을 silence 한다. (업스트림 stable 승격 시 재검토)
+    "ignore::optuna.exceptions.ExperimentalWarning",
 ]
 markers = [
     "smoke: 핵심 기능 빠른 검증 (CI 필수, < 60초)",

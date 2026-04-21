@@ -18,6 +18,7 @@ Test categories covered:
 All tests pass with black + ruff compliance.
 """
 
+import asyncio
 import hashlib
 import json
 from datetime import datetime, timedelta, timezone
@@ -463,7 +464,12 @@ class TestFREDCollectorFetch:
             mock_settings.return_value.external.fred_api_key = "test_key"
 
             with patch("httpx.AsyncClient") as mock_client:
-                mock_response = AsyncMock()
+                # httpx Response.json() 은 sync 메서드이다. AsyncMock 으로 두면
+                # production `data = response.json()` 이 coroutine 을 받고 버려
+                # `AsyncMockMixin._execute_mock_call was never awaited` RuntimeWarning
+                # 이 뜨며, 후속 `data.get(...)` 은 AttributeError → 광범위 except 블록에
+                # 삼켜져 result=None 으로 silent miss (CLAUDE.md §8) 가 된다.
+                mock_response = MagicMock()
                 mock_response.json.return_value = {"observations": []}
                 mock_response.raise_for_status = MagicMock()
 
@@ -481,7 +487,8 @@ class TestFREDCollectorFetch:
             mock_settings.return_value.external.fred_api_key = "test_key"
 
             with patch("httpx.AsyncClient") as mock_client:
-                mock_response = AsyncMock()
+                # httpx Response.json() 은 sync → MagicMock (empty_observations 동일 근거)
+                mock_response = MagicMock()
                 mock_response.json.return_value = {"observations": [{"date": "2026-04-07", "value": "."}]}
                 mock_response.raise_for_status = MagicMock()
 
@@ -621,7 +628,8 @@ class TestECOSCollectorFetch:
             mock_settings.return_value.external.ecos_api_key = "test_key"
 
             with patch("httpx.AsyncClient") as mock_client:
-                mock_response = AsyncMock()
+                # httpx Response.json() 은 sync → MagicMock (FRED 동일 근거)
+                mock_response = MagicMock()
                 mock_response.json.return_value = {"RESULT": {"CODE": "ERROR-101", "MESSAGE": "잘못된 날짜 형식"}}
                 mock_response.raise_for_status = MagicMock()
 
@@ -1328,14 +1336,26 @@ class TestKISRealtimeClientDisconnect:
             client = KISRealtimeClient()
             client._connected = True
             client._ws = AsyncMock()
-            client._receive_task = AsyncMock()
-            client._receive_task.done.return_value = False
+
+            # production disconnect() 코드가 `self._receive_task.done()` (sync) 로
+            # 상태 확인 후 `.cancel()` (sync) 호출하고 `await self._receive_task` 로
+            # 종료 대기한다. AsyncMock 은 `__await__` 없이 coroutine 을 별도 생성하는
+            # 구조라 실제 asyncio.Task 처럼 await 되지 않는다. cancel+await 경로를
+            # 실제로 검증하려면 진짜 asyncio.Task 를 써야 한다.
+            async def _never_complete():
+                await asyncio.sleep(3600)
+
+            client._receive_task = asyncio.create_task(_never_complete())
             client._subscribed_tickers.add("005930")
 
             await client.disconnect()
 
             assert client._connected is False
             assert len(client._subscribed_tickers) == 0
+            # cancel+await 경로가 실제로 실행되었는지 검증 (original 테스트는 done()
+            # coroutine 이 truthy 로 평가돼 if-block 을 스킵하여 이 경로를 전혀
+            # 커버하지 못했다).
+            assert client._receive_task.cancelled() or client._receive_task.done()
 
 
 class TestKISRealtimeClientReconnect:
