@@ -41,6 +41,20 @@ docker compose -f docker-compose.yml up -d
 curl http://localhost:8000/api/system/health
 ```
 
+### 4. 로컬 개발자 lint/format 도구 설치 (선택)
+
+커밋 전 검증(`ruff check`, `black --check`)을 로컬에서 돌리려면 Docker 외부의
+Python 가상환경에 lint 도구를 설치한다. 버전 pin 은 `backend/requirements-dev.txt`
+단일 진실원천(SSOT)에서 관리되며 CI 와 자동으로 일치한다.
+
+```bash
+# lint 도구만 필요한 경우 (editor LSP 등)
+pip install -r backend/requirements-dev.txt
+
+# 런타임 + lint 도구 모두 설치 (테스트까지 로컬에서 돌리려면)
+pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+```
+
 ## 프로젝트 구조
 
 ```
@@ -65,7 +79,8 @@ aqts/
 │       └── deployment-roadmap.md    # OPS-008: 배포 및 검증 로드맵
 ├── backend/
 │   ├── Dockerfile                   # 멀티 스테이지 빌드 (Python 3.11.14+)
-│   ├── requirements.txt             # Python 의존성
+│   ├── requirements.txt             # Python 런타임 의존성
+│   ├── requirements-dev.txt         # 로컬/CI 전용 lint·format 도구 (ruff, black)
 │   ├── pyproject.toml               # pytest/ruff/black 설정
 │   ├── main.py                      # FastAPI 엔트리포인트 (Lifespan, GracefulShutdown)
 │   ├── config/
