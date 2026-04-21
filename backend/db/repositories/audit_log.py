@@ -46,10 +46,12 @@ class AuditLogger:
     ) -> None:
         import json
 
-        query = text("""
+        query = text(
+            """
             INSERT INTO audit_logs (time, action_type, module, description, before_state, after_state, metadata)
             VALUES (NOW(), :action_type, :module, :description, :before_state, :after_state, :metadata)
-        """)
+        """
+        )
         await self._db.execute(
             query,
             {

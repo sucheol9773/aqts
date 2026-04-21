@@ -250,20 +250,24 @@ class DailyOHLCVCollector:
     ) -> list[dict]:
         """DB에서 활성 종목 목록 조회"""
         if country:
-            query = text("""
+            query = text(
+                """
                 SELECT ticker, market, country
                 FROM universe
                 WHERE is_active = TRUE AND country = :country
                 ORDER BY market, ticker
-            """)
+            """
+            )
             rows = await self._db.execute(query, {"country": country})
         else:
-            query = text("""
+            query = text(
+                """
                 SELECT ticker, market, country
                 FROM universe
                 WHERE is_active = TRUE
                 ORDER BY country, market, ticker
-            """)
+            """
+            )
             rows = await self._db.execute(query)
 
         return [{"ticker": r[0], "market": r[1], "country": r[2]} for r in rows.fetchall()]

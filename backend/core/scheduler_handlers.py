@@ -350,7 +350,8 @@ async def handle_market_close() -> dict:
             from sqlalchemy import text
 
             today_date = now_kst().date()
-            query = text("""
+            query = text(
+                """
                 SELECT side,
                        COUNT(*) AS cnt,
                        COALESCE(SUM(filled_quantity * filled_price), 0) AS total_amount
@@ -358,7 +359,8 @@ async def handle_market_close() -> dict:
                 WHERE DATE(created_at) = :today
                   AND status IN ('FILLED', 'PARTIAL')
                 GROUP BY side
-            """)
+            """
+            )
             rows = await session.execute(query, {"today": today_date})
             trade_stats = {}
             for side, cnt, amount in rows.fetchall():
@@ -569,13 +571,15 @@ async def handle_post_market() -> dict:
             from sqlalchemy import text
 
             today_date = now_kst().date()
-            query = text("""
+            query = text(
+                """
                 SELECT ticker, side, filled_quantity, filled_price, status, created_at
                 FROM orders
                 WHERE DATE(created_at) = :today
                   AND status IN ('FILLED', 'PARTIAL')
                 ORDER BY created_at
-            """)
+            """
+            )
             rows = await session.execute(query, {"today": today_date})
             for ticker, side, qty, price, status, created_at in rows.fetchall():
                 trades.append(
@@ -874,13 +878,15 @@ async def _load_ohlcv_for_inference(
 
     for ticker in tickers:
         try:
-            query = text("""
+            query = text(
+                """
                 SELECT date, open, high, low, close, volume
                 FROM market_ohlcv
                 WHERE ticker = :ticker
                 ORDER BY date DESC
                 LIMIT :limit
-            """)
+            """
+            )
             rows = await session.execute(query, {"ticker": ticker, "limit": lookback_days})
             data = rows.fetchall()
 
@@ -909,12 +915,14 @@ async def _load_universe_grouped(
     """국가별로 그룹화된 활성 종목 조회"""
     from sqlalchemy import text
 
-    query = text("""
+    query = text(
+        """
         SELECT ticker, market, country
         FROM universe
         WHERE is_active = TRUE
         ORDER BY country, market, ticker
-    """)
+    """
+    )
     rows = await session.execute(query)
     items = rows.fetchall()
 

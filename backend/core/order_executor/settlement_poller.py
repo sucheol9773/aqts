@@ -163,7 +163,8 @@ async def _update_order_status(
     filled_at = datetime.now(timezone.utc) if new_status == OrderStatus.FILLED else None
 
     async with async_session_factory() as session:
-        update_query = text("""
+        update_query = text(
+            """
             UPDATE orders
             SET status = :new_status,
                 filled_quantity = :filled_quantity,
@@ -171,7 +172,8 @@ async def _update_order_status(
                 filled_at = COALESCE(:filled_at, filled_at)
             WHERE order_id = :order_id
               AND status = :current_status
-            """)
+            """
+        )
         result = await session.execute(
             update_query,
             {
@@ -283,13 +285,15 @@ async def reconcile_all_submitted(
 
     # SUBMITTED 주문 조회
     async with async_session_factory() as session:
-        query = text("""
+        query = text(
+            """
             SELECT order_id, ticker, market, status
             FROM orders
             WHERE status = 'SUBMITTED'
               AND DATE(created_at) = CURRENT_DATE
             ORDER BY created_at
-            """)
+            """
+        )
         result = await session.execute(query)
         submitted_orders = result.fetchall()
 

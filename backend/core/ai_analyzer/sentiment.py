@@ -308,14 +308,16 @@ class SentimentAnalyzer:
             from db.database import async_session_factory
 
             async with async_session_factory() as session:
-                query = text("""
+                query = text(
+                    """
                     INSERT INTO sentiment_scores
                         (time, ticker, score, confidence, summary,
                          positive_factors, negative_factors, news_count, model_used)
                     VALUES
                         (:time, :ticker, :score, :confidence, :summary,
                          :positive_factors, :negative_factors, :news_count, :model_used)
-                """)
+                """
+                )
                 await session.execute(
                     query,
                     {

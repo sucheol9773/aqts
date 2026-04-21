@@ -306,13 +306,15 @@ class UniverseManager:
 
         try:
             async with async_session_factory() as db_session:
-                query = text("""
+                query = text(
+                    """
                     SELECT ticker, market, sector, asset_type, market_cap,
                            avg_daily_volume, is_active, updated_at
                     FROM universe
                     WHERE is_active = true
                     ORDER BY market_cap DESC NULLS LAST
-                """)
+                """
+                )
 
                 result = await db_session.execute(query)
                 rows = result.fetchall()
@@ -350,7 +352,8 @@ class UniverseManager:
         try:
             async with async_session_factory() as db_session:
                 for item in items:
-                    query = text("""
+                    query = text(
+                        """
                         INSERT INTO universe (
                             ticker, market, sector, asset_type,
                             market_cap, avg_daily_volume, is_active, updated_at
@@ -363,7 +366,8 @@ class UniverseManager:
                             avg_daily_volume = EXCLUDED.avg_daily_volume,
                             is_active = EXCLUDED.is_active,
                             updated_at = EXCLUDED.updated_at
-                    """)
+                    """
+                    )
 
                     await db_session.execute(
                         query,

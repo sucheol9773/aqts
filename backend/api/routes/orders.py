@@ -452,23 +452,27 @@ async def get_orders(
 
         try:
             if status:
-                query = text("""
+                query = text(
+                    """
                     SELECT order_id, ticker, market, side, quantity,
                            filled_quantity, filled_price, status, created_at, error_message
                     FROM orders
                     WHERE status = :status
                     ORDER BY created_at DESC
                     LIMIT :limit
-                """)
+                """
+                )
                 result = await db.execute(query, {"status": status, "limit": limit})
             else:
-                query = text("""
+                query = text(
+                    """
                     SELECT order_id, ticker, market, side, quantity,
                            filled_quantity, filled_price, status, created_at, error_message
                     FROM orders
                     ORDER BY created_at DESC
                     LIMIT :limit
-                """)
+                """
+                )
                 result = await db.execute(query, {"limit": limit})
 
             rows = result.fetchall()
@@ -507,12 +511,14 @@ async def get_order(
     단일 주문 상세 조회
     """
     try:
-        query = text("""
+        query = text(
+            """
             SELECT order_id, ticker, market, side, quantity,
                    filled_quantity, filled_price, status, created_at, error_message
             FROM orders
             WHERE order_id = :order_id
-        """)
+        """
+        )
         result = await db.execute(query, {"order_id": order_id})
         row = result.fetchone()
 
@@ -558,9 +564,11 @@ async def cancel_order(
     """
     try:
         # 현재 주문 상태 확인
-        check_query = text("""
+        check_query = text(
+            """
             SELECT status FROM orders WHERE order_id = :order_id
-        """)
+        """
+        )
         result = await db.execute(check_query, {"order_id": order_id})
         row = result.fetchone()
 
@@ -604,9 +612,11 @@ async def cancel_order(
             )
 
         # 상태 변경
-        update_query = text("""
+        update_query = text(
+            """
             UPDATE orders SET status = 'CANCELLED' WHERE order_id = :order_id
-        """)
+        """
+        )
         await db.execute(update_query, {"order_id": order_id})
         await db.commit()
 

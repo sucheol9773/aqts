@@ -112,7 +112,8 @@ class PgOrderIdempotencyStore:
         try:
             with self._engine.connect() as conn:
                 row = conn.execute(
-                    text(f"""
+                    text(
+                        f"""
                         SELECT fingerprint, status_code, response_body,
                                EXTRACT(EPOCH FROM created_at) AS created_at_epoch,
                                expires_at
@@ -120,7 +121,8 @@ class PgOrderIdempotencyStore:
                         WHERE user_id = :user_id
                           AND route = :route
                           AND idempotency_key = :key
-                        """),
+                        """
+                    ),
                     {"user_id": user_id, "route": route, "key": key},
                 ).fetchone()
         except SQLAlchemyError as e:
@@ -174,14 +176,16 @@ class PgOrderIdempotencyStore:
         try:
             with self._engine.begin() as conn:
                 conn.execute(
-                    text(f"""
+                    text(
+                        f"""
                         INSERT INTO {TABLE_NAME}
                             (user_id, route, idempotency_key, fingerprint,
                              status_code, response_body, created_at, expires_at)
                         VALUES
                             (:user_id, :route, :key, :fingerprint,
                              :status_code, CAST(:body AS JSONB), :created_at, :expires_at)
-                        """),
+                        """
+                    ),
                     {
                         "user_id": user_id,
                         "route": route,

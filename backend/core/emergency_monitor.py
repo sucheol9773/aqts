@@ -396,12 +396,14 @@ class EmergencyRebalancingMonitor:
         """
         try:
             async with async_session_factory() as session:
-                query = text("""
+                query = text(
+                    """
                     SELECT ticker, market, quantity, avg_price, current_price
                     FROM portfolio_holdings
                     WHERE quantity > 0
                     ORDER BY COALESCE(current_price, 0) * quantity DESC
-                """)
+                """
+                )
                 result = await session.execute(query)
                 rows = result.fetchall()
 
@@ -798,7 +800,8 @@ class EmergencyRebalancingMonitor:
             import json
 
             async with async_session_factory() as session:
-                query = text("""
+                query = text(
+                    """
                     INSERT INTO rebalancing_history (
                         user_id, rebalancing_type, trigger_reason,
                         orders, old_summary, new_summary, executed_at
@@ -807,7 +810,8 @@ class EmergencyRebalancingMonitor:
                         :user_id, :type, :reason,
                         :orders, :old_summary, :new_summary, :executed_at
                     )
-                """)
+                """
+                )
                 await session.execute(
                     query,
                     {

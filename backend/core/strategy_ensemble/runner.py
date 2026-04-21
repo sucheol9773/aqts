@@ -188,7 +188,8 @@ class DynamicEnsembleRunner:
         """DB에서 OHLCV 데이터 조회"""
         market_filter = self._get_market_filter(country)
 
-        query = text("""
+        query = text(
+            """
             SELECT time, open, high, low, close, volume
             FROM market_ohlcv
             WHERE ticker = :ticker
@@ -196,7 +197,8 @@ class DynamicEnsembleRunner:
               AND interval = '1d'
             ORDER BY time DESC
             LIMIT :limit
-        """)
+        """
+        )
 
         result = await self._db.execute(
             query,
