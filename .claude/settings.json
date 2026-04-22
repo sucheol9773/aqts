@@ -66,5 +66,17 @@
   "env": {
     "PYTHONUNBUFFERED": "1"
   },
-  "hooks": {}
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "scripts/team/pre_bash_guard.sh"
+          }
+        ]
+      }
+    ]
+  }
 }
