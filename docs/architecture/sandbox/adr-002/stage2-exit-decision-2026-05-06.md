@@ -59,9 +59,12 @@
 ### 2.3 데이터 수집 명령 (판정일 실행 예시)
 
 ```bash
-# 각 스킬 workspace 에서
+# 각 스킬 workspace 에서 — 안쪽 glob 은 인용 밖으로 빼서 확장 허용
 for skill_dir in docs/architecture/sandbox/adr-002/*-workspace; do
-  jq '{skill: input_filename, delta: .delta}' "$skill_dir/iteration-1/*/benchmark.json"
+  for bench in "$skill_dir"/iteration-1/*/benchmark.json; do
+    [[ -e "$bench" ]] || continue  # glob 미매칭 시 리터럴 경로 스킵
+    jq '{skill: input_filename, delta: .delta}' "$bench"
+  done
 done
 ```
 
