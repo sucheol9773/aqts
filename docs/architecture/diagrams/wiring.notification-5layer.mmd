@@ -1,3 +1,4 @@
+flowchart LR
 %% 알림 파이프라인 5 레이어 "정의 ↔ 적용" 매트릭스.
 %% SSOT: CLAUDE.md §6, agent_docs/development-policies.md §14,
 %%       docs/architecture/notification-pipeline.md.
@@ -6,8 +7,7 @@
 %% 시각적 체크리스트다. 배포 후 반드시 다음 3 grep 으로 wiring 완료 검증:
 %%   docker compose logs backend --tail=500 | grep 'NotificationRouter wired'
 %%   docker compose logs backend --tail=500 | grep 'AlertRetryLoop started'
-%%   curl -s http://<backend>/metrics | grep -c 'aqts_alert_dispatch'   # 0 이면 결손
-flowchart LR
+%%   curl -s http://BACKEND_HOST/metrics | grep -c 'aqts_alert_dispatch'   # 0 이면 결손
     classDef def fill:#fff2cc,stroke:#d6b656,stroke-width:2px
     classDef app fill:#d5e8d4,stroke:#82b366,stroke-width:2px
     classDef verify fill:#f8cecc,stroke:#b85450,stroke-width:2px

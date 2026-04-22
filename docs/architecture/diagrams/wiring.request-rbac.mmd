@@ -1,12 +1,12 @@
+flowchart TD
 %% HTTP 요청이 미들웨어 체인을 타고 RBAC dependency 를 거쳐 핸들러까지 도달하는
-%% 순서. Starlette 미들웨어 스택은 등록 역순 진입 → 정순 exit 이라 add_middleware
+%% 순서. Starlette 미들웨어 스택은 등록 역순 진입, 정순 exit 이라 add_middleware
 %% 순서가 중요하다 (아래 화살표는 "실행 순서" 기준).
 %%
 %% 소스: backend/main.py:376-421, backend/api/deps.py (require_scope / require_role)
 %% 목적: CORS 이후에 RequestLogging 이 적용되는지 등, "정의만 되고 적용 누락" 회귀
-%%       방지. RBAC 는 정적 분석에서 Depends(...) 체인으로 보여도, 실제 적용 여부는
+%%       방지. RBAC 는 정적 분석에서 Depends 체인으로 보여도, 실제 적용 여부는
 %%       scripts/check_rbac_coverage.py 가 에러 없이 통과해야만 보장된다.
-flowchart TD
     classDef mw fill:#e1d5e7,stroke:#9673a6,stroke-width:2px
     classDef dep fill:#dae8fc,stroke:#6c8ebf,stroke-width:2px
     classDef guard fill:#f8cecc,stroke:#b85450,stroke-width:2px
