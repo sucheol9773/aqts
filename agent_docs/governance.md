@@ -13,7 +13,7 @@ Claude Code Agent Teams 는 다음 4개 레이어로 구성되며, AQTS 는 각 
 | 레이어 | 정의 | AQTS 매핑 |
 |---|---|---|
 | Model | 각 팀메이트가 사용하는 LLM | Claude Code 기본 (Opus/Sonnet 혼합). 리서치·리팩토링은 Opus, 일상 작업은 Sonnet 을 권장 |
-| Harness | 세션 운영 방식 | `claude` CLI + Agent Teams (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`), `Shift+Down` 으로 팀메이트 순환 |
+| Harness | 세션 운영 방식 | **4개 독립 `claude` CLI 세션 (worktree 격리)**. 팀별 `../aqts-team{N}-<role>/` worktree + `team{N}/<type>/<slug>` 브랜치 prefix. `.claude/settings.json` (permissions/hooks) + `.mcp.json` (opt-in MCP) + `scripts/team/*.sh` (bootstrap/teardown/mailbox/wiring_smoke/pre_bash_guard) 공통 계약. 이전 Cowork `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` + `Shift+Down` 팀메이트 순환 방식은 2026-04-22 OPS-023 migration (PR #28) 으로 폐기 |
 | Tools | 사용 가능한 도구 | 파일 I/O, bash, git, `scripts/check_*`, `scripts/post_deploy_smoke.sh`, pytest, ruff, black |
 | Env | 작업 환경 | 각 팀메이트는 `git worktree` 로 분리된 브랜치에서 작업. 공유 파일은 리드만 수정 |
 

@@ -32,9 +32,15 @@
 6. .env 실값 / API 키 / 계좌번호 / 사용자 식별정보는 어떤 컨텍스트에도 포함하지 마십시오. 키 이름은 .env.example 을 인용합니다.
 
 [세션 운영]
-- `git worktree add ../aqts-<team>-<task> <branch>` 로 독립 워크트리에서 작업합니다.
+- **4개 독립 `claude` CLI 세션 + worktree 격리 방식** (governance.md §1 Harness). 팀별 기본 worktree 는 `../aqts-team{N}-<role>/` 에 이미 생성되어 있으며, 추가 작업용 worktree 가 필요하면 `scripts/team/bootstrap_worktree.sh <N> <slug>` 를 사용합니다 (`git worktree add` 를 직접 호출하지 않습니다).
 - 고위험 변경(알림 파이프라인, RBAC, 공급망, 스케줄러 동시성)은 Plan Mode 로 계획서를 먼저 작성하고 리드에 `[Lead-Approval]` 메일로 승인을 요청합니다.
 - 커밋 메시지에 변경 이유 + 영향 범위 + 관련 문서 경로를 명시합니다.
+
+[온보딩 체크리스트 (세션 최초 1회)]
+- GitHub Personal Access Token 을 `~/.zshrc` 또는 `~/.bashrc` 에 export: `export GITHUB_PERSONAL_ACCESS_TOKEN="ghp_..."`. 최소 scope = `repo` + `read:org` (선택: `workflow`). 토큰 미설정 시 `.mcp.json` 의 GitHub MCP 는 기동되나 API 호출이 401 로 실패합니다 (세션 진행 자체는 정상, silent miss 아님).
+- 워크트리 루트에서 `claude` 를 실행하면 `.claude/settings.json` (permissions/hooks/env) 과 `.mcp.json` (MCP 승인 프롬프트) 가 자동으로 로드됩니다. 팀 4 Pilot worktree (`aqts-team4-skills-pilot`, `pilot/team4-skills-w1`) 는 2026-05-06 까지 ADR-002 Stage 2 관찰 중으로 `.claude/settings.local.json` 에 MCP 전량 비활성 override 가 걸려 있습니다.
+- 동시 `docker compose up` 시 포트 충돌 방지: `source .env.worktree` 후 기동 (bootstrap_worktree.sh 가 팀별 DB/MONGO/REDIS/BACKEND 포트 10-step offset 을 자동 생성).
+- 상세 가이드: `docs/operations/claude-multisession-migration-2026-04-22.md` (OPS-023) + `docs/operations/mcp-setup-2026-04-22.md` (OPS-024).
 ```
 
 ---
