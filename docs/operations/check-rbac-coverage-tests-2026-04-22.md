@@ -97,7 +97,7 @@ python scripts/check_doc_sync.py --verbose                           # ✓ SYNC 
 ## 5. 후속 작업
 
 1. **CLAUDE.md §9 TODO 완결**: "AST 기반 정적 검사기 커버리지 확장" 은 `check_loguru_style.py`(2026-04-15) → `check_bool_literals.py`(2026-04-22 Stage 2) → `check_rbac_coverage.py`(2026-04-22 Stage 3) 로 세 검사기 모두 테스트 하니스 보유. 본 커밋으로 완결 표시.
-2. **Phase 1 Path A 종결 → Phase 2 ADR 진입**: Stage 3 완료로 Phase 1 Path A(순차 마이그레이션) 의 정적 검사기 강화 블록이 끝난다. 다음 단계는 Phase 2 ADR 작성 — Agent Teams 공식 진입 gate 와 외부 참고(StyleSeed, Graphify, agent-skills) 심사.
+2. **Phase 1 Path A 종결 → Phase 2 ADR 진입**: Stage 3 완료로 Phase 1 Path A(순차 마이그레이션) 의 정적 검사기 강화 블록이 끝난다. 다음 단계는 Phase 2 ADR 작성 — Agent Teams 공식 진입 gate 와 외부 참고(StyleSeed, Graphify, agent-skills) 심사. **(2026-04-22 갱신)**: [ADR-001](../architecture/adr-001-phase2-entry-gate.md) 으로 Phase 2 진입 gate 확립. 본 문서의 "Phase 2 ADR 작성" 후속 작업은 그 ADR 로 연결되며, 개별 도구 심사는 ADR-002 이후로 위임.
 3. **신규 정적 검사기의 기본 템플릿**: 향후 `check_*.py` 를 추가할 때는 최소 본 문서의 6 그룹 구조에 해당하는 테스트를 함께 작성하는 것이 내부 표준. 규칙 변경을 테스트 없이 머지하는 관행이 있던 기존 practice 와 단절.
 
 ---

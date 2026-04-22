@@ -147,7 +147,7 @@ development-policies.md §14.2 의 3종 확인:
 3. **Wiring 적용 여부**: 기능만 설치하고 호출하지 않으면 회귀. 사용 경로를 통합 테스트로 봉인 (development-policies.md §5).
 4. **문서화**: 도입 이유·대안·롤백 경로를 `docs/architecture/` 하위에 ADR(Architecture Decision Record) 로 남긴다.
 
-Phase 2 이후 외부 참고(StyleSeed, Graphify, agent-skills 등) 는 본 섹션의 1~4 기준으로 심사를 거쳐 단계적으로 도입하며, 각 도입 건은 `docs/architecture/` 하위 ADR 로 문서화합니다.
+Phase 2 이후 외부 참고(StyleSeed, Graphify, agent-skills 등) 는 본 섹션의 1~4 기준으로 심사를 거쳐 단계적으로 도입하며, 각 도입 건은 `docs/architecture/` 하위 ADR 로 문서화합니다. **구체적 심사 프로세스 (4 단계: Proposal → Sandbox → Limited Rollout → Full Adoption) 와 평가표 템플릿은 [ADR-001 Phase 2 진입 gate 및 외부 참고 도구 심사 프레임워크](../docs/architecture/adr-001-phase2-entry-gate.md) 를 단일 진실원천으로 사용합니다.**
 
 ---
 
