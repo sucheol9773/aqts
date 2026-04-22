@@ -10,7 +10,7 @@ priority: Ask  # [P0] 긴급, [Ask] 응답 요청, [FYI] 참고, [Lead-Approval]
 
 ## 요약
 
-Phase 4 migration (PR #28) 로 `.mcp.json` 에 `github` MCP 서버가 등록됐습니다. 각자 GitHub PAT 를 `~/.zshrc` 에 export 해야 MCP 가 정상 작동합니다.
+Phase 4 migration (PR #28) 로 `.mcp.json` 에 `github` MCP 서버가 등록됐습니다. 각자 GitHub PAT 를 셸 rc 파일 (`~/.zshrc` 또는 `~/.bashrc`) 에 export 해야 MCP 가 정상 작동합니다.
 
 ## 맥락
 
@@ -32,15 +32,17 @@ GitHub → Settings → Developer settings → Personal access tokens → **Toke
   - [x] `read:org` — 조직 리뷰어 조회
   - [ ] `workflow` — (팀 2 는 권장) Actions 실행 이력 조회에 사용. CD triage 가 주 업무라 유용
 
-### 2. `~/.zshrc` 에 export 추가
+### 2. 로그인 셸 rc 파일에 export 추가
+
+로그인 셸이 zsh 면 `~/.zshrc`, bash 면 `~/.bashrc` (macOS 최신은 zsh 기본, Linux 서버는 bash 기본). 본인 셸 확인: `echo $SHELL`.
 
 ```bash
-# ~/.zshrc 하단에 추가
+# 해당 rc 파일 하단에 추가 (~/.zshrc 또는 ~/.bashrc)
 export GITHUB_PERSONAL_ACCESS_TOKEN="ghp_xxxxx..."
 ```
 
 ```bash
-source ~/.zshrc
+source ~/.zshrc   # bash 사용 시: source ~/.bashrc
 ```
 
 ### 3. Claude 세션 재기동 후 검증
@@ -57,7 +59,7 @@ claude
 
 ### 5. 만료 관리
 
-PAT 만료 임박 시 `.zshrc` 만 업데이트 (재생성 + export 값 교체). 일괄 관리는 향후 secret manager 도입 검토 (OPS-024 §5.1).
+PAT 만료 임박 시 본인 rc 파일 (`~/.zshrc` 또는 `~/.bashrc`) 만 업데이트 (재생성 + export 값 교체). 일괄 관리는 향후 secret manager 도입 검토 (OPS-024 §5.1).
 
 ## 응답 기한
 
