@@ -1,3 +1,4 @@
+flowchart LR
 %% ReconciliationRunner fan-out.
 %% 브로커(KIS) 잔고와 내부 PortfolioLedger 를 한 사이클마다 대조하고, mismatch
 %% 가 임계를 초과하면 TradingGuard 의 kill switch 를 활성화하는 경로.
@@ -5,8 +6,7 @@
 %% 소스: backend/core/reconciliation_runner.py, backend/core/reconciliation.py,
 %%       backend/core/reconciliation_providers.py
 %% Wiring 진입점: main.py:311 (embedded) / scheduler_main.py:139 (standalone)
-%% Mermaid 주의: 노드 라벨에 "()" 사용 시 파서가 shape 로 해석 → 여기선 모두 대괄호/<br>로 대체.
-flowchart LR
+%% Mermaid 주의: 노드 라벨에 괄호 사용 시 파서가 shape 로 해석하므로 모두 대괄호/br 태그로 대체.
     classDef scheduler fill:#ffe6cc,stroke:#f08000,stroke-width:2px
     classDef runner fill:#dae8fc,stroke:#6c8ebf,stroke-width:2px
     classDef provider fill:#d5e8d4,stroke:#82b366,stroke-width:2px

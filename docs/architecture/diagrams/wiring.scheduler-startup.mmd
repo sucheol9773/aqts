@@ -1,14 +1,14 @@
+sequenceDiagram
 %% 수작업 wiring 다이어그램. backend/scheduler_main.py 프로세스의 런타임
 %% 초기화 순서. embedded mode (SCHEDULER_ENABLED=true, main.py 내부) 와 달리,
 %% 본 경로는 별도 컨테이너로 분리되어 운영된다.
 %%
 %% 소스: backend/scheduler_main.py:40-174
 %% 핵심 차이 (vs. main.py lifespan):
-%%   - FastAPI 없음. asyncio.run(main()) 진입.
+%%   - FastAPI 없음. asyncio.run 로 main 진입.
 %%   - NotificationRouter 미주입 (알림은 API 컨테이너에서만 발송).
 %%   - register_pipeline_handlers 로 APScheduler 동적 콜백 등록 —
 %%     정적 import 그래프에 잡히지 않는다 (CLAUDE.md §6).
-sequenceDiagram
     autonumber
     participant Main as main()<br/>(scheduler_main.py:40)
     participant Mongo as MongoDBManager

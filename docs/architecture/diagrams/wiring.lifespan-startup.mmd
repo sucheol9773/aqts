@@ -1,10 +1,10 @@
+sequenceDiagram
 %% 수작업 wiring 다이어그램. 정적 import 분석(module-deps.*)이 포착할 수
 %% 없는 FastAPI lifespan 의 런타임 초기화 순서를 시각화한다.
 %%
 %% 소스: backend/main.py:106-320 (lifespan 함수)
 %% 목적: CLAUDE.md §6 "정의했다 ≠ 적용했다" 원칙에 따라, 각 컴포넌트가 정의된
 %%       위치와 lifespan 내 실제 wiring 위치를 라벨에 병기한다.
-sequenceDiagram
     autonumber
     participant LS as lifespan<br/>(main.py:106)
     participant Mongo as MongoDBManager
