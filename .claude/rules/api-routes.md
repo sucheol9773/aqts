@@ -11,7 +11,7 @@ paths:
   - "backend/core/idempotency/**/*.py"
   - "backend/core/trading_guard.py"
   - "backend/core/portfolio_ledger.py"
-  - "backend/core/data_collector/kis_*.py"
+  - "backend/core/data_collector/**/*.py"
 ---
 
 # API / RBAC / Security 영역 가드
