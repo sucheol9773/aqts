@@ -35,3 +35,10 @@
 # ── Linters & Formatters ──
 ruff==0.5.0
 black==24.4.2
+
+# ── Diagram Generation ──
+#
+# pydeps 는 ``scripts/generate_diagrams.py`` 의 모듈 의존성 SVG/DOT 생성
+# 파이프라인에 사용. 시스템 의존성: graphviz (`brew install graphviz` / OS
+# 패키지). 자세한 사용법과 산출물 구조는 `docs/architecture/diagrams/README.md`.
+pydeps==1.12.20

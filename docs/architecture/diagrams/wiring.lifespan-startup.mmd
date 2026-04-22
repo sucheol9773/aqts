@@ -1,0 +1,67 @@
+%% 수작업 wiring 다이어그램. 정적 import 분석(module-deps.*)이 포착할 수
+%% 없는 FastAPI lifespan 의 런타임 초기화 순서를 시각화한다.
+%%
+%% 소스: backend/main.py:106-320 (lifespan 함수)
+%% 목적: CLAUDE.md §6 "정의했다 ≠ 적용했다" 원칙에 따라, 각 컴포넌트가 정의된
+%%       위치와 lifespan 내 실제 wiring 위치를 라벨에 병기한다.
+sequenceDiagram
+    autonumber
+    participant LS as lifespan<br/>(main.py:106)
+    participant Mongo as MongoDBManager
+    participant Redis as RedisManager
+    participant AM as AlertManager<br/>(api/routes/alerts._alert_manager)
+    participant NR as NotificationRouter<br/>(fallback_notifier)
+    participant RetryLoop as _alert_retry_loop<br/>(main.py:169-192)
+    participant Ledger as PortfolioLedger<br/>(SqlPortfolioLedgerRepository)
+    participant Sched as TradingScheduler
+    participant KIS as KISClient<br/>(jittered_token_issue)
+    participant Recon as ReconciliationRunner
+
+    Note over LS: setup_logging + signal handlers<br/>(main.py:109,122-123)
+
+    LS->>Mongo: await MongoDBManager.connect()<br/>(main.py:127)
+    Mongo-->>LS: connected
+
+    LS->>AM: set_collection(Mongo["alerts"])<br/>(main.py:134)
+    Note right of AM: 영속화 활성화<br/>(in-memory → Mongo)
+
+    LS->>NR: NotificationRouter() + add_channel(<br/>Telegram → File → Console)<br/>(main.py:152-155)
+    LS->>AM: set_router(notification_router)<br/>(main.py:156)
+    Note right of AM: logger.info("NotificationRouter wired...")<br/>(main.py:157)<br/>배포 후 docker logs grep 검증
+
+    alt env_bool("ALERT_RETRY_LOOP_ENABLED") == True
+        LS->>RetryLoop: asyncio.create_task(_alert_retry_loop())<br/>(main.py:192)
+        Note right of RetryLoop: while True: sleep(INTERVAL) →<br/>dispatch_retriable_alerts()<br/>logger.info("AlertRetryLoop started")
+    else disabled
+        Note over LS: "AlertRetryLoop disabled via env"
+    end
+
+    LS->>Redis: await RedisManager.connect()<br/>(main.py:198)
+
+    LS->>Ledger: configure_portfolio_ledger(<br/>SqlPortfolioLedgerRepository)<br/>(main.py:205)
+    LS->>Ledger: await hydrate()<br/>(main.py:206)
+    Ledger-->>LS: positions loaded from DB
+
+    alt env_bool("SCHEDULER_ENABLED") == True
+        LS->>Sched: TradingScheduler() + await start()<br/>(main.py:222-227)
+        Note right of Sched: embedded mode<br/>(별도 scheduler 컨테이너 미사용 경로)
+    else SCHEDULER_ENABLED=false
+        Note over LS: 별도 scheduler_main.py 컨테이너 경로
+    end
+
+    LS->>KIS: jittered_token_issue(<br/>KIS_STARTUP_JITTER_MAX_SECONDS)<br/>(main.py:276)
+    alt 토큰 발급 성공
+        KIS-->>LS: kis_client (live)
+    else 실패
+        Note right of KIS: app.state.kis_degraded=True<br/>health 엔드포인트에서 try_recover_kis 루프
+    end
+
+    alt scheduler_enabled AND kis_client AND NOT is_backtest
+        LS->>Recon: ReconciliationRunner(<br/>engine, broker_provider, internal_provider)<br/>(main.py:306-310)
+        LS->>Sched: register_reconciliation_runner(runner)<br/>(main.py:311)
+        Note right of Sched: logger.info("ReconciliationRunner wired<br/>(embedded mode)")
+    end
+
+    Note over LS: yield (요청 처리 단계)
+
+    Note over LS,Recon: Shutdown (main.py:324-362) —<br/>scheduler.stop → retry_task.cancel →<br/>shutdown_manager.shutdown(timeout=60)

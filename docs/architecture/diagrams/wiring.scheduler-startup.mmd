@@ -1,0 +1,61 @@
+%% 수작업 wiring 다이어그램. backend/scheduler_main.py 프로세스의 런타임
+%% 초기화 순서. embedded mode (SCHEDULER_ENABLED=true, main.py 내부) 와 달리,
+%% 본 경로는 별도 컨테이너로 분리되어 운영된다.
+%%
+%% 소스: backend/scheduler_main.py:40-174
+%% 핵심 차이 (vs. main.py lifespan):
+%%   - FastAPI 없음. asyncio.run(main()) 진입.
+%%   - NotificationRouter 미주입 (알림은 API 컨테이너에서만 발송).
+%%   - register_pipeline_handlers 로 APScheduler 동적 콜백 등록 —
+%%     정적 import 그래프에 잡히지 않는다 (CLAUDE.md §6).
+sequenceDiagram
+    autonumber
+    participant Main as main()<br/>(scheduler_main.py:40)
+    participant Mongo as MongoDBManager
+    participant Redis as RedisManager
+    participant Ledger as PortfolioLedger<br/>(SqlPortfolioLedgerRepository)
+    participant KIS as KISClient
+    participant Sched as TradingScheduler
+    participant Handlers as scheduler_handlers.<br/>register_pipeline_handlers
+    participant Recon as ReconciliationRunner
+    participant FxLoop as _exchange_rate_loop<br/>(scheduler_main.py)
+    participant Stop as stop_event<br/>(asyncio.Event)
+
+    Note over Main: setup_logging()<br/>signal.SIGTERM/SIGINT → stop_event.set()<br/>(scheduler_main.py:81-82)
+
+    Main->>Mongo: await connect()<br/>(scheduler_main.py:86)
+    Main->>Redis: await connect()<br/>(scheduler_main.py:89)
+    Note right of Redis: PostgreSQL engine ready (lazy)
+
+    Main->>Ledger: configure_portfolio_ledger(<br/>SqlPortfolioLedgerRepository)<br/>(scheduler_main.py:103)
+    Main->>Ledger: await hydrate()<br/>(scheduler_main.py:104)
+    Ledger-->>Main: cache populated
+
+    Main->>KIS: KISClient()<br/>(scheduler_main.py:115)
+    alt NOT is_backtest
+        Main->>KIS: await _token_manager.<br/>get_access_token()<br/>(scheduler_main.py:117)
+    else backtest
+        Note right of KIS: 토큰 발급 skip
+    end
+
+    Main->>Sched: TradingScheduler()<br/>(scheduler_main.py:125)
+    Main->>Handlers: register_pipeline_handlers(scheduler)<br/>(scheduler_main.py:126)
+    Note right of Handlers: APScheduler.add_job(callback)<br/>동적 등록 — 정적 분석 불가.<br/>실제 핸들러 wiring 은<br/>module-deps.cross-team.mmd 의<br/>scheduler_handlers ==> * 엣지 참조.
+
+    alt kis_client AND NOT is_backtest
+        Main->>Recon: ReconciliationRunner(<br/>engine, KISBrokerPositionProvider,<br/>LedgerPositionProvider)<br/>(scheduler_main.py:134-138)
+        Main->>Sched: register_reconciliation_runner(runner)<br/>(scheduler_main.py:139)
+        Note right of Sched: logger.info("ReconciliationRunner wired")
+    else degraded
+        Note right of Recon: 등록 skip + warning log<br/>fail-closed 는 provider 단에서 집행
+    end
+
+    Main->>Sched: await start()<br/>(scheduler_main.py:146)
+    Sched-->>Main: "TradingScheduler started successfully"
+
+    Main->>FxLoop: asyncio.create_task(_exchange_rate_loop)<br/>(scheduler_main.py:150)
+    Note right of FxLoop: 환율 수집 백그라운드 루프<br/>logger.info("ExchangeRateCollectionLoop task created")
+
+    Main->>Stop: await stop_event.wait()<br/>(scheduler_main.py:154)
+
+    Note over Main,Stop: Shutdown (SIGTERM 수신 후):<br/>scheduler.stop → fx_task.cancel →<br/>Mongo.disconnect → Redis.disconnect →<br/>engine.dispose

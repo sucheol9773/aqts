@@ -1,0 +1,53 @@
+%% 알림 파이프라인 5 레이어 "정의 ↔ 적용" 매트릭스.
+%% SSOT: CLAUDE.md §6, agent_docs/development-policies.md §14,
+%%       docs/architecture/notification-pipeline.md.
+%%
+%% 본 다이어그램은 "각 레이어가 정의만 되고 적용되지 않는" 회귀를 방지하는
+%% 시각적 체크리스트다. 배포 후 반드시 다음 3 grep 으로 wiring 완료 검증:
+%%   docker compose logs backend --tail=500 | grep 'NotificationRouter wired'
+%%   docker compose logs backend --tail=500 | grep 'AlertRetryLoop started'
+%%   curl -s http://<backend>/metrics | grep -c 'aqts_alert_dispatch'   # 0 이면 결손
+flowchart LR
+    classDef def fill:#fff2cc,stroke:#d6b656,stroke-width:2px
+    classDef app fill:#d5e8d4,stroke:#82b366,stroke-width:2px
+    classDef verify fill:#f8cecc,stroke:#b85450,stroke-width:2px
+
+    subgraph Def["정의 (SSOT)"]
+        direction TB
+        SM["L1. AlertStateMachine<br/>alert_manager.py"]:::def
+        NR["L2. NotificationRouter<br/>fallback_notifier.py"]:::def
+        RL["L3. _alert_retry_loop<br/>backend/main.py:169-192"]:::def
+        MT["L4. aqts_alert_dispatch metric<br/>core/monitoring/metrics.py"]:::def
+        PR["L5. aqts_alert_pipeline rule<br/>prometheus/rules/aqts_alerts.yml"]:::def
+    end
+
+    subgraph App["적용 (Wiring)"]
+        direction TB
+        AM2["L1'. _dispatch_via_router<br/>dispatch_retriable_alerts<br/>alert_manager.py"]:::app
+        LS1["L2'. set_router()<br/>main.py:156 (lifespan)"]:::app
+        CT["L3'. asyncio.create_task(...)<br/>main.py:192 (lifespan)"]:::app
+        TF["L4'. NotificationRouter.dispatch<br/>try/finally → metric.inc()"]:::app
+        AL["L5'. Alertmanager rule_files load<br/>monitoring/prometheus/prometheus.yml"]:::app
+    end
+
+    subgraph Verify["배포 후 검증"]
+        direction TB
+        V1["docker logs | grep<br/>'NotificationRouter wired'"]:::verify
+        V2["docker logs | grep<br/>'AlertRetryLoop started'"]:::verify
+        V3["curl /metrics | grep<br/>'aqts_alert_dispatch' > 0"]:::verify
+        V4["curl :9090/api/v1/rules<br/>groups ≥ 1 (39 rules expected)"]:::verify
+    end
+
+    SM --> AM2
+    NR --> LS1
+    RL --> CT
+    MT --> TF
+    PR --> AL
+
+    LS1 -.확인.-> V1
+    CT -.확인.-> V2
+    TF -.확인.-> V3
+    AL -.확인.-> V4
+
+    Note1["회귀 사례 (CLAUDE.md §5):<br/>• 2026-04-16 Prometheus rule_files<br/>  상대경로 silent miss → 39 rule 전체 로드 실패<br/>• 2026-04-16 compose bind-mount change-detection<br/>  미감지 → 1시간 silent miss<br/>→ CD 에서 조건부 restart + /api/v1/rules 어서트 필수"]
+    style Note1 fill:#fff,stroke:#999,stroke-dasharray: 5 5

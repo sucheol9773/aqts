@@ -1,0 +1,50 @@
+%% ReconciliationRunner fan-out.
+%% 브로커(KIS) 잔고와 내부 PortfolioLedger 를 한 사이클마다 대조하고, mismatch
+%% 가 임계를 초과하면 TradingGuard 의 kill switch 를 활성화하는 경로.
+%%
+%% 소스: backend/core/reconciliation_runner.py, backend/core/reconciliation.py,
+%%       backend/core/reconciliation_providers.py
+%% Wiring 진입점: main.py:311 (embedded) / scheduler_main.py:139 (standalone)
+%% Mermaid 주의: 노드 라벨에 "()" 사용 시 파서가 shape 로 해석 → 여기선 모두 대괄호/<br>로 대체.
+flowchart LR
+    classDef scheduler fill:#ffe6cc,stroke:#f08000,stroke-width:2px
+    classDef runner fill:#dae8fc,stroke:#6c8ebf,stroke-width:2px
+    classDef provider fill:#d5e8d4,stroke:#82b366,stroke-width:2px
+    classDef engine fill:#e1d5e7,stroke:#9673a6,stroke-width:2px
+    classDef metric fill:#fff2cc,stroke:#d6b656,stroke-width:2px
+    classDef killswitch fill:#f8cecc,stroke:#b85450,stroke-width:2px
+
+    Sched["TradingScheduler<br/>core/trading_scheduler.py"]:::scheduler
+    Sched -->|register_reconciliation_runner| Runner
+
+    Runner["ReconciliationRunner<br/>reconciliation_runner.py:45<br/>mismatch_threshold=0 default"]:::runner
+    Runner -->|await get_positions| BProv
+    Runner -->|await get_positions| IProv
+    Runner -->|reconcile| Engine
+    Runner -->|provider 실패| MErr
+    Runner -->|matched| MMatched
+    Runner -->|mismatch detected| MMismatch
+    Runner -->|mismatch_count &gt; threshold| Kill
+
+    BProv["KISBrokerPositionProvider<br/>reconciliation_providers.py<br/>kis_client: KISClient"]:::provider
+    IProv["LedgerPositionProvider<br/>reconciliation_providers.py<br/>get_portfolio_ledger singleton"]:::provider
+
+    BProv --> KIS["KIS OpenAPI<br/>data_collector/kis_client.py"]
+    IProv --> Ledger["PortfolioLedger<br/>core/portfolio_ledger.py<br/>SqlPortfolioLedgerRepository"]
+
+    Engine["ReconciliationEngine<br/>core/reconciliation.py<br/>reconcile broker vs internal"]:::engine
+    Engine -->|result.matched / mismatches| Runner
+
+    subgraph Metrics["Prometheus Metrics"]
+        MErr["RECONCILIATION_RUNS_TOTAL<br/>result=error"]:::metric
+        MMatched["RECONCILIATION_RUNS_TOTAL<br/>result=matched"]:::metric
+        MMismatch["RECONCILIATION_RUNS_TOTAL<br/>result=mismatch<br/>+ RECONCILIATION_MISMATCHES_TOTAL<br/>+ RECONCILIATION_LEDGER_DIFF_ABS"]:::metric
+    end
+
+    Kill["TradingGuard.activate_kill_switch<br/>core/trading_guard.py<br/>fail-closed: 이후 주문 차단"]:::killswitch
+
+    NoteA["Wiring 진입점 (분리 모드):<br/>• main.py:306-311 embedded<br/>• scheduler_main.py:134-140 standalone<br/>두 경로 모두 KIS 토큰 성공 AND NOT is_backtest 에서만 등록.<br/>kis_client=None 또는 backtest 시 runner 미등록 + warning log."]
+    style NoteA fill:#fff,stroke:#999,stroke-dasharray: 5 5
+
+    NoteB["Fail-closed 원칙:<br/>provider 예외 → result=error + raise 재전파.<br/>mismatch_threshold 는 dataclass 기본값 0 (즉 1건도 허용 안함).<br/>테스트에서 임계를 높이려면 ReconciliationRunner 생성 시 주입."]
+    style NoteB fill:#fff,stroke:#999,stroke-dasharray: 5 5
