@@ -178,21 +178,66 @@ Python 실행 경로 / docker-compose base 파일을 건드리지 않고, worktr
 
 ---
 
-## 5. 후속 Phase (계획)
+## 5. Phase 4 — `.mcp.json` (2026-04-22, 본 커밋)
 
-| Phase | 산출물 | 예상 시점 |
-|---|---|---|
-| 4 | `.mcp.json` (GitHub MCP, GCP MCP opt-in) | 2026-04-29 이후 |
+### 5.1 신규 파일
 
-Phase 4 는 팀 4 Pilot worktree 에 `"disabledMcpjsonServers": ["*"]` 로컬 override 가 선제되어야 하며, ADR-002 Stage 2 Exit 판정 (2026-05-06) 이후에만 Pilot MCP 활성화 재검토.
+- `.mcp.json` (tracked, 프로젝트 공통): 서버 1개 등록 — `github` (`@modelcontextprotocol/server-github` via `npx`).
+- `docs/operations/mcp-setup-2026-04-22.md` (OPS-024): per-developer 토큰 설정, Pilot worktree 격리, 서버별 권장 scope.
+
+### 5.2 서버 선정
+
+Phase 4 범위는 **github 1 개 only**. GCP MCP 는 AQTS 가 단일 GCP VM + SSH 배포 체제라 일상 운영에서 API 직접 조회 빈도가 낮아 제외 — 향후 staging VM / 다중 인스턴스 도입 시 ADR-004 이후 재검토 (OPS-024 §2.2).
+
+### 5.3 Approval 모델 (Silent miss 방지)
+
+`.mcp.json` 이 tracked 여도 Claude Code 는 워크트리 최초 `claude` 기동 시 사용자 approval 을 프롬프트. 승인하지 않으면 해당 세션 MCP 미활성. Pilot worktree 가 git pull 로 `.mcp.json` 을 받아도 **자동 주입되지 않는다** — 이 점이 ADR-002 관찰 오염 리스크를 1차적으로 낮춤 (2차 방어선은 §5.4 의 local override).
+
+### 5.4 Pilot worktree 격리 요구 (리드 후속)
+
+`aqts-team4-skills-pilot` 에서 다음을 실행하여 MCP 전량 비활성화 (OPS-024 §3):
+
+```bash
+cat > .claude/settings.local.json <<'EOF'
+{ "disabledMcpjsonServers": ["*"] }
+EOF
+```
+
+`.claude/settings.local.json` 은 Phase 2 `.gitignore` 에 추가되어 untracked. Stage 2 Exit (2026-05-06) 이후 ADR-002 후속에서 Pilot MCP 재활성화 여부 평가.
+
+### 5.5 토큰 설정 (per-developer)
+
+팀메이트 각자가 자신의 `~/.zshrc` 에 `GITHUB_PERSONAL_ACCESS_TOKEN` export. scope `repo` + `read:org` + (선택) `workflow`. 토큰 미설정 시 MCP 서버는 기동되나 GitHub API 호출만 401 — 세션은 정상 진행, silent miss 아님 (development-policies.md §8 준수).
+
+### 5.6 커밋 전 게이트
+
+`.py` / `.toml` / `.sh` / Dockerfile / workflow 수정 0 건 → development-policies.md §3.1 doc-only 예외 발동 → 전체 pytest 생략. 최소 게이트만 실행.
+
+| 게이트 | 결과 |
+|---|---|
+| `python -m ruff check . --config pyproject.toml` | ✓ All checks passed |
+| `python scripts/check_bool_literals.py` | ✓ BOOL LITERAL CHECK PASSED |
+| `python scripts/check_doc_sync.py --verbose` | ✓ SYNC CHECK PASSED |
+| `python -c "import json; json.load(open('.mcp.json'))"` | ✓ valid JSON |
+| `scripts/team/wiring_smoke.sh` | ✓ WIRING SMOKE PASSED (settings.json 기준) |
 
 ---
 
-## 6. 리드 후속 필요 작업 (본 커밋 범위 밖)
+---
+
+## 6. 리드 후속 필요 작업 (본 PR 범위 밖)
 
 1. **`agent_docs/governance.md §1` harness 표 갱신**: 현재 "`claude` CLI + Agent Teams (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`), `Shift+Down` 으로 팀메이트 순환" 문구를 "4개 독립 `claude` CLI 세션 (worktree 격리)" 으로 교체. governance.md 는 §2.5 리드 전용 파일 목록에 명시되어 있지는 않으나 §1 은 근본적 운영 모델 정의부이므로 리드 승인 후 수정 권장.
 2. **`CLAUDE.md §9 미해결 TODO` 갱신**: 본 migration 의 Phase 1/2/3/4 체크박스 4개 추가. CLAUDE.md 는 §2.5 리드 전용 파일이므로 팀메이트 세션에서는 `settings.json` 의 deny 로 물리 차단.
-3. **팀 4 Pilot worktree `.claude/settings.local.json` 생성**: ADR-002 Stage 2 관찰 무오염을 위한 local override — 리드가 `aqts-team4-skills-pilot` 에서 직접 실행.
+3. **팀 4 Pilot worktree `.claude/settings.local.json` 생성** (MCP + permissions 로컬 override):
+   ```json
+   {
+     "permissions": { "allow": ["*"] },
+     "disabledMcpjsonServers": ["*"]
+   }
+   ```
+   ADR-002 Stage 2 관찰 무오염을 위해 리드가 `aqts-team4-skills-pilot` 에서 직접 실행. OPS-024 §3 참조.
+4. **PAT 배포**: 팀메이트 각자에게 GitHub PAT (scope: `repo` + `read:org`) 생성 가이드 공지. `~/.zshrc` 에 `GITHUB_PERSONAL_ACCESS_TOKEN` export 설정 — 리드는 토큰 자체를 공유하지 않고 가이드만 전달.
 
 ---
 
