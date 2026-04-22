@@ -54,3 +54,7 @@ CI_ANALYSIS_REPORT.md
 .tmp.drivedownload/
 .tmp.driveupload/
 CLAUDE.md.bak
+
+# ── Claude Code local overrides (per-user, per-worktree) ──
+.claude/settings.local.json
+.claude/worktrees/*/.claude/settings.local.json
