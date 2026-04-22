@@ -87,6 +87,17 @@ flowchart TB
     m_backend_api_middleware_auth --> m_backend_db_database
     m_backend_api_middleware_auth --> m_backend_db_models_user
     m_backend_api_middleware_rbac --> m_backend_api_middleware_auth
+    m_backend_api_routes --> m_backend_api_routes_alerts
+    m_backend_api_routes --> m_backend_api_routes_audit
+    m_backend_api_routes --> m_backend_api_routes_auth
+    m_backend_api_routes --> m_backend_api_routes_market
+    m_backend_api_routes --> m_backend_api_routes_oos
+    m_backend_api_routes --> m_backend_api_routes_orders
+    m_backend_api_routes --> m_backend_api_routes_param_sensitivity
+    m_backend_api_routes --> m_backend_api_routes_portfolio
+    m_backend_api_routes --> m_backend_api_routes_profile
+    m_backend_api_routes --> m_backend_api_routes_realtime
+    m_backend_api_routes --> m_backend_api_routes_system
     m_backend_api_routes_alerts --> m_backend_api_middleware_rbac
     m_backend_api_routes_alerts --> m_backend_api_schemas_alerts
     m_backend_api_routes_alerts --> m_backend_api_schemas_common
@@ -228,8 +239,20 @@ flowchart TB
     m_backend_main --> m_backend_api_errors
     m_backend_main --> m_backend_api_middleware_rate_limiter
     m_backend_main --> m_backend_api_middleware_request_logger
-    m_backend_main --> m_backend_api_routes
     m_backend_main --> m_backend_api_routes_alerts
+    m_backend_main --> m_backend_api_routes_audit
+    m_backend_main --> m_backend_api_routes_auth
+    m_backend_main --> m_backend_api_routes_dry_run
+    m_backend_main --> m_backend_api_routes_ensemble
+    m_backend_main --> m_backend_api_routes_market
+    m_backend_main --> m_backend_api_routes_oos
+    m_backend_main --> m_backend_api_routes_orders
+    m_backend_main --> m_backend_api_routes_param_sensitivity
+    m_backend_main --> m_backend_api_routes_portfolio
+    m_backend_main --> m_backend_api_routes_profile
+    m_backend_main --> m_backend_api_routes_realtime
+    m_backend_main --> m_backend_api_routes_system
+    m_backend_main --> m_backend_api_routes_users
     m_backend_main --> m_backend_core_data_collector_kis_client
     m_backend_main --> m_backend_core_data_collector_kis_recovery
     m_backend_main --> m_backend_core_data_collector_kis_startup

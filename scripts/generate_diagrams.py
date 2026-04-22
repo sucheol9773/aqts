@@ -208,11 +208,18 @@ def _extract_backend_imports(
     current_module: str,
     is_init: bool,
     backend_top: set[str],
+    known_modules: frozenset[str],
 ) -> set[str]:
     """소스에서 ``backend.*`` 로 향하는 import 엣지 집합 추출.
 
     Absolute import 는 ``backend.*`` 접두사 유무 둘 다 수용해 정규화.
     Relative import 는 현재 모듈의 패키지 경로 기준으로 해소한다.
+
+    ``from X import Y, Z`` 형태는 ``X.Y`` / ``X.Z`` 가 실제 backend 모듈이면
+    서브모듈 엣지로 기록하고, 아니면 ``X`` 패키지 엣지로만 기록한다.
+    예: ``from api.routes import alerts`` → ``api.routes.alerts`` 엣지;
+    ``from api.routes import get_router`` → ``api.routes`` 엣지.
+    ``known_modules`` 는 backend 스캔 1-pass 에서 수집한 모듈 이름 집합.
     """
     try:
         tree = ast.parse(source)
@@ -227,16 +234,27 @@ def _extract_backend_imports(
                     edges.add(normalized)
         elif isinstance(node, ast.ImportFrom):
             if node.level == 0:
-                if node.module:
-                    normalized = _normalize_absolute(node.module, backend_top)
-                    if normalized:
-                        edges.add(normalized)
+                base = (
+                    _normalize_absolute(node.module, backend_top)
+                    if node.module
+                    else None
+                )
             else:
-                resolved = _resolve_relative(
+                base = _resolve_relative(
                     current_module, is_init, node.level, node.module
                 )
-                if resolved:
-                    edges.add(resolved)
+            if not base:
+                continue
+            submodule_hit = False
+            for alias in node.names:
+                if alias.name == "*":
+                    continue
+                candidate = f"{base}.{alias.name}"
+                if candidate in known_modules:
+                    edges.add(candidate)
+                    submodule_hit = True
+            if not submodule_hit:
+                edges.add(base)
     return edges
 
 
@@ -245,20 +263,30 @@ def build_graph() -> tuple[dict[str, set[str]], set[str]]:
 
     edges 는 ``{source_module: {imported_module, ...}}`` dict.
     all_modules 는 스캔된 모든 backend.* 모듈 이름 집합.
+
+    2-pass 구조: (1) 전체 모듈 이름 집합을 먼저 수집, (2) AST 파싱 시 이
+    집합을 참고하여 ``from X import Y`` 의 Y 가 실제 서브모듈인지 판정.
     """
-    edges: dict[str, set[str]] = {}
-    all_modules: set[str] = set()
     backend_top = _backend_top_level_names()
-    # iter_python_files 는 vendored (.venv, site-packages 등) 을 자동 제외.
+    # Pass 1: 모듈 이름만 수집 (AST 파싱 없이 경로 기반).
+    py_files: list[tuple[Path, str, bool]] = []
+    all_modules: set[str] = set()
     for py_path in iter_python_files(BACKEND):
         module = _file_to_module(py_path)
         all_modules.add(module)
-        is_init = py_path.name == "__init__.py"
+        py_files.append((py_path, module, py_path.name == "__init__.py"))
+    known_modules = frozenset(all_modules)
+
+    # Pass 2: AST 파싱 + 서브모듈 판정 포함한 엣지 추출.
+    edges: dict[str, set[str]] = {}
+    for py_path, module, is_init in py_files:
         try:
             source = py_path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        imports = _extract_backend_imports(source, module, is_init, backend_top)
+        imports = _extract_backend_imports(
+            source, module, is_init, backend_top, known_modules
+        )
         if imports:
             edges[module] = imports
     return edges, all_modules
