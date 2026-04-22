@@ -4,7 +4,7 @@
 목적: `docs/architecture/diagrams/` 하위에 3 계층 다이어그램을 결정적으로
 재생성한다.
 
-  1. 전체 백엔드 SVG/DOT (pydeps)
+  1. 전체 백엔드 SVG/DOT (자체 AST 분석 → Graphviz ``dot`` CLI 렌더)
   2. 경계 뷰 Mermaid (cross-team edges 만)
   3. 팀별 Mermaid 4 개 (within-team edges 만)
   4. `layer-violations.txt` (AST 기반 레이어 경계 위반 리포트)
@@ -18,7 +18,7 @@ vendored 경로 제외는 `scripts/_check_utils.py::iter_python_files` 를 SSOT 
     python scripts/generate_diagrams.py           # 산출물 갱신 + 재기록
     python scripts/generate_diagrams.py --check   # 드리프트 검증 (CI 용)
 
-Exit code: 0 = PASS, 1 = FAIL (클래스 카운트 미달 / pydeps 오류 / 드리프트).
+Exit code: 0 = PASS, 1 = FAIL (클래스 카운트 미달 / dot 오류 / 드리프트).
 """
 
 from __future__ import annotations
@@ -234,15 +234,9 @@ def _extract_backend_imports(
                     edges.add(normalized)
         elif isinstance(node, ast.ImportFrom):
             if node.level == 0:
-                base = (
-                    _normalize_absolute(node.module, backend_top)
-                    if node.module
-                    else None
-                )
+                base = _normalize_absolute(node.module, backend_top) if node.module else None
             else:
-                base = _resolve_relative(
-                    current_module, is_init, node.level, node.module
-                )
+                base = _resolve_relative(current_module, is_init, node.level, node.module)
             if not base:
                 continue
             submodule_hit = False
@@ -284,9 +278,7 @@ def build_graph() -> tuple[dict[str, set[str]], set[str]]:
             source = py_path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        imports = _extract_backend_imports(
-            source, module, is_init, backend_top, known_modules
-        )
+        imports = _extract_backend_imports(source, module, is_init, backend_top, known_modules)
         if imports:
             edges[module] = imports
     return edges, all_modules
@@ -325,9 +317,7 @@ HEADER = (
 )
 
 
-def _filter_in_backend(
-    edges: dict[str, set[str]], all_modules: set[str]
-) -> list[tuple[str, str]]:
+def _filter_in_backend(edges: dict[str, set[str]], all_modules: set[str]) -> list[tuple[str, str]]:
     """``backend.*`` 내부에서만 해소되는 엣지를 리스트로 정리 (결정적 정렬)."""
     resolved: set[tuple[str, str]] = set()
     for src, dests in edges.items():
@@ -354,9 +344,7 @@ def render_cross_team(edges_list: list[tuple[str, str]], teams: dict[str, int]) 
     cross: list[tuple[str, str]] = [
         (s, d)
         for (s, d) in edges_list
-        if teams[s] in CROSS_TEAM_SCOPE
-        and teams[d] in CROSS_TEAM_SCOPE
-        and teams[s] != teams[d]
+        if teams[s] in CROSS_TEAM_SCOPE and teams[d] in CROSS_TEAM_SCOPE and teams[s] != teams[d]
     ]
     boundary_modules: set[str] = set()
     for s, d in cross:
@@ -388,9 +376,7 @@ def render_team_internal(
 ) -> str:
     """팀 내부 엣지만 포함한 Mermaid 렌더."""
     within: list[tuple[str, str]] = [
-        (s, d)
-        for (s, d) in edges_list
-        if teams[s] == team_number and teams[d] == team_number
+        (s, d) for (s, d) in edges_list if teams[s] == team_number and teams[d] == team_number
     ]
     nodes: set[str] = set()
     for s, d in within:
@@ -460,54 +446,94 @@ def render_violations_report(lines: list[str]) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# pydeps 서브프로세스 (전체 SVG/DOT)
+# 전체 백엔드 DOT/SVG (자체 AST 분석 기반)
 # ─────────────────────────────────────────────────────────────────────────────
+#
+# 이전 버전은 pydeps 를 사용했지만, ``--max-bacon`` 홉 필터가 전이 의존성을
+# 자르면서 382 모듈 스캔 → DOT 85 노드로 "아틀라스" 자격을 잃는 회귀가 있었다.
+# build_graph() 의 AST 결과(edges + all_modules) 는 이미 완전하므로 이를 DOT
+# 로 직접 직렬화하고, Graphviz ``dot`` CLI 로 SVG 만 렌더한다. 이로써:
+#   1. 노드 누락이 원천 차단된다 (스캔된 모든 backend.* 모듈이 반드시 노드로).
+#   2. pydeps 의 ``module not found`` 경고와 hop 튜닝 파라미터가 제거된다.
+#   3. 팀 색상(TEAM_CLASSDEF 와 동일 팔레트) 이 subgraph cluster 단위로
+#      DOT 에 인라인되어 SVG 를 브라우저에서 바로 읽을 수 있다.
 
 
-def run_pydeps(out_svg: Path, out_dot: Path) -> None:
-    """pydeps 를 호출해 SVG 와 DOT 를 생성."""
-    # ``--show-dot`` 는 stdout 으로 DOT 를 내보내므로 별도 파일로 저장.
-    # ``--noshow`` 는 브라우저 자동 열기 비활성화.
-    # ``--max-bacon 10`` 은 내부 모듈을 모두 포함하기 위한 여유 상한. 외부
-    # 의존성은 ``--exclude`` 로 이미 잘려 있으므로 값을 크게 잡아도 결과가
-    # 팽창하지 않는다. 기본값(2) 은 다중 레벨 내부 import 체인을 끊을 수 있어
-    # 누락 방지 차원에서 명시적 상향.
-    cmd = [
-        sys.executable,
-        "-m",
-        "pydeps",
-        str(BACKEND),
-        "--cluster",
-        "--max-bacon",
-        "10",
-        "--noshow",
-        "--exclude",
-        "backend.tests.*",
-        "-o",
-        str(out_svg),
-        "--show-dot",
+# Graphviz 팔레트 — TEAM_CLASSDEF 와 동일한 fill/stroke 쌍을 DOT 에 전사.
+# Mermaid classDef 는 CSS 문자열이지만 DOT 는 속성별로 나눠 지정해야 한다.
+TEAM_DOT_COLORS: dict[int, tuple[str, str]] = {
+    0: ("#ffffff", "#333333"),
+    1: ("#cfe8f3", "#0b88c2"),
+    2: ("#ffe6cc", "#f08000"),
+    3: ("#d4f0d0", "#0a8a0a"),
+    4: ("#dddddd", "#666666"),
+}
+
+
+def _dot_escape(text: str) -> str:
+    """DOT 식별자 내부의 큰따옴표 이스케이프."""
+    return text.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def render_overall_dot(
+    all_modules: set[str],
+    edges_list: list[tuple[str, str]],
+    teams: dict[str, int],
+) -> str:
+    """build_graph() 결과를 Graphviz DOT 소스로 직렬화.
+
+    팀별 cluster subgraph 를 만들고, 각 노드에 팀 색상을 인라인 속성으로 부여.
+    엣지는 lexical 정렬하여 결정적 출력을 보장.
+    """
+    lines: list[str] = [
+        "// AUTO-GENERATED by scripts/generate_diagrams.py. 수동 편집 금지.",
+        "// 재생성: python scripts/generate_diagrams.py",
+        "digraph backend_modules {",
+        '    graph [rankdir=LR, compound=true, fontname="Helvetica", fontsize=10];',
+        '    node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=9];',
+        '    edge [color="#888888", arrowsize=0.6];',
     ]
+    # 팀별 클러스터 배치 — 노드 lexical 정렬로 결정성 확보.
+    teams_present = sorted({teams[m] for m in all_modules})
+    for team_number in teams_present:
+        members = sorted(m for m in all_modules if teams[m] == team_number)
+        if not members:
+            continue
+        fill, stroke = TEAM_DOT_COLORS.get(team_number, ("#ffffff", "#333333"))
+        label = TEAM_LABELS.get(team_number, f"team {team_number}")
+        lines.append(f"    subgraph cluster_team{team_number} {{")
+        lines.append(f'        label="{_dot_escape(label)}";')
+        lines.append(f'        style="rounded,filled"; fillcolor="{fill}33";')
+        lines.append(f'        color="{stroke}";')
+        for m in members:
+            lines.append(
+                f'        "{_dot_escape(m)}" '
+                f'[label="{_dot_escape(short_label(m))}", '
+                f'fillcolor="{fill}", color="{stroke}"];'
+            )
+        lines.append("    }")
+    for src, dst in edges_list:
+        lines.append(f'    "{_dot_escape(src)}" -> "{_dot_escape(dst)}";')
+    lines.append("}")
+    return "\n".join(lines) + "\n"
+
+
+def render_overall_svg(dot_path: Path, svg_path: Path) -> None:
+    """``dot -Tsvg`` 로 SVG 렌더. 결정적 폰트/버전 보장은 시스템 영역."""
+    cmd = ["dot", "-Tsvg", "-o", str(svg_path), str(dot_path)]
     env = os.environ.copy()
     env["PYTHONHASHSEED"] = "0"
     env["LC_ALL"] = "C"
     try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, env=env, check=False, cwd=str(ROOT)
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True, env=env, check=False, cwd=str(ROOT))
     except FileNotFoundError as exc:
         raise RuntimeError(
-            "pydeps 가 설치되어 있지 않습니다. `pip install -r backend/requirements-dev.txt` 실행 필요."
+            "Graphviz `dot` CLI 가 PATH 에 없습니다. "
+            "`brew install graphviz` (macOS) 또는 `apt-get install graphviz` (Linux) 실행."
         ) from exc
     if result.returncode != 0:
         sys.stderr.write(result.stderr)
-        raise RuntimeError(f"pydeps exited with code {result.returncode}")
-    # stderr 에 ``warning: could not`` 라인이 있으면 fail-loud.
-    if "warning: could not" in result.stderr:
-        sys.stderr.write(result.stderr)
-        raise RuntimeError(
-            "pydeps reported 'warning: could not' lines — import resolution incomplete."
-        )
-    out_dot.write_text(result.stdout, encoding="utf-8")
+        raise RuntimeError(f"dot exited with code {result.returncode}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -552,14 +578,14 @@ def generate(output_dir: Path) -> dict[str, int]:
 
     # 레이어 위반 리포트
     violations = detect_layer_violations(edges_list)
-    _atomic_write(
-        output_dir / "layer-violations.txt", render_violations_report(violations)
-    )
+    _atomic_write(output_dir / "layer-violations.txt", render_violations_report(violations))
 
-    # pydeps 전체 SVG + DOT
-    svg_path = output_dir / "module-deps.overall.svg"
+    # 전체 백엔드 DOT (AST 기반 결정적 생성) + SVG (dot CLI 렌더).
     dot_path = output_dir / "module-deps.overall.dot"
-    run_pydeps(svg_path, dot_path)
+    svg_path = output_dir / "module-deps.overall.svg"
+    dot_source = render_overall_dot(all_modules, edges_list, teams)
+    _atomic_write(dot_path, dot_source)
+    render_overall_svg(dot_path, svg_path)
 
     # 카운트 요약
     boundary_count = cross_team_content.count("m_")
@@ -589,27 +615,20 @@ def _assert_fail_loud(output_dir: Path, summary: dict[str, int]) -> None:
     """플랜의 Fail-loud 조건을 검증. 위반 시 RuntimeError."""
     # 모듈 수 ≥ 50
     if summary["modules"] < 50:
-        raise RuntimeError(
-            f"node_count_overall = {summary['modules']} < 50 — backend scan produced too few modules."
-        )
+        raise RuntimeError(f"node_count_overall = {summary['modules']} < 50 — backend scan produced too few modules.")
     # 경계 노드 수 20 <= n <= 60
     cross_mmd = (output_dir / "module-deps.cross-team.mmd").read_text(encoding="utf-8")
     cross_nodes = _count_cross_team_nodes(cross_mmd)
     if not (5 <= cross_nodes <= 120):
         # 플랜상 20~60 이나 초기 실행에서 팀 분류 완성도에 따라 편차 가능. 넓게 허용.
-        raise RuntimeError(
-            f"cross_team boundary nodes = {cross_nodes}, expected 5..120 (plan: 20..60 stable target)."
-        )
+        raise RuntimeError(f"cross_team boundary nodes = {cross_nodes}, expected 5..120 (plan: 20..60 stable target).")
     # 각 팀 파일 ≥ 3 노드
     for team_number, suffix in TEAM_FILE_SUFFIX.items():
         path = output_dir / f"module-deps.{suffix}.mmd"
         content = path.read_text(encoding="utf-8")
         nodes = _count_cross_team_nodes(content)
         if nodes < 3:
-            raise RuntimeError(
-                f"team{team_number} file has {nodes} nodes (< 3). "
-                "Likely TEAM_SPEC miscoverage."
-            )
+            raise RuntimeError(f"team{team_number} file has {nodes} nodes (< 3). " "Likely TEAM_SPEC miscoverage.")
 
 
 def _diff_check(committed_dir: Path, regenerated_dir: Path) -> list[str]:
@@ -667,10 +686,7 @@ def main(argv: Iterable[str] | None = None) -> int:
 
     summary = generate(DIAGRAMS_DIR)
     _assert_fail_loud(DIAGRAMS_DIR, summary)
-    print(
-        f"generated: modules={summary['modules']} edges={summary['edges']} "
-        f"violations={summary['violations']}"
-    )
+    print(f"generated: modules={summary['modules']} edges={summary['edges']} " f"violations={summary['violations']}")
     return 0
 
 
