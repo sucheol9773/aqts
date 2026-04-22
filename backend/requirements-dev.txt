@@ -35,3 +35,12 @@
 # ── Linters & Formatters ──
 ruff==0.5.0
 black==24.4.2
+
+# ── Diagram Generation ──
+#
+# ``scripts/generate_diagrams.py`` 는 자체 AST 분석으로 DOT 소스를 만든 뒤
+# Graphviz ``dot`` CLI 로만 SVG 를 렌더한다. 파이썬 패키지 의존성은 없고
+# 시스템 바이너리(`brew install graphviz` / `apt-get install graphviz`) 만
+# 필요하다. 이전 pydeps 의존은 ``--max-bacon`` 홉 필터가 전이 의존성을 잘라
+# 380+ 모듈 스캔 중 85 노드만 DOT 에 남는 회귀가 있어 제거되었다. 배경:
+# `docs/architecture/diagrams/README.md` "재생성 방법" + PR #35 Codex review.

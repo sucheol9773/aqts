@@ -1,0 +1,62 @@
+%% HTTP 요청이 미들웨어 체인을 타고 RBAC dependency 를 거쳐 핸들러까지 도달하는
+%% 순서. Starlette 미들웨어 스택은 등록 역순 진입 → 정순 exit 이라 add_middleware
+%% 순서가 중요하다 (아래 화살표는 "실행 순서" 기준).
+%%
+%% 소스: backend/main.py:376-421, backend/api/deps.py (require_scope / require_role)
+%% 목적: CORS 이후에 RequestLogging 이 적용되는지 등, "정의만 되고 적용 누락" 회귀
+%%       방지. RBAC 는 정적 분석에서 Depends(...) 체인으로 보여도, 실제 적용 여부는
+%%       scripts/check_rbac_coverage.py 가 에러 없이 통과해야만 보장된다.
+flowchart TD
+    classDef mw fill:#e1d5e7,stroke:#9673a6,stroke-width:2px
+    classDef dep fill:#dae8fc,stroke:#6c8ebf,stroke-width:2px
+    classDef guard fill:#f8cecc,stroke:#b85450,stroke-width:2px
+    classDef handler fill:#d5e8d4,stroke:#82b366,stroke-width:2px
+
+    Client[Client HTTP Request]
+    Client --> CORS
+
+    subgraph MWStack["Middleware Stack (실행 순서)"]
+        direction TB
+        CORS["CORSMiddleware<br/>main.py:406<br/>CORS_ALLOWED_ORIGINS env"]:::mw
+        RLog["RequestLoggingMiddleware<br/>main.py:415"]:::mw
+        Prom["setup_prometheus(app)<br/>main.py:418<br/>core/monitoring/metrics.py"]:::mw
+        OTel["setup_tracing(app)<br/>main.py:421<br/>core/monitoring/tracing.py"]:::mw
+        Rate["@limiter.limit decorator<br/>routes/*.py per-route<br/>main.py:377 exception handler"]:::mw
+
+        CORS --> RLog
+        RLog --> Prom
+        Prom --> OTel
+        OTel --> Rate
+    end
+
+    Rate --> Auth
+
+    subgraph RBAC["Dependency Chain (Depends)"]
+        direction TB
+        Auth["get_current_user<br/>api/deps.py<br/>(JWT 검증 + token_revocation 체크)"]:::dep
+        Scope["require_scope(...)<br/>api/deps.py<br/>(scope 매칭)"]:::guard
+        Role["require_role(...)<br/>api/deps.py<br/>(role 매칭 — admin/trader/viewer)"]:::guard
+
+        Auth --> Scope
+        Scope --> Role
+    end
+
+    Role --> Handler
+
+    Handler["Route Handler<br/>api/routes/*.py"]:::handler
+    Handler --> DB["PostgreSQL / Mongo / Redis<br/>db.database / MongoDBManager / RedisManager"]
+    Handler --> Audit["audit_log 기록<br/>db/repositories/audit_log.py<br/>(RBAC 변경 / 주문 / 설정)"]
+
+    subgraph Gate["정적 검사 가드 (CLAUDE.md §4)"]
+        direction LR
+        G1["scripts/check_rbac_coverage.py<br/>(0 errors 필수)"]
+        G2["tests/test_rbac_routes.py<br/>(viewer 403 어서트)"]
+        G3["수동: viewer 토큰으로<br/>관리 엔드포인트 403 확인"]
+    end
+    style Gate fill:#ffe6cc,stroke:#f08000,stroke-dasharray: 5 5
+
+    Handler -.커버리지.-> G1
+    Role -.경계 어서트.-> G2
+
+    Note1["주의: get_current_user 만 의존하는 라우트는<br/>'인증 O / 인가 X' 로 check_rbac_coverage.py 가 에러.<br/>authorization = require_scope OR require_role OR 둘 다.<br/>(test_get_current_user_only_is_still_flagged 로 자동 집행)"]
+    style Note1 fill:#fff,stroke:#999,stroke-dasharray: 5 5

@@ -242,7 +242,31 @@ KIS REST/WebSocket, DART (공시), FRED·ECOS (거시), Reddit 등 외부 소스
 
 ---
 
-## 17. 추가 참조 문서
+## 17. 시각적 참조 (`docs/architecture/diagrams/`)
+
+2026-04-23 부로 백엔드 전체 모듈 의존성과 런타임 wiring 을 시각화한 다이어그램을 유지한다. 3 계층 구조 (지하철 노선도 비유):
+
+1. **`module-deps.cross-team.mmd`** — 환승역만 표시. 팀 1/2/3 간 경계 엣지. 오연결 / 레이어 위반 / 중복 구현 식별.
+2. **`module-deps.overall.svg`** — 구글맵. 전체 382 모듈 pydeps 렌더링 (팀 4 tests 포함).
+3. **`module-deps.team{1,2,3}-*.mmd`** — 동네 지도. 팀별 내부 엣지 전체. 팀 4 는 테스트 모듈 간 import 가 0 이라 별도 파일 없음.
+
+**런타임 wiring** (정적 import 분석이 포착 불가한 DI / `asyncio.create_task` / APScheduler 동적 콜백):
+
+- `wiring.lifespan-startup.mmd` — FastAPI lifespan 시작 순서 (main.py:106-320)
+- `wiring.scheduler-startup.mmd` — scheduler_main.py 시작 순서
+- `wiring.notification-5layer.mmd` — CLAUDE.md §6 5 레이어 정의↔적용 매트릭스
+- `wiring.request-rbac.mmd` — 미들웨어 → RBAC dependency → 핸들러 체인
+- `wiring.reconciliation.mmd` — ReconciliationRunner provider fan-out + kill switch
+
+**재생성**: `python scripts/generate_diagrams.py` (시스템 의존성 `graphviz`, Python 의존성 `pydeps` 는 `backend/requirements-dev.txt` 에 포함). `--check` 모드로 드리프트 검증.
+
+**레이어 위반 리포트**: `layer-violations.txt` (v1 soft-warn). 3 규칙 감지 — db→api, core→api, utils→domain.
+
+**ADR-004 Graphify Pilot 과 무관**: OSS 도구 (pydeps + Mermaid) 로만 구성되어 심사 baseline. 상세: `docs/architecture/diagrams/README.md`.
+
+---
+
+## 18. 추가 참조 문서
 
 - HTTP 계약: [api_contracts.md](./api_contracts.md)
 - DB 스키마: [database_schema.md](./database_schema.md)
