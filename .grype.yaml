@@ -23,6 +23,11 @@ ignore:
   - vulnerability: CVE-2026-4437   # 2026-06-06
   - vulnerability: CVE-2026-0915   # 2026-06-06
   - vulnerability: CVE-2026-0861   # 2026-06-06
+  # 2026-04-22 grype DB 갱신으로 편입된 신규 CVE 3종. 기존 블록과 동일한
+  # "debian 12 backport 미제공 / 영향 표면 최소" 근거 — 별도 후속 조사 불필요.
+  - vulnerability: CVE-2026-5450   # 2026-06-06 (Critical, 2026-04 공개, debian 백포트 미제공)
+  - vulnerability: CVE-2026-5358   # 2026-06-06 (Critical, 2026-04 공개, debian 백포트 미제공)
+  - vulnerability: CVE-2026-5928   # 2026-06-06 (High, 2026-04 공개, debian 백포트 미제공)
 
   # ─── libsqlite3-0 — debian 12 백포트 미제공 ───
   # 영향: Python sqlite3 stdlib 사용 — 코드 검색 결과 직접 sqlite 사용처 없음
@@ -79,5 +84,12 @@ ignore:
   # pyasn1, ecdsa: python-jose → PyJWT 마이그레이션 PR 대기
   - vulnerability: GHSA-jr27-m4p2-rc6r  # 2026-06-06
   - vulnerability: GHSA-wj6h-64fc-37mp  # 2026-06-06
+  # lxml 5.2.2 — CVE-2026-41066 / GHSA-vfmq-68hx-4jfw (XXE High, CVSS 7.5).
+  # 취약 sink (lxml.etree.iterparse, ETCompatXMLParser) 는 앱 코드 직접 사용 0건.
+  # 유일한 간접 사용 backend/core/data_collector/news_collector.py:222/224 의
+  # BeautifulSoup(raw, "lxml").get_text() 는 HTML 파서 경로로 취약 영역 아님.
+  # backend/.pip-audit-ignore:40 과 동일 추적 (만료일도 일치).
+  # 후속: 만료일 2026-05-23 전까지 lxml 6.1.0 업그레이드 PR 필요 (CLAUDE.md §9 TODO).
+  - vulnerability: GHSA-vfmq-68hx-4jfw  # 2026-06-06 lxml 6.1.0 업그레이드 PR 필요 (backend/.pip-audit-ignore:40 동일 추적)
 
 # fail-on/severity-cutoff 는 워크플로(--fail-on high) 에서 강제하므로 여기서는 미설정.
