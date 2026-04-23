@@ -67,3 +67,10 @@ jobs:
         # 시 두 파일을 동시에 업데이트하거나 `grype-only`/`pip-audit-only`
         # 단방향 마커로 예외 표시해야 한다. 상세: CLAUDE.md §9.
         run: python scripts/check_vuln_ignore_parity.py
+
+      - name: Run vuln-ignore expiry check
+        # 화이트리스트 엔트리의 YYYY-MM-DD 만료일이 오늘(UTC) 이전이면 CI
+        # 차단. 만료일이 조용히 경과하여 pip-audit 이 --strict 로 재차단될
+        # 때에야 "왜 지금 깨졌지" 를 추적하던 반응형 경로를 선제적으로
+        # 바꾼다. 2026-04-23 PR #38 (CVE-2026-3298 hotfix) 후속 방어선.
+        run: python scripts/check_vuln_ignore_expiry.py
