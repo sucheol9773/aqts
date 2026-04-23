@@ -70,6 +70,10 @@ ignore:
   # 후속: 3.12 메이저 업그레이드 시 일괄 해소 (별도 PR — torch/sb3 호환성 검증 필요).
   - vulnerability: CVE-2026-4519   # grype-only 2026-06-06
   - vulnerability: CVE-2025-13836  # grype-only 2026-06-06 (3.11 backport 없음, 3.13.11+ 에서만 fix)
+  # CVE-2026-3298 (High, 2026-04-23 grype DB 갱신으로 편입, fix 미출시) — Python 3.11.15
+  # 인터프리터 취약점. 기존 3.11 라인 CVE 와 동일하게 3.12+ 에서만 backport 제공 예상.
+  # PR #37 머지 직후 main CD 에서 최초 포착 — 2026-04-23 당일 hotfix 로 억제.
+  - vulnerability: CVE-2026-3298   # grype-only 2026-06-06 (3.11 backport 없음, 3.12 업그레이드와 함께 해소)
   # CVE-2026-4786 (High, CVSS 7, 2026-04-13 공개, fix 미출시) — CVE-2026-4519 의 완화책
   # 우회. URL 에 "tion" 포함 시 webbrowser.open() 이 shell command injection 가능.
   # 영향: `grep -rn "webbrowser" backend/` zero matches — 서버사이드 컨테이너는
