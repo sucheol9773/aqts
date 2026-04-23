@@ -12,6 +12,7 @@ on:
       - 'README.md'
       - 'scripts/**'
       - '.github/workflows/**'
+      - '.grype.yaml'
   pull_request:
     branches: [main, develop]
     paths:
@@ -20,6 +21,7 @@ on:
       - 'README.md'
       - 'scripts/**'
       - '.github/workflows/**'
+      - '.grype.yaml'
 
 jobs:
   doc-sync:
