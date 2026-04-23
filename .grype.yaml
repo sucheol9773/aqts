@@ -14,61 +14,67 @@
 #   - protobuf/pyasn1/ecdsa 는 backend/.pip-audit-ignore 에서 동일 추적.
 
 ignore:
+  # ─── grype-only 섹션 (OS 패키지 / Python 인터프리터) ─────────────────────
+  # 아래 블록은 컨테이너 이미지 레벨 CVE 로, pip-audit 이 구조적으로 감지하지
+  # 못한다 (pip-audit 는 Python 패키지만 스캔). 각 라인에 `grype-only` 키워드를
+  # 명시하여 scripts/check_vuln_ignore_parity.py 가 backend/.pip-audit-ignore
+  # 와의 parity 검사에서 의도된 단방향 예외로 인정하도록 한다.
+  #
   # ─── glibc (libc-bin/libc6) — debian 12 LTS 수명 동안 backport 되지 않은 CVE ───
   # 영향: Python/uvicorn 의 표준 libc 호출 경로. 컨테이너 런타임 격리 + 비루트
   # 사용자 + 외부 공개 포트 1개(8000)로 영향 표면 최소화.
   # 후속: bookworm 보안 피드에 backport 되거나 trixie 로 베이스 변경 시 해소.
-  - vulnerability: CVE-2025-15281  # 2026-06-06
-  - vulnerability: CVE-2026-4046   # 2026-06-06
-  - vulnerability: CVE-2026-4437   # 2026-06-06
-  - vulnerability: CVE-2026-0915   # 2026-06-06
-  - vulnerability: CVE-2026-0861   # 2026-06-06
+  - vulnerability: CVE-2025-15281  # grype-only 2026-06-06
+  - vulnerability: CVE-2026-4046   # grype-only 2026-06-06
+  - vulnerability: CVE-2026-4437   # grype-only 2026-06-06
+  - vulnerability: CVE-2026-0915   # grype-only 2026-06-06
+  - vulnerability: CVE-2026-0861   # grype-only 2026-06-06
   # 2026-04-22 grype DB 갱신으로 편입된 신규 CVE 3종. 기존 블록과 동일한
   # "debian 12 backport 미제공 / 영향 표면 최소" 근거 — 별도 후속 조사 불필요.
-  - vulnerability: CVE-2026-5450   # 2026-06-06 (Critical, 2026-04 공개, debian 백포트 미제공)
-  - vulnerability: CVE-2026-5358   # 2026-06-06 (Critical, 2026-04 공개, debian 백포트 미제공)
-  - vulnerability: CVE-2026-5928   # 2026-06-06 (High, 2026-04 공개, debian 백포트 미제공)
+  - vulnerability: CVE-2026-5450   # grype-only 2026-06-06 (Critical, 2026-04 공개, debian 백포트 미제공)
+  - vulnerability: CVE-2026-5358   # grype-only 2026-06-06 (Critical, 2026-04 공개, debian 백포트 미제공)
+  - vulnerability: CVE-2026-5928   # grype-only 2026-06-06 (High, 2026-04 공개, debian 백포트 미제공)
 
   # ─── libsqlite3-0 — debian 12 백포트 미제공 ───
   # 영향: Python sqlite3 stdlib 사용 — 코드 검색 결과 직접 sqlite 사용처 없음
   # (PostgreSQL/MongoDB/Redis 만 사용). Optuna/sklearn 의 내부 캐시 경로 가능성.
-  - vulnerability: CVE-2025-7458   # 2026-06-06 (Critical, sqlite upstream won't-fix)
+  - vulnerability: CVE-2025-7458   # grype-only 2026-06-06 (Critical, sqlite upstream won't-fix)
 
   # ─── libldap-2.5-0 — debian 12 백포트 미제공 ───
   # 영향: 코드 검색 결과 LDAP 클라이언트 직접 사용 없음. python-jose/curl 의
   # transitive 의존. python-jose 제거(GHSA-jr27-m4p2-rc6r 후속)와 함께 표면 축소.
-  - vulnerability: CVE-2023-2953   # 2026-06-06
+  - vulnerability: CVE-2023-2953   # grype-only 2026-06-06
 
   # ─── libexpat1 — 일부 CVE 백포트 누락 ───
   # 영향: XML 파싱 — 코드 검색 결과 직접 XML 입력 처리 경로 없음.
-  - vulnerability: CVE-2025-59375  # 2026-06-06
-  - vulnerability: CVE-2026-25210  # 2026-06-06
+  - vulnerability: CVE-2025-59375  # grype-only 2026-06-06
+  - vulnerability: CVE-2026-25210  # grype-only 2026-06-06
 
   # ─── dpkg — 빌드 도구, 런타임 미사용 ───
-  - vulnerability: CVE-2025-6297   # 2026-06-06
-  - vulnerability: CVE-2026-2219   # 2026-06-06
+  - vulnerability: CVE-2025-6297   # grype-only 2026-06-06
+  - vulnerability: CVE-2026-2219   # grype-only 2026-06-06
 
   # ─── libtasn1-6 — gnutls transitive ───
-  - vulnerability: CVE-2025-13151  # 2026-06-06
+  - vulnerability: CVE-2025-13151  # grype-only 2026-06-06
 
   # ─── ncurses (libncursesw6/libtinfo6/ncurses-base/ncurses-bin) ───
   # 영향: TTY 라이브러리. uvicorn 비대화형 실행 환경에서 사용 경로 없음.
-  - vulnerability: CVE-2025-69720  # 2026-06-06
+  - vulnerability: CVE-2025-69720  # grype-only 2026-06-06
 
   # ─── libnghttp2-14 — HTTP/2 라이브러리 ───
   # 영향: curl HTTPS 호출의 HTTP/2 전송 경로. KIS API 클라이언트는 HTTP/1.1 사용.
-  - vulnerability: CVE-2026-27135  # 2026-06-06
+  - vulnerability: CVE-2026-27135  # grype-only 2026-06-06
 
   # ─── Python 3.11 인터프리터 — 3.11 라인 backport 없는 CVE ───
   # 영향: fix 버전이 3.13.11/3.14.1/3.15.0 등 3.12+ 만 제공되어 3.11.x backport 부재.
   # 후속: 3.12 메이저 업그레이드 시 일괄 해소 (별도 PR — torch/sb3 호환성 검증 필요).
-  - vulnerability: CVE-2026-4519   # 2026-06-06
-  - vulnerability: CVE-2025-13836  # 2026-06-06 (3.11 backport 없음, 3.13.11+ 에서만 fix)
+  - vulnerability: CVE-2026-4519   # grype-only 2026-06-06
+  - vulnerability: CVE-2025-13836  # grype-only 2026-06-06 (3.11 backport 없음, 3.13.11+ 에서만 fix)
   # CVE-2026-4786 (High, CVSS 7, 2026-04-13 공개, fix 미출시) — CVE-2026-4519 의 완화책
   # 우회. URL 에 "tion" 포함 시 webbrowser.open() 이 shell command injection 가능.
   # 영향: `grep -rn "webbrowser" backend/` zero matches — 서버사이드 컨테이너는
   # webbrowser 모듈 자체를 import 하지 않음. 데스크탑 API 로 런타임 무관.
-  - vulnerability: CVE-2026-4786   # 2026-06-06 (webbrowser.open 미사용, 3.12 업그레이드와 함께 해소)
+  - vulnerability: CVE-2026-4786   # grype-only 2026-06-06 (webbrowser.open 미사용, 3.12 업그레이드와 함께 해소)
   # CVE-2026-6100 (Critical, CVSS 9.1, 2026-04-13 공개, fix 미출시) — lzma.LZMADecompressor
   # / bz2.BZ2Decompressor / gzip.GzipFile 인스턴스 재사용 시 MemoryError 이후 use-after-free.
   # 일회성 헬퍼(lzma.decompress() 등)는 미영향.
@@ -76,7 +82,7 @@ ignore:
   # `grep -rn "LZMADecompressor\|BZ2Decompressor\|GzipFile(" backend/` 0건. transitive
   # 의존이 내부적으로 사용할 수 있으나, Decompressor 인스턴스를 재사용하며 MemoryError 를
   # 포착·무시하는 특수 패턴은 현실적으로 거의 발생하지 않음. 3.12 업그레이드와 함께 해소.
-  - vulnerability: CVE-2026-6100   # 2026-06-06 (Decompressor 재사용 패턴 미사용, 3.12 업그레이드와 함께 해소)
+  - vulnerability: CVE-2026-6100   # grype-only 2026-06-06 (Decompressor 재사용 패턴 미사용, 3.12 업그레이드와 함께 해소)
 
   # ─── Python 패키지 (backend/.pip-audit-ignore 와 동일 추적) ───
   # protobuf: OTel 1.27+ 업그레이드 PR 대기
