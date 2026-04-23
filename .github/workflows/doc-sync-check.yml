@@ -57,3 +57,11 @@ jobs:
         # literal 만 기록되고 exception 전문이 사라지는 silent 관측 결손이 된다.
         # 회고: docs/operations/phase1-demo-verification-2026-04-11.md §10.15.
         run: python scripts/check_loguru_style.py
+
+      - name: Run vuln-ignore parity check
+        # .grype.yaml 과 backend/.pip-audit-ignore 는 ignore 목록을 공유하지
+        # 않는다. 2026-04-22 lxml GHSA-vfmq-68hx-4jfw silent miss (PR #25 머지
+        # 후 main CI grype 스텝이 high 로 재차단) 방어선. 신규 CVE/GHSA 억제
+        # 시 두 파일을 동시에 업데이트하거나 `grype-only`/`pip-audit-only`
+        # 단방향 마커로 예외 표시해야 한다. 상세: CLAUDE.md §9.
+        run: python scripts/check_vuln_ignore_parity.py
