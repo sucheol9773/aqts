@@ -32,7 +32,7 @@ REDIS_HOST, REDIS_PORT, REDIS_PASSWORD, REDIS_DB
 
 ### 2.1 Alembic 리비전 (`backend/alembic/versions/`)
 
-현재 **7 개** 리비전이 `001 → 002 → 003 → 004 → 005 → 006 → 007` 선형 체인으로 이어진다.
+현재 **9 개** 리비전이 `001 → 002 → … → 009` 선형 체인으로 이어진다.
 
 | Rev | 파일 | 요약 |
 |---|---|---|
@@ -43,6 +43,8 @@ REDIS_HOST, REDIS_PORT, REDIS_PASSWORD, REDIS_DB
 | 005 | `005_portfolio_positions.py` | `portfolio_positions` 테이블 (`PortfolioLedger` 영속 계층) |
 | 006 | `006_rebalancing_history.py` | `rebalancing_history` 테이블 (`RebalancingEngine` / `EmergencyRebalancingMonitor` 가 INSERT/SELECT 하던 스키마-코드 불일치 해소) |
 | 007 | `007_user_profiles_universe_columns.py` | `user_profiles.user_id` 컬럼 + `uq_user_profiles_user_id` + `idx_user_profiles_user_id` 인덱스; `universe.market_cap`, `universe.avg_daily_volume` 컬럼 |
+| 008 | `008_orders_extended_fields.py` | `orders` 테이블에 감사 체인·슬리피지·거래 비용 컬럼 추가 (`slippage_bps`, `commission`, `decision_id`, `strategy_id`, `submitted_at`, `reason`) + 인덱스 2건 |
+| 009 | `009_strategy_execution_logs.py` | `strategy_execution_logs` 테이블 (전략 앙상블 실행 이력: 레짐·신호·게이트 결과·실행 상태) |
 
 Alembic 실행 패턴 (development-policies.md §15 회귀 사례 2):
 
@@ -83,6 +85,8 @@ docker compose -f docker-compose.yml run --rm -T backend \
 | `backend/db/models/user.py` | `Role` | `roles` | `id`, `name(unique)`, `description` |
 | `backend/db/models/user.py` | `User` | `users` | `id (UUID)`, `username (unique, indexed)`, `email (unique, nullable)`, `password_hash`, `role_id (FK)`, `role_version (NOT NULL DEFAULT 0)`, `is_active`, `is_locked`, `failed_login_attempts`, `totp_secret (nullable, Text)`, `totp_enabled`, `created_at`, `updated_at`, `last_login_at (nullable)` |
 | `backend/db/models/portfolio_position.py` | `PortfolioPosition` | `portfolio_positions` | `ticker (PK, String(32))`, `quantity (Float, >0 CHECK ck_portfolio_positions_quantity_positive)`, `updated_at (server_default NOW())` |
+| `backend/db/models/order.py` | `Order` | `orders` | 001 원본 컬럼(`id`, `order_id`, `ticker`, `market`, `side`, `order_type`, `quantity`, `price`, `filled_quantity`, `filled_price`, `status`, `trigger_type`, `created_at`, `filled_at`, `error_message`) + 008 확장(`slippage_bps`, `commission`, `decision_id (indexed)`, `strategy_id (indexed)`, `submitted_at`, `reason`) |
+| `backend/db/models/strategy_execution_log.py` | `StrategyExecutionLog` | `strategy_execution_logs` | `id (BigInt PK)`, `ticker`, `strategy_name`, `regime`, `regime_confidence`, `ensemble_signal`, `ensemble_confidence`, `weights_used (JSON text)`, `final_action`, `signals_generated`, `orders_submitted`, `gate_results (JSON text)`, `status`, `execution_duration_ms`, `error_message`, `executed_at` |
 
 ### 2.4 리포지토리 (`backend/db/repositories/`)
 

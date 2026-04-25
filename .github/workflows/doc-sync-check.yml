@@ -13,6 +13,7 @@ on:
       - 'scripts/**'
       - '.github/workflows/**'
       - '.grype.yaml'
+      - '.claude/**'
   pull_request:
     branches: [main, develop]
     paths:
@@ -22,6 +23,7 @@ on:
       - 'scripts/**'
       - '.github/workflows/**'
       - '.grype.yaml'
+      - '.claude/**'
 
 jobs:
   doc-sync:
@@ -67,6 +69,21 @@ jobs:
         # 시 두 파일을 동시에 업데이트하거나 `grype-only`/`pip-audit-only`
         # 단방향 마커로 예외 표시해야 한다. 상세: CLAUDE.md §9.
         run: python scripts/check_vuln_ignore_parity.py
+
+      - name: Check ownership boundary
+        # 팀 브랜치(team{N}/ prefix)에서 다른 팀 소유 파일 또는 리드 전용
+        # 파일을 수정했는지 검증. governance.md §2 소유권 매트릭스 기반.
+        # 리드/기능 브랜치에서는 자동 SKIP (exit 2 → continue-on-error).
+        continue-on-error: true
+        run: python scripts/check_ownership_boundary.py
+
+      - name: Verify agent harness wiring
+        # .claude/settings.json 의 구조적 무결성 검증:
+        # - governance.md §2.5 리드 전용 7개 파일이 deny list 에 존재
+        # - force push / hard reset Bash deny 존재
+        # - PYTHONUNBUFFERED=1 환경변수 설정 (scheduler stdout silent miss 방지)
+        # 실수로 hooks 섹션이 삭제되거나 deny 항목이 빠져도 CI 에서 잡는다.
+        run: bash scripts/team/wiring_smoke.sh
 
       - name: Run vuln-ignore expiry check
         # 화이트리스트 엔트리의 YYYY-MM-DD 만료일이 오늘(UTC) 이전이면 CI
