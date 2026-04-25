@@ -8,7 +8,7 @@
 
 **소유**: 공동 (작업 팀이 발급, 리드가 검토)
 **갱신 주기**: 신규 OPS 발급 시점 즉시 — PR 안에 본 표 갱신 동봉
-**최종 갱신**: 2026-04-26 (OPS-027 예약 + OPS-028 활성 — postgres WAL archive 권한 P0 incident retro)
+**최종 갱신**: 2026-04-26 (OPS-029 활성 — 인프라 셋업 체크리스트, §14.5 운영 implementation)
 
 ---
 
@@ -58,8 +58,9 @@
 | OPS-026 | `check-vuln-ignore-expiry-2026-04-23.md` | 2026-04-23 (재발급 2026-04-25) | 정적 검사기 | 활성, §3.1 참조 |
 | OPS-027 | (예약 — `scripts/check_ops_numbering.py` 정적 검사기) | 예약 2026-04-25 | 정적 검사기 | 예약, 만료 조건 = 팀 4 가 PR #49 메일 (`agent_docs/mailboxes/team4/inbox/20260425-2201-ops-027-check-ops-numbering.md`) 처리하여 검사기 신설 PR 머지 시 `활성` 전환. 만료 deadline = 2026-05-13 (W2 진입 + 14일 마진). |
 | OPS-028 | `postgres-wal-archive-permission-2026-04-26.md` | 2026-04-26 | 작업 기록 (P0 incident retro) | 활성 |
+| OPS-029 | `infrastructure-setup-checklist-2026-04-26.md` | 2026-04-26 | 운영 체크리스트 | 활성 (§14.5 정책의 운영 implementation, OPS-028 §4 후속) |
 
-**다음 발급 가능 번호**: **OPS-029** (OPS-028 다음).
+**다음 발급 가능 번호**: **OPS-030** (OPS-029 다음).
 
 **현재 미해결 충돌**: 2건 (OPS-006, OPS-009 — §3.2, §3.3 참조).
 
