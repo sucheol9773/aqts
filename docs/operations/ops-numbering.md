@@ -8,7 +8,7 @@
 
 **소유**: 공동 (작업 팀이 발급, 리드가 검토)
 **갱신 주기**: 신규 OPS 발급 시점 즉시 — PR 안에 본 표 갱신 동봉
-**최종 갱신**: 2026-04-25 (OPS-021 활성화 — lxml 6.1.0 업그레이드 머지)
+**최종 갱신**: 2026-04-25 (OPS-021 lxml 6.1.0 + OPS-025 pip-audit SSOT 분리 동시 활성화)
 
 ---
 
@@ -54,7 +54,7 @@
 | OPS-022 | `check-vuln-ignore-parity-2026-04-23.md` | 2026-04-23 | 정적 검사기 | 활성 |
 | OPS-023 | `claude-multisession-migration-2026-04-22.md` | 2026-04-22 | 작업 기록 | 활성 (단일 할당, §3.1 정정 후) |
 | OPS-024 | `mcp-setup-2026-04-22.md` | 2026-04-22 | 작업 기록 | 활성 |
-| OPS-025 | `security-deps-split-2026-04-25.md` | 2026-04-25 | 작업 기록 | **branch-only** (`chore/pip-audit-deps-split` 브랜치 commit `4bac31a` — PR 미제출. main 머지 시 `활성` 전환. 본 row 는 §1.4 SSOT 일치 규칙의 잠정 예외 — 상세는 §2 상태 어휘 참조) |
+| OPS-025 | `security-deps-split-2026-04-25.md` | 2026-04-25 | 작업 기록 | 활성 (`chore/pip-audit-deps-split` PR, branch-only → 활성 전환 2026-04-25) |
 | OPS-026 | `check-vuln-ignore-expiry-2026-04-23.md` | 2026-04-23 (재발급 2026-04-25) | 정적 검사기 | 활성, §3.1 참조 |
 
 **다음 발급 가능 번호**: **OPS-027** (OPS-026 다음).
