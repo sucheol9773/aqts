@@ -1,0 +1,42 @@
+# ══════════════════════════════════════
+# AQTS Backend — Security Scanner 의존성 (CI/로컬 전용)
+# ══════════════════════════════════════
+#
+# 목적:
+#   - SCA (Software Composition Analysis) 스캐너의 SSOT.
+#   - CI lint job 의 `Python 의존성 CVE 스캔 (pip-audit)` 스텝과 로컬 개발자의
+#     사전 CVE 검증이 동일 버전을 사용하도록 단일 진입점 역할을 한다
+#     (CLAUDE.md §1 "하드코딩 금지").
+#
+# 로컬 개발자 셋업:
+#   PR 전 의존성 CVE 사전 검증을 로컬에서 돌리려면:
+#   `pip install -r backend/requirements-security.txt`
+#   `cd backend && pip-audit -r requirements.txt --strict --vulnerability-service osv`
+#
+#   화이트리스트(`.pip-audit-ignore`) 파싱은 `.github/workflows/ci.yml` 의
+#   `Python 의존성 CVE 스캔 (pip-audit)` 스텝(라인 97-145)에 인라인 구현되어
+#   있다. 로컬에서는 `--ignore-vuln <ID>` 를 수동으로 넘겨 동일 동작을 재현.
+#
+# 설계 결정 — `-r requirements.txt` 를 포함하지 않는 이유:
+#   본 파일이 runtime 의존성을 포함하면 CI 의 lint 잡(pip-audit 스캔만 수행)
+#   이 FastAPI/SQLAlchemy/Motor 등 수십 MB 의 런타임 패키지까지 매번 설치하게
+#   된다. pip-audit 는 의존성 그래프를 OSV 데이터베이스로 매칭하므로 런타임
+#   import 가 불필요. 본 파일은 스캐너 도구의 SSOT 역할만 한다 (OPS-018 의
+#   `requirements-dev.txt` 와 동일 논리).
+#
+# 버전 업그레이드 절차:
+#   1. 본 파일에서 버전만 bump 하고 로컬에서 `pip-audit -r requirements.txt --strict`
+#      실행 → CVE 결과 drift 관찰.
+#   2. CI 가 본 파일을 자동으로 설치하므로 `.github/workflows/ci.yml` 수정 불필요.
+#   3. 커밋 메시지에 "before/after vuln-id 변화" 를 포함한다.
+#
+# 분리 경위:
+#   - 2026-04-21 OPS-018 (`docs/operations/dev-deps-split-2026-04-21.md`) 에서
+#     lint 도구(ruff/black) 를 `requirements-dev.txt` 로 분리하면서, pip-audit 는
+#     "용도가 security scan 이라" 별도 이슈로 분리 예정 명시.
+#   - 2026-04-25 OPS-025 (`docs/operations/security-deps-split-2026-04-25.md`)
+#     에서 본 파일로 분리 완료. 옵션 B (`requirements-dev.txt` 의 보안 섹션
+#     병합) 는 dev/security lifecycle 혼재로 미채택.
+
+# ── SCA: Python 의존성 CVE 스캐너 ──
+pip-audit==2.7.3

@@ -81,6 +81,7 @@ aqts/
 │   ├── Dockerfile                   # 멀티 스테이지 빌드 (Python 3.11.14+)
 │   ├── requirements.txt             # Python 런타임 의존성
 │   ├── requirements-dev.txt         # 로컬/CI 전용 lint·format 도구 (ruff, black)
+│   ├── requirements-security.txt    # 로컬/CI 전용 보안 스캐너 (pip-audit, OPS-025)
 │   ├── pyproject.toml               # pytest/ruff/black 설정
 │   ├── main.py                      # FastAPI 엔트리포인트 (Lifespan, GracefulShutdown)
 │   ├── config/
