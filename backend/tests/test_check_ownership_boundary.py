@@ -26,9 +26,7 @@ CHECKER_PATH = REPO_ROOT / "scripts" / "check_ownership_boundary.py"
 
 
 def _load_checker():
-    spec = importlib.util.spec_from_file_location(
-        "check_ownership_boundary", CHECKER_PATH
-    )
+    spec = importlib.util.spec_from_file_location("check_ownership_boundary", CHECKER_PATH)
     assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -246,9 +244,7 @@ class TestAllowCross:
         """--allow-cross 에서도 리드 전용은 차단."""
         with (
             patch.object(CHECKER, "get_current_team", return_value=1),
-            patch.object(
-                CHECKER, "get_changed_files", return_value=["CLAUDE.md"]
-            ),
+            patch.object(CHECKER, "get_changed_files", return_value=["CLAUDE.md"]),
         ):
             exit_code = CHECKER.main(["--allow-cross"])
         assert exit_code == 1
