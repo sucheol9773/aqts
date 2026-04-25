@@ -29,7 +29,9 @@
 
 > 최소 1행 이상 필수. W1 목표: **누적 2회 이상** (§7.5.5 항목 3).
 
-**W1 누적 참조 횟수**: 0회 (작성 대기)
+**W1 누적 참조 횟수**: 0회 (2026-04-25 mid-week)
+
+> **2026-04-25 mid-week 메모 (Pilot)**: task a (parity 정적 검사기) 는 2026-04-23 PR #37 (`ab10f0b`) 로 이미 완료. task a 작업 자체는 anthropic-skills 호출을 동반하지 않는 일반 정적 검사기 개발이라 §2 카운트에 기여하지 않는다. **§2 누적 ≥ 2회 달성 경로는 task b (AQTS 자체 SKILL 2종 작성 + Pilot 세션 자동 트리거 ≥ 1회씩 = 2회)** 가 유일하다. W1 잔여 4일(~04-29) 안에 task b 산출물(SKILL.md 2종) 작성 + 자동 트리거 검증 ≥ 2회 미달성 시 ADR-002 §2.2 Stop 조건 4 (Pilot 교체) 발동 가능성. 본 mid-week 시점에 task b 착수 — 진행 상황은 W1 로그 §3.2 와 lead inbox 메일(`20260425-XXXX-w1-midweek-checkin.md`) 에 누적 보고.
 
 ---
 
@@ -43,11 +45,13 @@
 
 | 체크포인트 | 상태 | 근거 커밋/PR |
 |---|---|---|
-| 스크립트 초안 작성 (`scripts/check_vuln_ignore_parity.py`) | [ ] |  |
-| 테스트 하니스 (`backend/tests/test_check_vuln_ignore_parity.py`) 7 시나리오 | [ ] |  |
-| `.github/workflows/doc-sync-check.yml` 스텝 추가 | [ ] |  |
-| `docs/operations/check-vuln-ignore-parity-2026-04-23.md` (OPS-022) 작성 | [ ] |  |
-| CLAUDE.md §9 TODO `[x]` 전환 | [ ] |  |
+| 스크립트 초안 작성 (`scripts/check_vuln_ignore_parity.py`) | [x] | PR #37 (`ab10f0b`, 2026-04-23) |
+| 테스트 하니스 (`backend/tests/test_check_vuln_ignore_parity.py`) 7 시나리오 | [x] | PR #37 (`ab10f0b`, 2026-04-23) |
+| `.github/workflows/doc-sync-check.yml` 스텝 추가 | [x] | PR #37 (`ab10f0b`, 2026-04-23) |
+| `docs/operations/check-vuln-ignore-parity-2026-04-23.md` (OPS-022) 작성 | [x] | PR #37 (`ab10f0b`, 2026-04-23) |
+| CLAUDE.md §9 TODO `[x]` 전환 | [ ] | 리드 전용 영역. 본 W1 종료 리뷰(2026-04-29) 시 일괄 처리 요청 — `agent_docs/mailboxes/lead/inbox/` 메일에 명시. |
+
+> **보너스 산출물 (kickoff scope 외)**: 같은 작업 라인에서 PR #39/#40 으로 **만료일 정적 검사기**(`scripts/check_vuln_ignore_expiry.py`, `docs/operations/check-vuln-ignore-expiry-2026-04-23.md` OPS-026 — OPS-023 충돌로 재발급) 까지 신설됨. 만료일 silent miss 방어선 추가 확보.
 
 ### 3.2 과제 b — SKILL 템플릿 2종 실적용
 
@@ -57,11 +61,11 @@
 
 | 체크포인트 | 상태 | 근거 커밋/PR |
 |---|---|---|
-| `.claude/skills/aqts-doc-sync-runner/SKILL.md` 작성 (500 줄 이하, G1~G7 명시, PEP 723) | [ ] |  |
-| `.claude/skills/aqts-rbac-route-checker/SKILL.md` 작성 | [ ] |  |
-| `skills-ref validate` (또는 동등 수동 검증) 통과 | [ ] |  |
-| Pilot 세션에서 `aqts-doc-sync-runner` 자동 트리거 ≥ 1회 | [ ] |  |
-| Pilot 세션에서 `aqts-rbac-route-checker` 자동 트리거 ≥ 1회 | [ ] |  |
+| `.claude/skills/aqts-doc-sync-runner/SKILL.md` 작성 (500 줄 이하, G1~G7 명시, PEP 723) | [x] | 2026-04-25 W1 mid-week (`pilot/team4-skills-w1` 작업 중). 55 줄. PEP 723 미적용 (자체 스크립트 동반 없음 — wrapper SKILL). |
+| `.claude/skills/aqts-rbac-route-checker/SKILL.md` 작성 | [x] | 2026-04-25 W1 mid-week. 52 줄. G1~G7 모두 명시. |
+| `skills-ref validate` (또는 동등 수동 검증) 통과 | [x] | `skills-ref` CLI 가 AQTS 환경에 미설치 → 수동 검증으로 대체: (a) frontmatter `name`/`description`/`license`/`compatibility` 4 필드 존재, (b) 본문 ≤ 500 줄(55/52), (c) G1~G7 모두 본문에서 grep 양성. 메일 `20260425-2106-w1-midweek-checkin.md` Q3 으로 OPS-027 (검증 체크리스트) 신설 위임 요청. |
+| Pilot 세션에서 `aqts-doc-sync-runner` 자동 트리거 ≥ 1회 | [ ] | **구조적 미달성**: SKILL.md 가 본 세션 mid-session 에 생성되어 Claude Code 의 session-start skill scan 에 미포함. **신규 Pilot 세션 시작 필요**. 트리거 카운트 기준은 메일 Q2 로 리드 합의 대기. |
+| Pilot 세션에서 `aqts-rbac-route-checker` 자동 트리거 ≥ 1회 | [ ] | 위와 동일 — 신규 세션 + 합의된 카운트 기준 필요. |
 
 ---
 
@@ -146,3 +150,7 @@ W1 종료 시점에 아래 3 중 하나 선택:
 | 날짜 | 변경 내용 | 작성자 |
 |---|---|---|
 | 2026-04-22 | 템플릿 선제 스캐폴드 (`chore/adr-002-w1-log-scaffold`) | 리드 |
+| 2026-04-25 | mid-week 메모 §2 추가 — task a 1차 완료, 누적 ≥ 2회 경로는 task b 가 유일 | Pilot |
+| 2026-04-25 | main merge (`f32b177` → `e62a328`, 22 commits, ff-only) — OPS-023 메일박스 #32 의 B-1 경로 (즉시 merge) 채택. §C 필수 검증 3종 PASS: (1) `.claude/settings.local.json.disabledMcpjsonServers=["*"]`, (2) github MCP 비활성 (현 세션 `mcp__github__*` 도구 부재), (3) `scripts/team/wiring_smoke.sh` PASSED. 측정 공정성 영향 평가: PreToolUse hook + mailbox 스캐폴드가 새 trigger 소스로 작용할 수 있으나, `disabledMcpjsonServers=["*"]` 로 외부 MCP 차단 + W1 잔여 4일 동일 조건 유지 → §5.3.1 정량 게이트(20-query trigger eval) 는 W1 Exit 후 재측정 시 최신 main 기준으로 수행 | Pilot |
+| 2026-04-25 | §3.1 4 체크포인트 [x] 처리 (PR #37 근거) + 보너스 항목으로 PR #39/#40 만료일 검사기 인지. CLAUDE.md §9 TODO `[x]` 전환은 리드 위임. mid-week 메일 `agent_docs/mailboxes/lead/inbox/20260425-2106-w1-midweek-checkin.md` 발송 (kickoff 응답 기한 준수). | Pilot |
+| 2026-04-25 | §3.2 task b 착수: `.claude/skills/aqts-doc-sync-runner/SKILL.md` (55 줄) + `.claude/skills/aqts-rbac-route-checker/SKILL.md` (52 줄) 작성. G1~G7 양쪽 모두 본문 명시. 자동 트리거 ≥ 1회 체크포인트는 mid-session 생성으로 인한 구조적 미달성 — 신규 세션 + 트리거 카운트 기준 합의 필요 (메일 Q2). 부수: black drift 1 건(`tests/test_check_ownership_boundary.py`) gate 검증 중 발견 + 동일 작업분에 수정 (CLAUDE.md §2 절대 규칙 5 "발견 시점 수정"). | Pilot |
