@@ -58,3 +58,15 @@ scrape_configs:
         labels:
           service: "aqts-host"
           host: "${HOST_LABEL}"
+
+  # PostgreSQL 메트릭 (pg_stat_archiver / pg_stat_replication / pg_settings).
+  # docker-compose.yml 의 postgres-exporter service 가 9187 포트로 노출한다.
+  # OPS-028 (postgres-wal-archive-permission-2026-04-26.md) §4.1 monitoring
+  # 격차 (archive 실패 19일 silent miss) 영구 해소의 source-of-truth 매트릭.
+  - job_name: "aqts-postgres-exporter"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+        labels:
+          service: "aqts-postgres"
+          host: "${HOST_LABEL}"

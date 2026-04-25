@@ -8,7 +8,7 @@
 
 **소유**: 공동 (작업 팀이 발급, 리드가 검토)
 **갱신 주기**: 신규 OPS 발급 시점 즉시 — PR 안에 본 표 갱신 동봉
-**최종 갱신**: 2026-04-25
+**최종 갱신**: 2026-04-26 (OPS-029 활성 — 인프라 셋업 체크리스트, §14.5 운영 implementation)
 
 ---
 
@@ -50,14 +50,17 @@
 | OPS-018 | `dev-deps-split-2026-04-21.md` | 2026-04-21 | 작업 기록 | 활성 |
 | OPS-019 | `check-bool-literals-ast-2026-04-22.md` | 2026-04-22 | 정적 검사기 | 활성 |
 | OPS-020 | `check-rbac-coverage-tests-2026-04-22.md` | 2026-04-22 | 정적 검사기 | 활성 |
-| OPS-021 | (예약 — lxml 6.1.0 업그레이드) | 예약 2026-04-22 | 보안 업그레이드 | 예약, 만료 조건 = `backend/.pip-audit-ignore` 의 `GHSA-vfmq-68hx-4jfw` 만료일 2026-06-06 |
+| OPS-021 | `lxml-6.1.0-upgrade-2026-04-25.md` | 2026-04-25 | 보안 업그레이드 | 활성 (예약 2026-04-22 → 활성 전환, `chore/lxml-6.1.0-upgrade` PR) |
 | OPS-022 | `check-vuln-ignore-parity-2026-04-23.md` | 2026-04-23 | 정적 검사기 | 활성 |
 | OPS-023 | `claude-multisession-migration-2026-04-22.md` | 2026-04-22 | 작업 기록 | 활성 (단일 할당, §3.1 정정 후) |
 | OPS-024 | `mcp-setup-2026-04-22.md` | 2026-04-22 | 작업 기록 | 활성 |
-| OPS-025 | `security-deps-split-2026-04-25.md` | 2026-04-25 | 작업 기록 | **branch-only** (`chore/pip-audit-deps-split` 브랜치 commit `4bac31a` — PR 미제출. main 머지 시 `활성` 전환. 본 row 는 §1.4 SSOT 일치 규칙의 잠정 예외 — 상세는 §2 상태 어휘 참조) |
+| OPS-025 | `security-deps-split-2026-04-25.md` | 2026-04-25 | 작업 기록 | 활성 (`chore/pip-audit-deps-split` PR, branch-only → 활성 전환 2026-04-25) |
 | OPS-026 | `check-vuln-ignore-expiry-2026-04-23.md` | 2026-04-23 (재발급 2026-04-25) | 정적 검사기 | 활성, §3.1 참조 |
+| OPS-027 | (예약 — `scripts/check_ops_numbering.py` 정적 검사기) | 예약 2026-04-25 | 정적 검사기 | 예약, 만료 조건 = 팀 4 가 PR #49 메일 (`agent_docs/mailboxes/team4/inbox/20260425-2201-ops-027-check-ops-numbering.md`) 처리하여 검사기 신설 PR 머지 시 `활성` 전환. 만료 deadline = 2026-05-13 (W2 진입 + 14일 마진). |
+| OPS-028 | `postgres-wal-archive-permission-2026-04-26.md` | 2026-04-26 | 작업 기록 (P0 incident retro) | 활성 |
+| OPS-029 | `infrastructure-setup-checklist-2026-04-26.md` | 2026-04-26 | 운영 체크리스트 | 활성 (§14.5 정책의 운영 implementation, OPS-028 §4 후속) |
 
-**다음 발급 가능 번호**: **OPS-027** (OPS-026 다음).
+**다음 발급 가능 번호**: **OPS-030** (OPS-029 다음).
 
 **현재 미해결 충돌**: 2건 (OPS-006, OPS-009 — §3.2, §3.3 참조).
 

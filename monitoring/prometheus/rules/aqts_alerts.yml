@@ -564,3 +564,58 @@ groups:
         annotations:
           summary: "node-exporter 스크랩 실패 10분 초과"
           description: "aqts-node-exporter 가 10분 이상 Prometheus 에서 up=1 을 회신하지 않는다. 컨테이너 상태(aqts-node-exporter), compose 네트워크 DNS, rootfs 바인드 마운트 권한을 확인하라. 본 알림이 울리는 동안 디스크 알림(AqtsDiskUsageHigh/Critical) 은 관측 공백 상태이다."
+
+  # ─────────────────────────────────────
+  # 10. PostgreSQL 운영 (Postgres Operations)
+  # ─────────────────────────────────────
+  # OPS-028 (postgres-wal-archive-permission-2026-04-26.md) §4.1 monitoring
+  # 격차 영구 해소. archive_command 실패가 19일간 매분 silent miss 였던
+  # 회귀에 대한 정적 방어선. 각 알림의 expr 은 postgres_exporter v0.15.0
+  # 의 매트릭명을 전제로 작성됐으나, 실 환경 도입 시 `curl
+  # localhost:9187/metrics | grep -i wal` 로 정확한 매트릭명을 확인하여
+  # 보정해야 한다 (exporter 마이너 버전별 매트릭명 변동 가능성).
+  #
+  # 임계값 결정 근거:
+  #   - AqtsPgArchiveFailing for: 2m — archive_timeout=300 (5분) 이라 한
+  #     사이클 실패는 정상 잡음일 수 있으나 5분 윈도우 내 누적 증가는 문제.
+  #   - AqtsPgArchiveStale 600s (10분) — archive_timeout 의 2 사이클로
+  #     critical 진입 (디스크) 전 조기 경보.
+  #   - AqtsPgWalSizeHigh 4x — OPS-028 시 13.5x 였으므로 4x 는 여유로운
+  #     상한이지만 정상 운영 시 2x 를 넘지 않음을 baseline 으로 인지.
+  - name: aqts_postgres
+    interval: 30s
+    rules:
+      - alert: AqtsPgArchiveFailing
+        expr: |
+          rate(pg_stat_archiver_failed_count[5m]) > 0
+        for: 2m
+        labels:
+          severity: critical
+          domain: postgres
+        annotations:
+          summary: "PostgreSQL WAL archive 실패율 > 0 (host {{ $labels.host }})"
+          description: "pg_stat_archiver.failed_count 이 5분 윈도우에서 증가 중. archive_command 가 실패하고 있어 pg_wal 누적 → 디스크 압박 위험. OPS-028 회고 §4.1 의 19일 silent miss 와 동일 패턴이다. 즉시 docker logs aqts-postgres 에서 실패 사유 확인 후 docs/operations/postgres-wal-archive-permission-2026-04-26.md §5.1 chown fix 절차를 적용하라."
+          runbook: "docs/operations/postgres-wal-archive-permission-2026-04-26.md"
+
+      - alert: AqtsPgArchiveStale
+        expr: |
+          time() - pg_stat_archiver_last_archive_age_seconds > 600
+        for: 5m
+        labels:
+          severity: warning
+          domain: postgres
+        annotations:
+          summary: "PostgreSQL WAL archive 가 10분 이상 정체 (host {{ $labels.host }})"
+          description: "last_archived_time 이 10분 이상 갱신되지 않음. archive_command 가 멈춰 있을 가능성. archive_timeout=300 (5분) 의 2 사이클로 critical 진입 전 조기 경보. AqtsPgArchiveFailing 으로 승격되기 전에 docker exec aqts-postgres psql -c 'SELECT * FROM pg_stat_archiver;' 로 last_failed_wal/last_failed_time 을 확인하라."
+          runbook: "docs/operations/postgres-wal-archive-permission-2026-04-26.md"
+
+      - alert: AqtsPgExporterMissing
+        expr: |
+          absent(up{job="aqts-postgres-exporter"} == 1)
+        for: 10m
+        labels:
+          severity: warning
+          domain: postgres
+        annotations:
+          summary: "postgres-exporter 스크랩 실패 10분 초과"
+          description: "aqts-postgres-exporter 가 10분 이상 Prometheus 에서 up=1 을 회신하지 않는다. 컨테이너 상태(aqts-postgres-exporter), compose 네트워크 DNS, DATA_SOURCE_NAME credential 을 확인하라. 본 알림이 울리는 동안 PostgreSQL 알림(AqtsPgArchiveFailing/Stale) 은 관측 공백 상태이다."

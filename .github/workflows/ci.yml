@@ -33,10 +33,13 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-          # lint 잡은 runtime 의존성을 설치하지 않고 ruff/black 만 사용한다.
-          # cache 무효화 키를 requirements-dev.txt 로 지정하여 버전 bump 시에만
-          # pip cache 가 갱신되도록 한다.
-          cache-dependency-path: backend/requirements-dev.txt
+          # lint 잡은 runtime 의존성을 설치하지 않고 ruff/black + pip-audit 만 사용한다.
+          # cache 무효화 키를 requirements-dev.txt + requirements-security.txt 로 지정하여
+          # 어느 한 파일이라도 버전 bump 되면 pip cache 가 갱신되도록 한다.
+          # multi-line YAML literal 로 두 파일 모두 명시 (OPS-025 silent miss 방어선).
+          cache-dependency-path: |
+            backend/requirements-dev.txt
+            backend/requirements-security.txt
 
       - name: Install linters
         # 버전 pin 은 backend/requirements-dev.txt 에만 존재한다 (SSOT).
@@ -91,8 +94,12 @@ jobs:
       # ── SCA: Python 의존성 취약점 스캔 (10위 supply-chain) ──
       # pip-audit 는 OSV 데이터베이스 기반 CVE 검사. 화이트리스트는
       # backend/.pip-audit-ignore 에 만료일 + 사유와 함께 기록.
-      - name: Install pip-audit
-        run: pip install pip-audit==2.7.3
+      - name: Install security scanners
+        # 버전 pin 은 backend/requirements-security.txt 에만 존재한다 (SSOT).
+        # 과거에 이 라인에 `pip-audit==X` 가 하드코딩되어 버전 업그레이드 시
+        # 워크플로 yml 을 수정해야 하는 번거로움이 있었다 (OPS-025, CLAUDE.md
+        # §1 "하드코딩 금지").
+        run: pip install -r backend/requirements-security.txt
 
       - name: Python 의존성 CVE 스캔 (pip-audit)
         run: |
