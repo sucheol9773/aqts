@@ -28,6 +28,26 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/01_init.sql
       - postgres_wal_archive:/var/lib/postgresql/wal_archive
+    # OPS-028 (postgres-wal-archive-permission-2026-04-26.md) root cause #1 영구 fix:
+    # docker named volume 은 첫 마운트 시 호스트 root 가 root:root 로 생성하고,
+    # postgres docker image 의 docker-entrypoint.sh 는 PGDATA 만 chown 한다. 추가
+    # 마운트 (wal_archive) 는 root:root 인 채로 남아 archive_command (`cp %p
+    # /var/lib/postgresql/wal_archive/%f`) 가 Permission denied 로 19일간 매분
+    # silent miss → pg_wal 13.5GB 누적 → 디스크 98%.
+    #
+    # 본 entrypoint override 는 docker-entrypoint.sh 호출 직전에 wal_archive 권한을
+    # idempotent 하게 보정한다. 컨테이너 재생성 / 볼륨 재생성 / fresh 프로비저닝 모두
+    # 매번 보정되어 회귀 영구 차단. 자세한 회고: OPS-028 §5.1.
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        set -eu
+        mkdir -p /var/lib/postgresql/wal_archive
+        chown postgres:postgres /var/lib/postgresql/wal_archive
+        chmod 700 /var/lib/postgresql/wal_archive
+        exec docker-entrypoint.sh "$@"
+      - --
     command:
       - "postgres"
       - "-c"
