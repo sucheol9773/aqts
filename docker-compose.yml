@@ -437,6 +437,45 @@ services:
     networks:
       - aqts-network
 
+  # ══════════════════════════════════════
+  # postgres-exporter (PostgreSQL 메트릭)
+  # ══════════════════════════════════════
+  # PostgreSQL 의 pg_stat_archiver / pg_stat_replication / pg_settings 등을
+  # Prometheus 매트릭으로 노출한다. 도입 맥락 (2026-04-26):
+  #   docs/operations/postgres-wal-archive-permission-2026-04-26.md (OPS-028)
+  #   §4.1 monitoring 격차 — archive_command 실패가 19일간 docker logs 에만
+  #   찍히고 alert 채널은 0 였다. 본 사건의 *증상* (디스크 98%) 는 잡혔지만
+  #   *원인* (archive failed_count 증가) 은 detection 이 전무. 본 exporter
+  #   도입으로 pg_stat_archiver 기반 알림 (AqtsPgArchiveFailing/Stale/...) 이
+  #   조기 경보 채널을 확보한다.
+  # 보안/권한:
+  #   - 127.0.0.1 바인드. Prometheus 는 compose 네트워크의 DNS
+  #     (postgres-exporter:9187) 로 접근.
+  #   - DATA_SOURCE_NAME 은 운영 DB credential 을 사용한다 (read-only 쿼리만
+  #     발행). pg_stat_* 시스템 뷰 read 권한이면 충분하나, 별도 limited
+  #     account 분리는 후속 작업으로 미루고 우선 본 사건의 monitoring 격차
+  #     해소를 우선한다.
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: aqts-postgres-exporter
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${DB_USER:-aqts_user}:${DB_PASSWORD:?DB_PASSWORD is required}@postgres:5432/${DB_NAME:-aqts}?sslmode=disable"
+    ports:
+      - "127.0.0.1:${POSTGRES_EXPORTER_PORT:-9187}:9187"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9187/metrics"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - aqts-network
+
 volumes:
   postgres_data:
   postgres_wal_archive:
