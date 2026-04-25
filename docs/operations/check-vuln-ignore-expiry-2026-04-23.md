@@ -1,4 +1,4 @@
-# check_vuln_ignore_expiry.py — 화이트리스트 만료일 정적 검사기 (OPS-023)
+# check_vuln_ignore_expiry.py — 화이트리스트 만료일 정적 검사기 (OPS-026)
 
 **작업일**: 2026-04-23
 **브랜치**: `chore/check-vuln-ignore-expiry`
@@ -163,7 +163,7 @@ cd backend && .venv/bin/python -m pytest tests/test_check_vuln_ignore_expiry.py 
 | 차단 카테고리 | 담당 |
 |---|---|
 | 집합 비대칭 (한 파일만 등록) | `check_vuln_ignore_parity.py` (OPS-022) |
-| 만료된 화이트리스트 | `check_vuln_ignore_expiry.py` (OPS-023, 본 문서) |
+| 만료된 화이트리스트 | `check_vuln_ignore_expiry.py` (OPS-026, 본 문서) |
 | 만료일 형식 오류 | pip-audit workflow 스텝 (ci.yml) + 본 검사기 |
 | 신규 CVE 자체 | grype scan / pip-audit strict |
 
