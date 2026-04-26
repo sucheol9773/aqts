@@ -442,6 +442,81 @@ docker compose -f docker-compose.yml run --rm -T backend \
 
 **일반화된 원칙**: SSH heredoc 안에서 실행되는 모든 자식 프로세스에 대해 "이 프로세스가 fd 0 을 읽는가" 를 먼저 물어본다. 읽는다면 반드시 `</dev/null` 로 격리한다. "비대화형이라 stdin 이 필요 없다" 는 의도만으로는 불충분하다 — **자식 프로세스는 의도와 무관하게 부모 fd 0 을 상속하고, 어떤 프로세스는 그 stream 을 "그냥 읽어 버린다"**. 이 사고는 RBAC Wiring Rule / 공급망 Wiring Rule 의 CD 도메인 확장이다 — "스크립트를 적었다 ≠ 스크립트의 모든 줄이 실행됐다".
 
+## 16. 머지 후 브랜치 정리 정책 (Merge Branch Cleanup Discipline)
+
+PR 머지 직후 head 브랜치를 GitHub 와 로컬 양쪽에서 즉시 정리한다. 머지된 브랜치가 누적되면 (a) `git branch -a` 가 노이즈로 가득 차 활성 작업 식별이 어려워지고, (b) 머지 후 hotfix 시 stale 브랜치가 base 로
+잘못 사용될 위험이 있다.
+
+### 16.1 GitHub 측 자동 정리 (1회, repo admin)
+
+```bash
+gh repo edit --delete-branch-on-merge
+gh repo view --json deleteBranchOnMerge   # 기대: {"deleteBranchOnMerge": true}
+```
+
+PR 머지 시점에 GitHub 가 head 브랜치를 자동 삭제. 본 설정이 켜진 상태에서 `gh pr merge` 호출은 별도 `--delete-branch` 플래그 불필요.
+
+### 16.2 로컬 측 자동 정리 (개발자/worktree 마다 1회)
+
+```bash
+git config --global fetch.prune true
+```
+
+이 설정 후 `git fetch` 또는 `git pull` 시 origin 에서 삭제된 브랜치의 로컬 추적 ref (`origin/<branch>`) 가 자동 정리. 신규 worktree / 신규 dev 머신마다 동일 적용.
+
+### 16.3 표준 머지 패턴 (cross-team)
+
+CI 그린 + mergeable=CLEAN 시 자동 머지 큐 등록 (`MEMORY.md` 의 "PR merge - 사용자 일괄 허용" 패턴 + 본 §16):
+
+```bash
+gh pr merge <PR-NUMBER> --auto --merge
+```
+
+머지 직후 GitHub 가 head 브랜치 자동 삭제 → 머지 본인이 로컬에서 `git pull` → `fetch.prune` 로 추적 ref 자동 정리. **별도 명시적 정리 명령 불필요**.
+
+### 16.4 머지된 로컬 브랜치 housekeeping (필요 시)
+
+설정 §16.1/§16.2 이 적용된 *이후* 의 PR 은 자동 정리되지만, 설정 적용 *이전* 누적분 또는 push 안 된 로컬 작업 브랜치는 수동 housekeeping 필요:
+
+```bash
+# 머지된 로컬 브랜치 삭제 (worktree 점유분 + main 자동 제외)
+git branch --merged main | grep -v '^\*\|^+\|^  main$' | xargs -r git branch -d
+```
+
+`git branch -d` 는 ancestor 검증을 수행하므로 머지 안 된 브랜치를 잘못 삭제할 위험은 없다 (force 가 필요한 `-D` 와 구분).
+
+### 16.5 worktree 정리
+
+작업이 끝난 worktree (PR 머지 완료, 더 이상 활성 작업 없음) 는 즉시 정리:
+
+```bash
+git worktree list                                       # 현 점유 확인
+git worktree remove <path>                              # worktree 제거
+git branch -d <branch>                                  # 브랜치 삭제 (병합됐다면)
+```
+
+`+ <branch>` 표기는 worktree 점유 중이라 직접 삭제 불가. 먼저 worktree remove 후 branch -d.
+
+### 16.6 회귀 방어선 — 누적 카운트 임계
+
+```bash
+# 머지된 로컬 브랜치 (worktree 점유 제외) — 5개 이하 권장
+git branch --merged main | grep -v '^\*\|^+\|^  main$' | wc -l
+
+# stale remote tracking ref — fetch.prune 작동 확인 지표
+git branch -r --merged origin/main | grep -v 'origin/main$\|origin/HEAD' | wc -l
+```
+
+두 수치 모두 한 자릿수 유지. 두 자리 누적 시 §16.4 housekeeping 1회 실행 + §16.1/§16.2 설정 누락 의심.
+
+### 16.7 강제 적용 시점
+
+- 신규 PR: §16.3 표준 패턴 사용
+- 신규 dev 머신 셋업: §16.2 적용을 setup checklist 에 포함
+- 신규 worktree: 작업 종료 시 §16.5 routine 으로 정리
+- 정기 (월 1회): §16.6 회귀 방어선 카운트 점검
+
+본 §16 는 `agent_docs/development-policies.md §14.5` 운영 Wiring Rule 의 *operational hygiene* 분담 — set-and-forget 으로 누적되는 stale state 의 일반 사례.
 ---
 
 ## 문서 소유권

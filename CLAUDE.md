@@ -17,7 +17,7 @@
 | DB 스키마 (Postgres/Mongo/Redis) | `agent_docs/database_schema.md` |
 | 백테스트·OOS·하이퍼옵트 운영 | `agent_docs/backtest-operations.md` |
 | Agent Teams 기동 프롬프트 템플릿 | `agent_docs/team_prompt_draft.md` |
-
+| 머지 후 브랜치 정리가 필요할 때 | `agent_docs/development-policies.md §16` |
 ---
 
 ## 1. 프로젝트 개요
