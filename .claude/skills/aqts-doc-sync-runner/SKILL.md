@@ -27,6 +27,22 @@ If `.py`/`.toml`/`.sh`/`Dockerfile*`/`.github/workflows/*.yml` 변경이 단 한
 
 10. `cd backend && python -m pytest tests/ -q --tb=short` — timeout ≥ 540s.
 
+11. **산출물 file 생성** (ADR-002 §5.3.1 (d) 카운트 기준 충족용 — Pilot 합의 2026-04-27 `lead/inbox/.../mid-late-checkin-response` Ask #1 (β) 옵션 사전 적용):
+    `docs/architecture/sandbox/adr-002/skill-runs/doc-sync-<YYYYMMDD>-<HHMM>.md` 에 다음 형식 markdown 출력:
+    ```markdown
+    # doc-sync-runner — <YYYY-MM-DD HH:MM KST>
+
+    | step | 명령 | 결과 |
+    |---|---|---|
+    | 1 | `ruff check` | pass / fail |
+    ...
+
+    ## 비고
+    - 호출 컨텍스트: <user prompt 요약>
+    - 산출물 무결성: 본 file 의 SHA256 = <hash>
+    ```
+    KST timestamp 는 `today_kst_str()` 또는 `datetime.now(tz=ZoneInfo("Asia/Seoul"))` 사용 (G7).
+
 ## Gotchas (AQTS)
 
 - **G1 한글 기술 서술**: 본 스킬이 생성하는 어떤 `.md` / 커밋 메시지도 한글이 SSOT. 영문 placeholder 가 최종 산출에 남아있으면 안 됨 (CLAUDE.md 프로젝트 지시).
@@ -45,7 +61,7 @@ If `.py`/`.toml`/`.sh`/`Dockerfile*`/`.github/workflows/*.yml` 변경이 단 한
 
 ## Wiring 검증 — 본 스킬이 실제로 doc-sync workflow 와 일치하는지
 
-본 스킬의 step 3~9 는 `.github/workflows/doc-sync-check.yml` 의 모든 step 을 1:1 로 미러링한다. CI 에 새 step 이 추가되면 본 스킬도 동일하게 갱신할 것 (silent drift 방어). 마지막 동기화 검증: **2026-04-25 (W1 mid-week)** — `check_vuln_ignore_parity` (PR #37) + `check_vuln_ignore_expiry` (PR #39) 까지 반영.
+본 스킬의 step 3~9 는 `.github/workflows/doc-sync-check.yml` 의 모든 step 을 1:1 로 미러링한다. CI 에 새 step 이 추가되면 본 스킬도 동일하게 갱신할 것 (silent drift 방어). 마지막 동기화 검증: **2026-04-27 (W1 mid-late, β 옵션 사전 적용)** — `check_vuln_ignore_parity` (PR #37) + `check_vuln_ignore_expiry` (PR #39) 까지 반영. step 11 (산출물 file 생성) 은 ADR-002 §5.3.1 (d) 카운트 기준 충족 보험.
 
 ## SSOT 출처
 

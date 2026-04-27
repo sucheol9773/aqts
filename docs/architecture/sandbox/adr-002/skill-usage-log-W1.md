@@ -63,11 +63,11 @@
 
 | 체크포인트 | 상태 | 근거 커밋/PR |
 |---|---|---|
-| `.claude/skills/aqts-doc-sync-runner/SKILL.md` 작성 (500 줄 이하, G1~G7 명시, PEP 723) | [x] | 2026-04-25 W1 mid-week (`pilot/team4-skills-w1` 작업 중). 55 줄. PEP 723 미적용 (자체 스크립트 동반 없음 — wrapper SKILL). |
-| `.claude/skills/aqts-rbac-route-checker/SKILL.md` 작성 | [x] | 2026-04-25 W1 mid-week. 52 줄. G1~G7 모두 명시. |
+| `.claude/skills/aqts-doc-sync-runner/SKILL.md` 작성 (500 줄 이하, G1~G7 명시, PEP 723) | [x] | 2026-04-25 W1 mid-week (`pilot/team4-skills-w1` 작업 중) 55 줄 → 2026-04-27 W1 mid-late (β 옵션 사전 적용) 71 줄. step 11 (산출물 file 생성) 추가. PEP 723 미적용 (자체 스크립트 동반 없음 — wrapper SKILL 이지만 산출물 file 강제로 (d) 카운트 충족 가능). |
+| `.claude/skills/aqts-rbac-route-checker/SKILL.md` 작성 | [x] | 2026-04-25 W1 mid-week 52 줄 → 2026-04-27 W1 mid-late 73 줄. step 5 (산출물 file 생성) + exit code 4 (산출물 생성 실패) 추가. G1~G7 모두 명시. |
 | `skills-ref validate` (또는 동등 수동 검증) 통과 | [x] | `skills-ref` CLI 가 AQTS 환경에 미설치 → 수동 검증으로 대체: (a) frontmatter `name`/`description`/`license`/`compatibility` 4 필드 존재, (b) 본문 ≤ 500 줄(55/52), (c) G1~G7 모두 본문에서 grep 양성. **OPS-027 발급 위임 승인** (`team4/inbox/20260425-1352-w1-midweek-checkin-response.md` Ask #3) — task b PR 안에 `docs/operations/skill-validate-checklist-2026-04-NN.md` + `docs/operations/ops-numbering.md §2` 표 + 다음 발급 번호 OPS-027 → OPS-028 갱신 동봉 조건. |
-| Pilot 세션에서 `aqts-doc-sync-runner` 자동 트리거 ≥ 1회 | [ ] | **구조적 미달성**: SKILL.md 가 본 세션 mid-session 에 생성되어 Claude Code 의 session-start skill scan 에 미포함. **신규 Pilot 세션 시작 필요**. 카운트 기준 = **(d) skill 산출물이 file 로 떨어졌을 때만 1회** (lead 합의, §2 표 헤더). |
-| Pilot 세션에서 `aqts-rbac-route-checker` 자동 트리거 ≥ 1회 | [ ] | 위와 동일 — 신규 세션 시작 + (d) file 산출 단계까지 도달해야 1회. |
+| Pilot 세션에서 `aqts-doc-sync-runner` 자동 트리거 ≥ 1회 | [ ] | **구조적 미달성**: SKILL.md 가 본 세션 mid-session 에 생성되어 Claude Code 의 session-start skill scan 에 미포함. **신규 Pilot 세션 시작 필요**. 카운트 기준 = **(d) skill 산출물이 file 로 떨어졌을 때만 1회** (lead 합의, §2 표 헤더). **(β) 옵션 사전 적용 (2026-04-27)**: SKILL.md step 11 추가 — `docs/architecture/sandbox/adr-002/skill-runs/doc-sync-<YYYYMMDD>-<HHMM>.md` 산출물 file 강제 생성으로 wrapper 한계 회피. |
+| Pilot 세션에서 `aqts-rbac-route-checker` 자동 트리거 ≥ 1회 | [ ] | 위와 동일 — 신규 세션 시작 + (d) file 산출 단계까지 도달해야 1회. **(β) 옵션 사전 적용 (2026-04-27)**: SKILL.md step 5 추가 — `docs/architecture/sandbox/adr-002/skill-runs/rbac-route-<YYYYMMDD>-<HHMM>.md` 산출물 file 강제 생성. |
 
 ---
 
@@ -157,3 +157,4 @@ W1 종료 시점에 아래 3 중 하나 선택:
 | 2026-04-25 | §3.1 4 체크포인트 [x] 처리 (PR #37 근거) + 보너스 항목으로 PR #39/#40 만료일 검사기 인지. CLAUDE.md §9 TODO `[x]` 전환은 리드 위임. mid-week 메일 `agent_docs/mailboxes/lead/inbox/20260425-2106-w1-midweek-checkin.md` 발송 (kickoff 응답 기한 준수). | Pilot |
 | 2026-04-26 | 리드 mid-week 회신(`team4/inbox/20260425-1352-w1-midweek-checkin-response.md`) 반영: §3.1 5번째 체크포인트 [x] 전환 (Ask #1, PR #45/#46 머지로 §9 TODO 자동 해소). §2 표 헤더에 카운트 기준 (d) file 산출 단계 한 줄 추가 (Ask #2). §3.2 검증 체크포인트 비고에 OPS-027 발급 위임 승인 명시 (Ask #3, task b PR 안에 동봉 조건). | Pilot |
 | 2026-04-25 | §3.2 task b 착수: `.claude/skills/aqts-doc-sync-runner/SKILL.md` (55 줄) + `.claude/skills/aqts-rbac-route-checker/SKILL.md` (52 줄) 작성. G1~G7 양쪽 모두 본문 명시. 자동 트리거 ≥ 1회 체크포인트는 mid-session 생성으로 인한 구조적 미달성 — 신규 세션 + 트리거 카운트 기준 합의 필요 (메일 Q2). 부수: black drift 1 건(`tests/test_check_ownership_boundary.py`) gate 검증 중 발견 + 동일 작업분에 수정 (CLAUDE.md §2 절대 규칙 5 "발견 시점 수정"). | Pilot |
+| 2026-04-27 | **(β) 옵션 사전 적용** — mid-late 메일 Ask #1 응답 기한(2026-04-26 21:00 KST) 미수신으로 fallback (α) wrapper SKILL 면제 활성화 상태에서, wrapper 한계로 §2 = 0 위험 회피용 보험 적용. 두 SKILL.md 에 산출물 file 생성 step 추가 (`docs/architecture/sandbox/adr-002/skill-runs/<skill>-<YYYYMMDD>-<HHMM>.md`). doc-sync-runner 55→71 줄, rbac-route-checker 52→73 줄 (양쪽 500 줄 한참 미만, F7 안전). lead 가 차후 (α) 채택 회신 시에도 (β) 적용은 추가 안전망일 뿐 손해 없음 — fail-safe 결정. `docs/architecture/sandbox/adr-002/skill-runs/` 디렉토리 신설 (Pilot 영역). | Pilot |

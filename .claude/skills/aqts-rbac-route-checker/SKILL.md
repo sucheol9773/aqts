@@ -21,6 +21,26 @@ Whenever a PR or commit touches `backend/api/**/*.py` route decorators:
 2. `cd backend && python -m pytest tests/test_rbac_routes.py -q` — viewer/operator/admin 토큰 통합 테스트 통과.
 3. **수동 verification**: viewer JWT 를 직접 생성하여 신규 mutation 라우트(예: `curl -H "Authorization: Bearer <viewer_jwt>" -X POST <new_route>`) 를 호출하고 **403** 응답을 확인.
 4. `docs/security/rbac-policy.md` 의 권한 매트릭스에 신규 라우트가 추가되었는지 확인. 누락 시 같은 커밋에 갱신.
+5. **산출물 file 생성** (ADR-002 §5.3.1 (d) 카운트 기준 충족용 — Pilot 합의 2026-04-27 `lead/inbox/.../mid-late-checkin-response` Ask #1 (β) 옵션 사전 적용):
+   `docs/architecture/sandbox/adr-002/skill-runs/rbac-route-<YYYYMMDD>-<HHMM>.md` 에 다음 형식 markdown 출력:
+   ```markdown
+   # rbac-route-checker — <YYYY-MM-DD HH:MM KST>
+
+   | step | 검증 | 결과 |
+   |---|---|---|
+   | 1 | `check_rbac_coverage.py` 정적 검사 | pass / fail |
+   | 2 | `test_rbac_routes.py` 통합 테스트 | pass / fail |
+   | 3 | 수동 viewer 토큰 403 확인 | confirmed / skipped |
+   | 4 | `docs/security/rbac-policy.md` 매트릭스 동기화 | confirmed / pending |
+
+   ## 검증 대상 라우트 목록
+   - `<method> <path>`: `<dependency>` (예: `Depends(require_operator)`)
+
+   ## 비고
+   - 호출 컨텍스트: <user prompt 요약>
+   - WHITELIST 추가/삭제 여부: <yes/no>
+   ```
+   KST timestamp 는 `today_kst_str()` 또는 `datetime.now(tz=ZoneInfo("Asia/Seoul"))` 사용 (G7).
 
 ## Gotchas (AQTS)
 
@@ -34,14 +54,15 @@ Whenever a PR or commit touches `backend/api/**/*.py` route decorators:
 
 ## Exit codes
 
-- 0: all RBAC gates passed (정적 + 통합 + 수동 + 정책 문서 동기화).
+- 0: all RBAC gates passed (정적 + 통합 + 수동 + 정책 문서 동기화 + 산출물 file 생성).
 - 1: 정적 검사 또는 통합 테스트 실패.
 - 2: invalid invocation 또는 워크트리 루트 외부 호출.
 - 3: 수동 verification 미수행 (PR 설명에 manual 403 confirm 누락) — 본 스킬 자체가 강제할 수 없으므로, 사용자에게 명시적 확인을 요청한 뒤 응답 없으면 exit 3.
+- 4: 산출물 file (`docs/architecture/sandbox/adr-002/skill-runs/rbac-route-<ts>.md`) 생성 실패 — write 권한 없거나 디렉토리 부재.
 
 ## Wiring 검증 — `WHITELIST` 와 `REQUIRE_NAMES` 의 SSOT 일치
 
-`scripts/check_rbac_coverage.py` 의 `WHITELIST: set[tuple[str, str]]` 와 `REQUIRE_NAMES: set[str]` 가 본 스킬의 진단 메시지와 일치하는지 호출 시 한 번 더 확인. 두 변수 변경 시 본 스킬도 동일하게 갱신 (silent drift 방어). 마지막 동기화 검증: **2026-04-25 (W1 mid-week)**.
+`scripts/check_rbac_coverage.py` 의 `WHITELIST: set[tuple[str, str]]` 와 `REQUIRE_NAMES: set[str]` 가 본 스킬의 진단 메시지와 일치하는지 호출 시 한 번 더 확인. 두 변수 변경 시 본 스킬도 동일하게 갱신 (silent drift 방어). 마지막 동기화 검증: **2026-04-27 (W1 mid-late, β 옵션 사전 적용)**. step 5 (산출물 file 생성) 은 ADR-002 §5.3.1 (d) 카운트 기준 충족 보험.
 
 ## SSOT 출처
 
