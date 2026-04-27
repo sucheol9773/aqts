@@ -70,3 +70,19 @@ scrape_configs:
         labels:
           service: "aqts-postgres"
           host: "${HOST_LABEL}"
+
+  # Prometheus 자체 self-scrape (self-observability).
+  # 본 모니터링 시스템의 self-monitoring 표준 패턴 — 자체 매트릭
+  # (prometheus_config_last_reload_successful, prometheus_rule_evaluation_*,
+  # prometheus_tsdb_*, prometheus_target_*) 을 노출하여 config reload 실패,
+  # rule evaluation 실패, scrape pool 이상 등을 외부에서 관측 가능하게 한다.
+  # OPS-030 (infrastructure-backfill-audit-2026-04-27.md) §2.1 GAP 항목 P1.
+  # 자기 참조라 `absent(up{job="aqts-prometheus"}==1)` 패턴은 의미가 없으나
+  # config_reload_failures 같은 능동 매트릭은 Alertmanager 채널로 전파 가능.
+  - job_name: "aqts-prometheus"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: ["prometheus:9090"]
+        labels:
+          service: "aqts-prometheus"
+          host: "${HOST_LABEL}"

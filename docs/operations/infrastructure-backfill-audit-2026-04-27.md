@@ -11,13 +11,16 @@
 | 카테고리 | 대상 수 | PASS | GAP / FAIL | 미검증 (server) |
 |---|---|---|---|---|
 | Docker named volume | 8 | 1 | 0 | 7 |
-| Prometheus scrape job | 5 | 5 | 0 | 0 (정적 분석 한정) |
+| Prometheus scrape job | 6 | 6 | 0 | 0 (정적 분석 한정) |
 | Alertmanager receiver | 3 | 3 | 0 | 0 (정적 분석 한정) |
-| Service monitoring 격차 | 13 services | 4 | 9 | 0 |
+| Service monitoring 격차 | 13 services | 5 | 8 | 0 |
 
-**TOP 발견**:
+**갱신 이력**:
+- 2026-04-27 P1 해소 — prometheus self-scrape 추가 (`feat/prometheus-self-scrape` PR). §0 의 scrape job 5→6, monitoring 격차 PASS 4→5 / GAP 9→8 로 갱신.
 
-1. **9 services 가 prometheus scrape 안 됨** (mongodb, redis, scheduler, db-backup, grafana, otel-collector, jaeger, alertmanager, prometheus 자체). 일부는 의도된 누락이나 (jaeger UI 자체 / otel-collector 는 push 모드), 일부는 §14.5 의 "continuous monitoring" invariant 미충족.
+**TOP 발견** (2026-04-27 시점):
+
+1. **8 services 가 prometheus scrape 안 됨** (mongodb, redis, scheduler, db-backup, grafana, otel-collector, jaeger, alertmanager). prometheus 자체는 P1 해소. 일부는 의도된 누락이나 (jaeger UI 자체 / otel-collector 는 push 모드), 일부는 §14.5 의 "continuous monitoring" invariant 미충족.
 2. **Volume 7개 의 owner / mode runtime 검증 필요** — postgres_wal_archive 는 PR #59 entrypoint override 로 자동 fix 적용. 나머지 (postgres_data, mongodb_data, redis_data, backup_data, prometheus_data, alertmanager_data, grafana_data) 는 서버 측 `docker exec stat` 으로 1회 검증 필요.
 3. **alertmanager 합성 테스트 부재** — 3 receiver (critical/warning/info) 모두 정의되어 있으나 실제 telegram 발송 합성 테스트 기록이 없음. OPS-031 (예정) 에서 합성 테스트 절차 신설 권장.
 
@@ -60,7 +63,7 @@
 
 ---
 
-## 2. Prometheus scrape job audit (5 jobs)
+## 2. Prometheus scrape job audit (6 jobs)
 
 `monitoring/prometheus/prometheus.yml.tmpl` 정독.
 
@@ -71,10 +74,11 @@
 | `aqts-backend-canary` | backend-canary:8000 | ✓ canary 미사용 시 연결 실패 무시 | (canary 환경에서만) | 🔍 server check (canary on 시) |
 | `aqts-node-exporter` | node-exporter:9100 | ✓ host 라벨 sed 치환 | ✓ `node_filesystem_*`, `node_cpu_*` | 🔍 server check |
 | `aqts-postgres-exporter` | postgres-exporter:9187 | ✓ PR #60 신규 도입 | ✓ `pg_stat_archiver_*` (예상) | 🔍 server check (PR #60 deploy 후) |
+| `aqts-prometheus` | prometheus:9090 | ✓ self-scrape (P1 해소, 2026-04-27) | ✓ `prometheus_config_last_reload_successful`, `prometheus_rule_evaluation_*`, `prometheus_tsdb_*` | 🔍 server check |
 
-**모든 5 job 이 정적 분석 PASS**. 실측 PASS 여부는 `curl http://localhost:9090/api/v1/targets | jq` 출력 (server 측) 으로 확인 필요.
+**모든 6 job 이 정적 분석 PASS**. 실측 PASS 여부는 `curl http://localhost:9090/api/v1/targets | jq` 출력 (server 측) 으로 확인 필요.
 
-### 2.1 GAP — 9 services 미스크랩
+### 2.1 GAP — 8 services 미스크랩 (2026-04-27 prometheus self-scrape 해소 후)
 
 다음 서비스가 prometheus scrape job 으로 등록되지 않음:
 
@@ -88,9 +92,9 @@
 | `otel-collector` | 13133 health check / 8888 prometheus internal | △ 의도된 누락 — push 모드 | 검토 |
 | `jaeger` | jaeger UI 자체 | ✓ 의도된 — 자체 UI 로 관측 | OK |
 | `alertmanager` | `/metrics` 노출 | △ 의도된 누락 가능 | 검토 |
-| `prometheus` (self-scrape) | self-monitoring 표준 | ✗ unintended — `/prometheus_*` 매트릭 부재 | 후속 PR |
+| ~~`prometheus` (self-scrape)~~ | self-monitoring 표준 | ~~✗ unintended~~ → ✓ **RESOLVED** | ✓ P1 해소 (PR feat/prometheus-self-scrape, 2026-04-27) |
 
-**우선순위 후속**: prometheus self-scrape (가장 단순, 본 모니터링 시스템의 self-observability) > mongodb_exporter > redis_exporter > scheduler heartbeat 매트릭.
+**우선순위 후속**: ~~prometheus self-scrape~~ (P1 해소) > mongodb_exporter > redis_exporter > scheduler heartbeat 매트릭.
 
 ---
 
@@ -151,7 +155,7 @@ amtool alert add critical_synthetic alertname=SyntheticCritical severity=critica
 | 우선 | 작업 | OPS | 영역 |
 |---|---|---|---|
 | P1 | volume 7개 server-side runtime 검증 (`docker exec stat`) | (audit 본 문서 보강) | 사용자 측 deploy 시점 |
-| P1 | prometheus self-scrape job 추가 | TBD | 팀 2 — `monitoring/prometheus/prometheus.yml.tmpl` |
+| ~~P1~~ | ~~prometheus self-scrape job 추가~~ | ✓ 해소 2026-04-27 | 팀 2 — PR `feat/prometheus-self-scrape` |
 | P2 | mongodb_exporter 도입 + scrape job + 알림 group | TBD | 팀 2 — compose + monitoring + rules |
 | P2 | redis_exporter 도입 + scrape job + 알림 group | TBD | 팀 2 — compose + monitoring + rules |
 | P2 | backup_cron 매트릭 (textfile collector) + 알림 | TBD | 팀 2 — scripts + monitoring |
